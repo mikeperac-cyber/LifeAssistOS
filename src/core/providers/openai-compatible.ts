@@ -249,10 +249,15 @@ class OpenAICompatibleProvider implements Provider {
     let buffer = ''
     let text = ''
     let finishReason: string | null = null
+    let sawDoneMarker = false
     let usage: ChatUsage | undefined
 
     const handlePayload = (payload: string): void => {
-      if (!payload || payload === '[DONE]') return
+      if (!payload) return
+      if (payload === '[DONE]') {
+        sawDoneMarker = true
+        return
+      }
 
       let chunk: unknown
       try {
@@ -325,6 +330,13 @@ class OpenAICompatibleProvider implements Provider {
       const line = rawLine.trim()
       if (!line.startsWith('data:')) continue
       handlePayload(line.slice(5).trim())
+    }
+
+    if (!sawDoneMarker && finishReason === null) {
+      throw new ProviderError(
+        'The provider stream ended before completion. Any text already shown may be incomplete.',
+        { code: 'network', retryable: true }
+      )
     }
 
     const ordered = normalizeToolCalls(

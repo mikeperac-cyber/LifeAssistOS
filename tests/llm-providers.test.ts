@@ -331,6 +331,32 @@ describe('Anthropic native provider', () => {
       completionTokens: 24
     })
   })
+
+  it('rejects an Anthropic stream that closes without message_stop after partial output', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      const events = [
+        { type: 'message_start', message: { usage: { input_tokens: 20, output_tokens: 1 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'partial answer' } }
+      ]
+      for (const event of events) res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+      res.end()
+    })
+    const provider = createAnthropicProvider({
+      baseUrl: server.baseUrl,
+      model: 'claude-test',
+      apiKey: 'test-key',
+      maxRetries: 2
+    })
+
+    await expect(provider.chat({ messages: [{ role: 'user', content: 'hi' }] }))
+      .rejects.toMatchObject({
+        code: 'network',
+        message: expect.stringContaining('may be incomplete')
+      })
+    expect(server.requests).toHaveLength(1)
+  })
 })
 
 describe('Provider factory & role routing', () => {

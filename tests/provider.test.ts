@@ -323,6 +323,49 @@ describe('OpenAI-compatible provider', () => {
     expect(server.requests).toHaveLength(1)
   })
 
+  it('rejects a cleanly truncated stream after partial output without retrying', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'partial answer' } }] })}\n\n`)
+      res.end()
+    })
+    const provider = createOpenAICompatibleProvider({
+      baseUrl: server.baseUrl,
+      model: 'm',
+      maxRetries: 2
+    })
+
+    await expect(provider.chat({ messages: [{ role: 'user', content: 'hi' }] }))
+      .rejects.toMatchObject({
+        code: 'network',
+        message: expect.stringContaining('may be incomplete')
+      })
+    expect(server.requests).toHaveLength(1)
+  })
+
+  it('retries an empty stream that ends before any completion marker', async () => {
+    let count = 0
+    const server = await startServer((_req, res) => {
+      count += 1
+      if (count === 1) {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        res.end()
+        return
+      }
+      sse(res, [{ choices: [{ delta: { content: 'recovered' }, finish_reason: 'stop' }] }])
+    })
+    const provider = createOpenAICompatibleProvider({
+      baseUrl: server.baseUrl,
+      model: 'm',
+      maxRetries: 1
+    })
+
+    const response = await provider.chat({ messages: [{ role: 'user', content: 'hi' }] })
+
+    expect(response.text).toBe('recovered')
+    expect(server.requests).toHaveLength(2)
+  })
+
   it('stops promptly when the caller aborts', async () => {
     const server = await startServer(() => {
       // Never respond; the abort must end the request.

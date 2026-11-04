@@ -278,6 +278,7 @@ class AnthropicProvider implements Provider {
     let buffer = ''
     let text = ''
     let finishReason: string | null = null
+    let messageStopped = false
     let promptTokens: number | undefined
     let completionTokens: number | undefined
 
@@ -295,6 +296,11 @@ class AnthropicProvider implements Provider {
         const msg = parsed.message as { usage?: { input_tokens?: number; output_tokens?: number } } | undefined
         if (typeof msg?.usage?.input_tokens === 'number') promptTokens = msg.usage.input_tokens
         if (typeof msg?.usage?.output_tokens === 'number') completionTokens = msg.usage.output_tokens
+        return
+      }
+
+      if (type === 'message_stop') {
+        messageStopped = true
         return
       }
 
@@ -374,6 +380,13 @@ class AnthropicProvider implements Provider {
       const line = rawLine.trim()
       if (!line.startsWith('data:')) continue
       handlePayload(line.slice(5).trim())
+    }
+
+    if (!messageStopped) {
+      throw new ProviderError(
+        'The provider stream ended before completion. Any text already shown may be incomplete.',
+        { code: 'network', retryable: true }
+      )
     }
 
     const toolCalls = [...calls.entries()]
