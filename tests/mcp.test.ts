@@ -411,16 +411,17 @@ describe('McpServerManager with an in-memory server', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
-  it('marks error responses as not ok', async () => {
+  it('marks error responses as uncertain failures instead of successful tool output', async () => {
     const { manager, registry, dir } = await makeManager(
       [{ name: 'boom', description: '', inputSchema: { type: 'object' as const } }],
       { onCallTool: async () => ({ content: [{ type: 'text', text: 'went wrong' }], isError: true }) }
     )
 
     const def = registry.get('mcp__demo__boom')!
-    const result = (await def.run({}, { kind: 'none', signal: new AbortController().signal })) as { ok: boolean; text: string }
-    expect(result.ok).toBe(false)
-    expect(result.text).toBe('went wrong')
+    const error = await def.run({}, { kind: 'none', signal: new AbortController().signal })
+      .then(() => undefined, (reason: unknown) => reason)
+    expect(error).toMatchObject({ outcomeUnknown: true })
+    expect(error).not.toHaveProperty('message', expect.stringContaining('went wrong'))
 
     await manager.dispose()
     await rm(dir, { recursive: true, force: true })

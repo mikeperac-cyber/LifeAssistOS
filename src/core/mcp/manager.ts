@@ -19,6 +19,7 @@ import type { AuditLog } from '../audit/log'
 import type { ToolRegistry } from '../registry'
 import { describeServer, invocationName, sanitizeSegment } from './naming'
 import type { McpServerStore } from './store'
+import { ToolError } from '../../tools/paths'
 
 const CONNECT_TIMEOUT_MS = 15_000
 const CALL_TIMEOUT_MS = 120_000
@@ -315,6 +316,7 @@ function createToolDef(
       .trim()
       .slice(0, 700),
     risk: 'external',
+    mayHaveSideEffectsOnFailure: true,
     sessionApprovalAllowed: false,
     input: z.any().superRefine((value, ctx) => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -355,11 +357,23 @@ function createToolDef(
             maxTotalTimeout: runtime.timeoutMs
           }
         )
+      } catch {
+        throw new ToolError(
+          'The MCP server did not confirm the result. Its outcome is unknown; check the server before retrying.',
+          true
+        )
       } finally {
         context.signal.removeEventListener('abort', onAbort)
         if (context.signal.aborted) throw new Error('The MCP tool call was cancelled.')
       }
-      return normalizeToolResult(result)
+      const normalized = normalizeToolResult(result) as { ok?: unknown }
+      if (normalized && typeof normalized === 'object' && normalized.ok === false) {
+        throw new ToolError(
+          'The MCP server returned an error result. Its outcome may include partial side effects; check the server before retrying.',
+          true
+        )
+      }
+      return normalized
     }
   }
 }

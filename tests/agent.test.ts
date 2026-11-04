@@ -1049,6 +1049,33 @@ describe('Agent', () => {
     expect(writeApproval?.tainted).toBe(true)
   })
 
+  it('keeps failed command output visible and untrusted on later turns', async () => {
+    const approvals: PermissionRequest[] = []
+    const { agent, provider } = await harness([
+      toolReply('run_command', { command: 'npm test' }),
+      textReply('The command exited with an error.'),
+      toolReply('write_file', { path: 'result.md', content: 'Command output summary.' }),
+      textReply('I saved the result.')
+    ], {
+      approvalRequests: approvals,
+      extraTools: [commandStub(async () => ({
+        exitCode: 1,
+        signal: null,
+        timedOut: false,
+        stdout: 'untrusted command output',
+        stderr: 'command failed',
+        outputTruncated: false
+      }))]
+    })
+
+    await agent.handleUserMessage('Run the check.')
+    await agent.handleUserMessage('Write a note about the command output.')
+
+    const toolResult = provider.requests[2].messages.find((entry) => entry.role === 'tool')?.content ?? ''
+    expect(toolResult).toContain('untrusted command output')
+    expect(approvals.find((approval) => approval.tool === 'write_file')?.tainted).toBe(true)
+  })
+
   it('marks writes after web-search results for extra review', async () => {
     const approvals: PermissionRequest[] = []
     const { agent } = await harness([

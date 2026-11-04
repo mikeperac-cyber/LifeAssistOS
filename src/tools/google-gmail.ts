@@ -154,6 +154,7 @@ export function createGoogleGmailTools(service: GoogleGmailService): ToolDef<any
     name: 'gmail_create_draft',
     description: 'Create an unsent plain-text draft in the connected Gmail account after approval. It does not send the message.',
     risk: 'external',
+    mayHaveSideEffectsOnFailure: true,
     sessionApprovalAllowed: false,
     input: draftInput,
     scope: () => gmailDraftScope(service),
@@ -163,8 +164,8 @@ export function createGoogleGmailTools(service: GoogleGmailService): ToolDef<any
       const response = await service.requestGmailApi(url, 'POST', context.signal, JSON.stringify({
         message: { raw: encodeMimeMessage(args) }
       }), 64_000)
-      ensureGmailResponse(response)
-      const draft = parseJson(createdDraftSchema, response.text, 'draft')
+      ensureGmailResponse(response, true)
+      const draft = parseMutationJson(createdDraftSchema, response.text, 'draft')
       return { draftId: draft.id, ...(draft.message?.id ? { messageId: draft.message.id } : {}), note: 'Saved to Gmail as an unsent draft.' }
     }
   }
@@ -173,6 +174,7 @@ export function createGoogleGmailTools(service: GoogleGmailService): ToolDef<any
     name: 'gmail_send_message',
     description: 'Send a new plain-text email from the connected Gmail account. Requires one-time approval and typed SEND confirmation. No attachments.',
     risk: 'external',
+    mayHaveSideEffectsOnFailure: true,
     verb: 'send',
     sessionApprovalAllowed: false,
     input: sendInput,
@@ -183,8 +185,8 @@ export function createGoogleGmailTools(service: GoogleGmailService): ToolDef<any
         new URL(`${GMAIL_API_URL}/messages/send`), 'POST', context.signal,
         JSON.stringify({ raw: encodeMimeMessage(args) }), 64_000
       )
-      ensureGmailResponse(response)
-      const message = parseJson(sentMessageSchema, response.text, 'sent message')
+      ensureGmailResponse(response, true)
+      const message = parseMutationJson(sentMessageSchema, response.text, 'sent message')
       return {
         messageId: message.id,
         ...(message.threadId ? { threadId: message.threadId } : {}),
@@ -213,14 +215,30 @@ function gmailSendScope(service: GoogleGmailService): ToolScope {
   return { ...scope, url: `${GMAIL_API_URL}/messages/send` }
 }
 
-function ensureGmailResponse(response: ResponseBody): void {
+function ensureGmailResponse(response: ResponseBody, mutation = false): void {
   if (response.status === 401 || response.status === 403) {
     throw new ToolError('Gmail denied access. Reconnect the account in Settings and confirm the requested Gmail scopes.')
   }
   if (response.status === 404) throw new ToolError('That Gmail message was not found.')
-  if (response.status < 200 || response.status >= 300) throw new ToolError(`Gmail returned HTTP ${response.status}.`)
+  if (response.status < 200 || response.status >= 300) {
+    if (mutation && response.status >= 500) {
+      throw new ToolError(`Gmail returned HTTP ${response.status}. The draft or message may already exist; check Gmail before retrying.`, true)
+    }
+    throw new ToolError(`Gmail returned HTTP ${response.status}.`)
+  }
   if (response.contentType.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+    if (mutation) {
+      throw new ToolError('Gmail may have created the draft or sent the message but returned an unsupported response. Check Gmail before retrying.', true)
+    }
     throw new ToolError('Gmail returned an unsupported response format.')
+  }
+}
+
+function parseMutationJson<T extends z.ZodType>(schema: T, text: string, label: string): z.output<T> {
+  try {
+    return parseJson(schema, text, label)
+  } catch {
+    throw new ToolError(`Gmail may have completed the ${label} request but did not return usable details. Check Gmail before retrying.`, true)
   }
 }
 

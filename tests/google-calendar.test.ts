@@ -206,6 +206,9 @@ describe('Google Calendar tools', () => {
     expect(defaultPolicy.tools.google_calendar_create_event).toBe('ask')
     expect(defaultPolicy.tools.google_calendar_update_event).toBe('ask')
     expect(tools.every((tool) => tool.sessionApprovalAllowed === false)).toBe(true)
+    expect(tools[0].mayHaveSideEffectsOnFailure).toBeUndefined()
+    expect(tools[1].mayHaveSideEffectsOnFailure).toBe(true)
+    expect(tools[2].mayHaveSideEffectsOnFailure).toBe(true)
     expect(tools[0].scope?.({} as never, scopeContext)).toMatchObject({
       kind: 'url',
       host: 'www.googleapis.com'
@@ -217,9 +220,15 @@ describe('Google Calendar tools', () => {
     await store.init()
     await store.updateClientId(clientId)
     await store.saveRefreshToken('refresh-token')
-    const seen: Array<{ url: string; method?: string; headers?: Record<string, string>; body?: string }> = []
+    const seen: Array<{ url: string; method?: string; headers?: Record<string, string>; body?: string; outcomeUnknownOnFailure?: boolean }> = []
     const request: GoogleCalendarRequest = async (url, _signal, options) => {
-      seen.push({ url: url.toString(), method: options.method, headers: options.headers, body: options.body })
+      seen.push({
+        url: url.toString(),
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+        outcomeUnknownOnFailure: options.outcomeUnknownOnFailure
+      })
       if (url.hostname === 'oauth2.googleapis.com') {
         return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'access-token', expires_in: 3600 }) }
       }
@@ -251,6 +260,7 @@ describe('Google Calendar tools', () => {
     expect(listed.note).toContain('untrusted')
     expect(seen.find((entry) => entry.method === 'GET')?.url).toContain('q=IELTS')
     expect(seen.find((entry) => entry.method === 'GET')?.headers?.Authorization).toBe('Bearer access-token')
+    expect(seen.find((entry) => entry.method === 'GET')?.outcomeUnknownOnFailure).toBe(false)
 
     const create = tools[1]
     const createArgs = create.input.parse({
@@ -265,6 +275,7 @@ describe('Google Calendar tools', () => {
     const created = await create.run(createArgs, toolContext)
     expect(created.summary).toBe('Planning meeting')
     const createRequest = seen.find((entry) => entry.method === 'POST' && entry.url.includes('www.googleapis.com'))
+    expect(createRequest?.outcomeUnknownOnFailure).toBe(true)
     expect(new URL(createRequest?.url ?? 'https://invalid.example').pathname).toBe('/calendar/v3/calendars/primary/events')
     expect(new URL(createRequest?.url ?? 'https://invalid.example').searchParams.get('sendUpdates')).toBe('none')
     expect(JSON.parse(createRequest?.body ?? '{}')).not.toHaveProperty('attendees')
@@ -273,9 +284,32 @@ describe('Google Calendar tools', () => {
     expect(update.preview?.(updateArgs, toolContext)).toContain('New title: Updated lesson')
     expect((await update.run(updateArgs, toolContext)).summary).toBe('Updated lesson')
     const updateRequest = seen.find((entry) => entry.method === 'PATCH')
+    expect(updateRequest?.outcomeUnknownOnFailure).toBe(true)
     expect(new URL(updateRequest?.url ?? 'https://invalid.example').searchParams.get('sendUpdates')).toBe('none')
     expect(() => update.input.parse({ eventId: 'event_12345', startsAt: '2026-11-04T11:00:00Z' })).toThrow(/both startsAt and endsAt/)
     expect(() => create.input.parse({ summary: 'Invalid', startsAt: '2026-11-04T11:00:00Z', endsAt: '2026-11-04T10:00:00Z' })).toThrow()
+  })
+
+  it('marks failed or unreadable Calendar mutations as uncertain', async () => {
+    const store = new GoogleCalendarSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('refresh-token')
+    let resultMode: 'server-error' | 'unreadable' = 'server-error'
+    const request: GoogleCalendarRequest = async (url) => {
+      if (url.hostname === 'oauth2.googleapis.com') {
+        return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'access-token', expires_in: 3600 }) }
+      }
+      return resultMode === 'server-error'
+        ? { status: 503, contentType: 'application/json', text: '{}' }
+        : { status: 200, contentType: 'application/json', text: '{}' }
+    }
+    const create = createGoogleCalendarTools(new GoogleCalendarService(store, { request, openExternal: async () => undefined }))[1]
+    const args = create.input.parse({ summary: 'Planning meeting', startsAt: '2026-11-04T10:00:00+03:00', endsAt: '2026-11-04T10:30:00+03:00' })
+
+    await expect(create.run(args, toolContext)).rejects.toMatchObject({ outcomeUnknown: true })
+    resultMode = 'unreadable'
+    await expect(create.run(args, toolContext)).rejects.toMatchObject({ outcomeUnknown: true })
   })
 })
 

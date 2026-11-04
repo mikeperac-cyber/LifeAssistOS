@@ -263,7 +263,8 @@ export class GoogleCalendarService {
       },
       body,
       maxResponseBytes: 512_000,
-      timeoutMs: 12_000
+      timeoutMs: 12_000,
+      outcomeUnknownOnFailure: method !== 'GET'
     })
 
     let response = await makeRequest(await this.getAccessToken(signal))

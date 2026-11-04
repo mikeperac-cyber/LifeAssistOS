@@ -46,7 +46,8 @@ export interface ExecuteCodeResult {
   deniedTool?: string
   stdout: string
   stderr: string
-  toolCalls: Array<{ name: string; ok: boolean; durationMs?: number }>
+  toolCalls: Array<{ name: string; ok: boolean; outcomeUnknown?: boolean; durationMs?: number }>
+  outcomeUnknown?: boolean
   outputTruncated: boolean
 }
 
@@ -175,7 +176,12 @@ async function executeCode(
     } catch (error) {
       result = { callId: '', ok: false, blocked: true, error: errorMessage(error).slice(0, 1000) }
     }
-    summaries.push({ name: record.tool, ok: result.ok, ...(result.durationMs === undefined ? {} : { durationMs: result.durationMs }) })
+    summaries.push({
+      name: record.tool,
+      ok: result.ok,
+      ...(result.outcomeUnknown ? { outcomeUnknown: true } : {}),
+      ...(result.durationMs === undefined ? {} : { durationMs: result.durationMs })
+    })
     if (result.denied) deniedTool = record.tool
 
     const encoded = boundedRpcResult(result)
@@ -252,6 +258,7 @@ async function executeCode(
         timedOut,
         cancelled,
         ...(deniedTool ? { deniedTool } : {}),
+        ...(summaries.some((entry) => entry.outcomeUnknown) ? { outcomeUnknown: true } : {}),
         stdout: redactCommandOutput(stdout, knownSecrets),
         stderr: redactCommandOutput(stderr, knownSecrets),
         toolCalls: summaries,

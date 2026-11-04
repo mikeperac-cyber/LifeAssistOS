@@ -179,8 +179,12 @@ export class ElectronBrowserAutomation implements BrowserAutomation {
     })()`
     const result = await this.execute<{ ok: boolean; message: string }>(window.webContents, script, signal, true)
     if (!result.ok) throw new ToolError(result.message)
-    await this.delay(350, signal)
-    return { ...this.pageAddress(window), message: result.message }
+    try {
+      await this.delay(350, signal)
+      return { ...this.pageAddress(window), message: result.message }
+    } catch {
+      throw new ToolError('The click was sent, but the final page state could not be confirmed. Check the site before retrying.', true)
+    }
   }
 
   async fill(field: string, value: string, signal: AbortSignal): Promise<BrowserActionResult> {
@@ -229,7 +233,11 @@ export class ElectronBrowserAutomation implements BrowserAutomation {
     })()`
     const result = await this.execute<{ ok: boolean; message: string }>(window.webContents, script, signal, true)
     if (!result.ok) throw new ToolError(result.message)
-    return { ...this.pageAddress(window), message: result.message }
+    try {
+      return { ...this.pageAddress(window), message: result.message }
+    } catch {
+      throw new ToolError('The field was filled, but the final page state could not be confirmed. Check the site before retrying.', true)
+    }
   }
 
   dispose(): void {

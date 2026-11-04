@@ -253,7 +253,8 @@ export class GoogleGmailService {
       },
       body,
       maxResponseBytes,
-      timeoutMs: 12_000
+      timeoutMs: 12_000,
+      outcomeUnknownOnFailure: method === 'POST'
     })
 
     let response = await makeRequest(await this.getAccessToken(signal))

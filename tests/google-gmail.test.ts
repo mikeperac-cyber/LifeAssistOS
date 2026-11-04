@@ -181,6 +181,10 @@ describe('Google Gmail tools', () => {
     ])
     expect(tools.every((tool) => tool.sessionApprovalAllowed === false)).toBe(true)
     expect(tools.every((tool) => tool.risk === 'external')).toBe(true)
+    expect(tools[0].mayHaveSideEffectsOnFailure).toBeUndefined()
+    expect(tools[1].mayHaveSideEffectsOnFailure).toBeUndefined()
+    expect(tools[2].mayHaveSideEffectsOnFailure).toBe(true)
+    expect(tools[3].mayHaveSideEffectsOnFailure).toBe(true)
     expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask', 'ask', 'ask'])
     expect(tools[3].verb).toBe('send')
     expect(tools[0].scope?.({}, scopeContext)).toMatchObject({ kind: 'url', host: 'gmail.googleapis.com' })
@@ -191,9 +195,14 @@ describe('Google Gmail tools', () => {
     await store.init()
     await store.updateClientId(clientId)
     await store.saveRefreshToken('gmail-refresh')
-    const seen: Array<{ url: string; method?: string; body?: string }> = []
+    const seen: Array<{ url: string; method?: string; body?: string; outcomeUnknownOnFailure?: boolean }> = []
     const request: GmailRequest = async (url, _signal, options) => {
-      seen.push({ url: url.toString(), method: options.method, body: options.body })
+      seen.push({
+        url: url.toString(),
+        method: options.method,
+        body: options.body,
+        outcomeUnknownOnFailure: options.outcomeUnknownOnFailure
+      })
       if (url.hostname === 'oauth2.googleapis.com') {
         return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'gmail-access', expires_in: 3600 }) }
       }
@@ -259,6 +268,7 @@ describe('Google Gmail tools', () => {
     expect(draft.preview?.(draftArgs, toolContext)).toContain('Here is the progress update.')
     expect(await draft.run(draftArgs, toolContext)).toMatchObject({ draftId: 'draft_123' })
     const draftRequest = seen.find((entry) => entry.url.endsWith('/drafts'))
+    expect(draftRequest?.outcomeUnknownOnFailure).toBe(true)
     const draftPayload = JSON.parse(draftRequest?.body ?? '{}') as { message: { raw: string } }
     const draftMime = Buffer.from(draftPayload.message.raw, 'base64url').toString('utf8')
     expect(draftMime).toContain('To: client@example.com')
@@ -270,7 +280,30 @@ describe('Google Gmail tools', () => {
     expect(send.preview?.(sendArgs, toolContext)).toContain('SEND Gmail message')
     expect(send.preview?.(sendArgs, toolContext)).toContain('Bcc: archive@example.com')
     expect(await send.run(sendArgs, toolContext)).toMatchObject({ messageId: 'sent_123' })
-    expect(seen.some((entry) => entry.method === 'POST' && entry.url.endsWith('/messages/send'))).toBe(true)
+    const sendRequest = seen.find((entry) => entry.method === 'POST' && entry.url.endsWith('/messages/send'))
+    expect(sendRequest?.outcomeUnknownOnFailure).toBe(true)
+  })
+
+  it('marks failed or unreadable Gmail mutations as uncertain', async () => {
+    const store = new GoogleGmailSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('gmail-refresh')
+    let resultMode: 'server-error' | 'unreadable' = 'server-error'
+    const request: GmailRequest = async (url) => {
+      if (url.hostname === 'oauth2.googleapis.com') {
+        return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'gmail-access', expires_in: 3600 }) }
+      }
+      return resultMode === 'server-error'
+        ? { status: 503, contentType: 'application/json', text: '{}' }
+        : { status: 200, contentType: 'application/json', text: '{}' }
+    }
+    const send = createGoogleGmailTools(new GoogleGmailService(store, { request, openExternal: async () => undefined }))[3]
+    const args = send.input.parse({ to: ['client@example.com'], subject: 'Update', body: 'Done.' })
+
+    await expect(send.run(args, toolContext)).rejects.toMatchObject({ outcomeUnknown: true })
+    resultMode = 'unreadable'
+    await expect(send.run(args, toolContext)).rejects.toMatchObject({ outcomeUnknown: true })
   })
 
   it('blocks malformed addresses and subject header injection', () => {

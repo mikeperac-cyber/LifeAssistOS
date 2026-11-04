@@ -34,6 +34,8 @@ export interface ToolResult {
   error?: string
   denied?: boolean
   blocked?: boolean
+  /** A timeout or cancellation left the side-effect outcome unconfirmed. */
+  outcomeUnknown?: boolean
   durationMs?: number
 }
 
@@ -106,6 +108,8 @@ export interface ToolDef<A = unknown, R = unknown> {
   name: string
   description: string
   risk: Risk
+  /** True when an aborted call may still have changed remote state. */
+  mayHaveSideEffectsOnFailure?: boolean
   /** Optional per-tool execution limit, in milliseconds. */
   timeoutMs?: number
   input: z.ZodType<A>

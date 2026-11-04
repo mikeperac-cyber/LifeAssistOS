@@ -8,11 +8,12 @@ import type {
   Risk,
   ToolCall,
   ToolContext,
+  ToolDef,
   ToolResult,
   ToolRuntime,
   ToolScope
 } from '../../shared/types'
-import { isPathInside } from '../../tools/paths'
+import { isPathInside, ToolError } from '../../tools/paths'
 import type { AuditLog } from '../audit/log'
 import type { GrantStore } from '../grants'
 import type { ToolRegistry } from '../registry'
@@ -328,6 +329,37 @@ export class Gateway {
         cancelled
       ])
 
+      const terminalState = toolTerminalState(output, tool)
+      if (terminalState) {
+        const outcomeUnknown = terminalState === 'outcome_unknown' || mayHaveSideEffectsOnFailure(tool)
+        const message = terminalState === 'timed_out'
+          ? outcomeUnknown
+            ? 'The tool timed out and its outcome is unknown. Check the current state before retrying.'
+            : 'The tool timed out before it finished.'
+          : terminalState === 'command_failed'
+            ? 'The command did not finish successfully and may have partially completed. Check the current state before retrying.'
+          : terminalState === 'cancelled'
+            ? outcomeUnknown
+              ? 'The action was cancelled, but its outcome is unknown. Check the current state before retrying.'
+              : 'The action was cancelled.'
+            : 'A nested action may have completed, but its outcome is unknown. Check the current state before retrying.'
+        const cancelledByUser = terminalState === 'cancelled'
+        await this.options.audit.append({
+          type: cancelledByUser ? 'call.cancelled' : 'call.failed',
+          callId: call.id,
+          data: { tool: tool.name, error: message, outcomeUnknown }
+        }).catch((error) => console.error('[gateway] audit write failed', error))
+        return {
+          callId: call.id,
+          ok: false,
+          ...(cancelledByUser ? { denied: true } : {}),
+          ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
+          error: message,
+          output,
+          durationMs: Date.now() - startedAt
+        }
+      }
+
       await this.options.audit
         .append({
           type: 'call.completed',
@@ -343,34 +375,47 @@ export class Gateway {
         durationMs: Date.now() - startedAt
       }
     } catch (error) {
+      const reportedUnknown = error instanceof ToolError && error.outcomeUnknown
       if (signal?.aborted) {
+        const outcomeUnknown = reportedUnknown || mayHaveSideEffectsOnFailure(tool)
+        const message = outcomeUnknown
+          ? `${describeError(error)} The action's outcome is unknown; check the current state before retrying.`
+          : 'The action was cancelled.'
         await this.options.audit
-          .append({ type: 'call.cancelled', callId: call.id, data: { tool: tool.name } })
+          .append({ type: 'call.cancelled', callId: call.id, data: { tool: tool.name, outcomeUnknown } })
           .catch((auditError) => console.error('[gateway] audit write failed', auditError))
         return {
           callId: call.id,
           ok: false,
           denied: true,
-          error: 'The action was cancelled.',
+          ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
+          error: message,
           durationMs: Date.now() - startedAt
         }
       }
 
-      const message = controller.signal.aborted
-        ? 'The tool timed out before it finished.'
-        : describeError(error)
+      const timedOut = controller.signal.aborted
+      const outcomeUnknown = reportedUnknown || (timedOut && mayHaveSideEffectsOnFailure(tool))
+      const message = timedOut
+        ? outcomeUnknown
+          ? 'The tool timed out and its outcome is unknown. Check the current state before retrying.'
+          : 'The tool timed out before it finished.'
+        : outcomeUnknown
+          ? `${describeError(error)} The remote outcome is unknown; check the current state before retrying.`
+          : describeError(error)
 
       await this.options.audit
         .append({
           type: 'call.failed',
           callId: call.id,
-          data: { tool: tool.name, error: message }
+          data: { tool: tool.name, error: message, outcomeUnknown }
         })
         .catch((auditError) => console.error('[gateway] audit write failed', auditError))
 
       return {
         callId: call.id,
         ok: false,
+        ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
         error: message,
         durationMs: Date.now() - startedAt
       }
@@ -544,6 +589,25 @@ export class Gateway {
       durationMs: Date.now() - startedAt
     }
   }
+}
+
+function toolTerminalState(output: unknown, tool: ToolDef): 'timed_out' | 'cancelled' | 'command_failed' | 'outcome_unknown' | null {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return null
+  const record = output as Record<string, unknown>
+  if (record.timedOut === true) return 'timed_out'
+  if (record.cancelled === true) return 'cancelled'
+  if (record.outcomeUnknown === true) return 'outcome_unknown'
+  if (
+    tool.risk === 'command' &&
+    ((typeof record.exitCode === 'number' && record.exitCode !== 0) ||
+      (record.exitCode === null && typeof record.signal === 'string' && record.signal.length > 0))
+  ) return 'command_failed'
+  return null
+}
+
+function mayHaveSideEffectsOnFailure(tool: ToolDef): boolean {
+  if (tool.mayHaveSideEffectsOnFailure !== undefined) return tool.mayHaveSideEffectsOnFailure
+  return tool.risk === 'write' || tool.risk === 'command' || tool.risk === 'destructive' || tool.risk === 'privileged'
 }
 
 function hashArgs(args: unknown): string {

@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { isPublicAddress } from '../src/tools/web'
+import https from 'node:https'
+import { describe, expect, it, vi } from 'vitest'
+
+const { lookup } = vi.hoisted(() => ({ lookup: vi.fn() }))
+vi.mock('node:dns/promises', () => ({ lookup }))
+
+import { isPublicAddress, requestPinnedHttps } from '../src/tools/web'
 
 describe('public address checks', () => {
   it('allows ordinary public IPv4 and IPv6 addresses', () => {
@@ -46,5 +51,30 @@ describe('public address checks', () => {
       expect(isPublicAddress(address), address).toBe(false)
     }
     expect(isPublicAddress('::ffff:1.1.1.1')).toBe(true)
+  })
+})
+
+describe('pinned HTTPS cancellation', () => {
+  it('does not create a request when DNS finishes after cancellation', async () => {
+    let resolveLookup: ((addresses: Array<{ address: string; family: number }>) => void) | undefined
+    lookup.mockImplementation(() => new Promise((resolve) => { resolveLookup = resolve }))
+    const request = vi.spyOn(https, 'request')
+    const controller = new AbortController()
+    const pending = requestPinnedHttps(
+      new URL('https://example.com/mutate'),
+      controller.signal,
+      { method: 'POST', body: '{}', outcomeUnknownOnFailure: true }
+    )
+
+    try {
+      controller.abort()
+      resolveLookup?.([{ address: '93.184.216.34', family: 4 }])
+
+      await expect(pending).rejects.toThrow('The web request was cancelled.')
+      expect(request).not.toHaveBeenCalled()
+    } finally {
+      request.mockRestore()
+      lookup.mockReset()
+    }
   })
 })

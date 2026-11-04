@@ -1053,6 +1053,12 @@ summary:focus-visible {
   color: var(--amber);
 }
 
+.tool-unknown-outcome {
+  border-color: rgba(240, 179, 91, 0.32);
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
 .tool-success {
   padding: 9px 11px;
   border: 1px solid rgba(86, 214, 192, 0.18);

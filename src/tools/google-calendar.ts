@@ -100,6 +100,7 @@ export function createGoogleCalendarTools(service: GoogleCalendarService): ToolD
     name: 'google_calendar_create_event',
     description: 'Create an event on the connected primary Google Calendar after approval. It never adds guests, sends guest notifications, or creates a meeting link.',
     risk: 'external',
+    mayHaveSideEffectsOnFailure: true,
     sessionApprovalAllowed: false,
     input: createInput,
     scope: () => calendarScope(service),
@@ -120,8 +121,8 @@ export function createGoogleCalendarTools(service: GoogleCalendarService): ToolD
         ...(args.description ? { description: args.description } : {}),
         ...(args.location ? { location: args.location } : {})
       }))
-      ensureGoogleResponse(response)
-      return mapRequiredEvent(parseEvent(response.text))
+      ensureGoogleResponse(response, true)
+      return parseMutationEvent(response.text)
     }
   }
 
@@ -129,6 +130,7 @@ export function createGoogleCalendarTools(service: GoogleCalendarService): ToolD
     name: 'google_calendar_update_event',
     description: 'Update selected fields of an event in the connected primary Google Calendar after approval. It does not change guests or send guest notifications.',
     risk: 'external',
+    mayHaveSideEffectsOnFailure: true,
     sessionApprovalAllowed: false,
     input: updateInput,
     scope(args) {
@@ -155,8 +157,8 @@ export function createGoogleCalendarTools(service: GoogleCalendarService): ToolD
       const url = new URL(`${API_URL.toString()}/${encodeURIComponent(args.eventId)}`)
       url.searchParams.set('sendUpdates', 'none')
       const response = await service.requestCalendarApi(url, 'PATCH', context.signal, JSON.stringify(patch))
-      ensureGoogleResponse(response)
-      return mapRequiredEvent(parseEvent(response.text))
+      ensureGoogleResponse(response, true)
+      return parseMutationEvent(response.text)
     }
   }
 
@@ -179,16 +181,30 @@ function eventRange(timeMin?: string, timeMax?: string): { start: string; end: s
   }
 }
 
-function ensureGoogleResponse(response: { status: number; contentType: string; text: string }): void {
+function ensureGoogleResponse(response: { status: number; contentType: string; text: string }, mutation = false): void {
   if (response.status === 401 || response.status === 403) {
     throw new ToolError('Google Calendar denied access. Reconnect the account in Settings and confirm the requested event scope.')
   }
   if (response.status === 404) throw new ToolError('That Google Calendar event was not found.')
   if (response.status < 200 || response.status >= 300) {
+    if (mutation && response.status >= 500) {
+      throw new ToolError(`Google Calendar returned HTTP ${response.status}. The event may have changed; check Calendar before retrying.`, true)
+    }
     throw new ToolError(`Google Calendar returned HTTP ${response.status}.`)
   }
   if (response.contentType.split(';', 1)[0].trim().toLowerCase() !== 'application/json') {
+    if (mutation) {
+      throw new ToolError('Google Calendar may have changed the event but returned an unsupported response. Check Calendar before retrying.', true)
+    }
     throw new ToolError('Google Calendar returned an unsupported response format.')
+  }
+}
+
+function parseMutationEvent(text: string): CalendarEvent {
+  try {
+    return mapRequiredEvent(parseEvent(text))
+  } catch {
+    throw new ToolError('Google Calendar may have changed the event but did not return usable event details. Check Calendar before retrying.', true)
   }
 }
 

@@ -38,6 +38,8 @@ export interface PinnedHttpsRequestOptions {
   responseType?: 'text' | 'bytes'
   maxResponseBytes?: number
   timeoutMs?: number
+  /** Set for mutations whose server-side result can outlive a failed response. */
+  outcomeUnknownOnFailure?: boolean
 }
 
 /** A read-only HTTPS fetch restricted to an exact user-managed domain allowlist. */
@@ -145,6 +147,7 @@ export async function requestPinnedHttps(
   } catch {
     throw new ToolError('Could not resolve the allowlisted website.')
   }
+  if (signal.aborted) throw new ToolError('The web request was cancelled.')
 
   if (addresses.length === 0 || addresses.some((entry) => !isPublicAddress(entry.address))) {
     throw new ToolError('The website resolves to a private or reserved network address, so it was blocked.')
@@ -188,7 +191,10 @@ export async function requestPinnedHttps(
         response.on('data', (chunk: Buffer) => {
           total += chunk.length
           if (total > (options.maxResponseBytes ?? MAX_RESPONSE_BYTES)) {
-            response.destroy(new ToolError('The website response exceeded the size limit.'))
+            response.destroy(new ToolError(
+              'The website response exceeded the size limit.',
+              options.outcomeUnknownOnFailure === true
+            ))
             return
           }
           chunks.push(chunk)
@@ -202,15 +208,27 @@ export async function requestPinnedHttps(
             ...(options.responseType === 'bytes' ? { bytes } : {})
           })
         })
-        response.once('error', reject)
+        response.once('error', (error) => {
+          reject(options.outcomeUnknownOnFailure
+            ? new ToolError(error instanceof Error ? error.message : 'The HTTPS response failed.', true)
+            : error)
+        })
       }
     )
 
-    request.setTimeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS, () => request.destroy(new ToolError('The web request timed out.')))
+    request.setTimeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS, () => request.destroy(new ToolError(
+      'The web request timed out.',
+      options.outcomeUnknownOnFailure === true
+    )))
     request.once('error', (error) => {
       agent.destroy()
-      if (signal.aborted) reject(new ToolError('The web request was cancelled.'))
-      else reject(error)
+      if (signal.aborted) {
+        reject(new ToolError('The web request was cancelled.', options.outcomeUnknownOnFailure === true))
+      } else if (options.outcomeUnknownOnFailure) {
+        reject(error instanceof ToolError && error.outcomeUnknown
+          ? error
+          : new ToolError(error instanceof Error ? error.message : 'The HTTPS request failed.', true))
+      } else reject(error)
     })
     request.once('close', () => agent.destroy())
     request.end(options.body)

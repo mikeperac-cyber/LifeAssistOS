@@ -12,6 +12,7 @@ import type {
   FolderGrant,
   MemoryMatch,
   AssistantSkillSummary,
+  Risk,
   ToolCall,
   ToolResult
 } from '../shared/types'
@@ -406,11 +407,12 @@ export class Agent {
             index,
             tool: step.tool,
             ok: visibleResult.ok,
+            ...(visibleResult.outcomeUnknown ? { outcomeUnknown: true } : {}),
             ...(visibleResult.output !== undefined ? { output: boundSequenceValue(visibleResult.output, outputCharsPerStep) } : {}),
             ...(visibleResult.error ? { error: clipSequenceText(visibleResult.error, 1_000) } : {})
           })
 
-          if (visibleResult.ok && (risk === 'external' || risk === 'command')) externalContentSeen = true
+          if (hasUntrustedOutput(risk, visibleResult)) externalContentSeen = true
           if (visibleResult.denied) {
             denied = true
             failure = `You denied ${step.tool}; the sequence stopped without running later steps.`
@@ -429,6 +431,7 @@ export class Agent {
           ...(failure ? { error: clipSequenceText(failure, 1_500) } : {}),
           ...(denied ? { denied: true } : {}),
           ...(blocked ? { blocked: true } : {}),
+          ...(stepResults.some((result) => result.outcomeUnknown) ? { outcomeUnknown: true } : {}),
           output: { completedSteps: stepResults.filter((result) => result.ok).length, totalSteps: steps.length, steps: visibleSteps }
         }
       }
@@ -517,7 +520,7 @@ export class Agent {
           const visibleResult = resultVisibleToModel(nestedCall, nestedResult)
           recordSummarySource(summaryGuard, this.options.grants, nestedCall, visibleResult)
           recordProjectReview(projectGuard, this.options.grants, nestedCall, visibleResult)
-          if (visibleResult.ok && (risk === 'external' || risk === 'command')) externalContentSeen = true
+          if (hasUntrustedOutput(risk, visibleResult)) externalContentSeen = true
           this.options.emit({ type: 'tool_result', result: visibleResult })
           return visibleResult
         }
@@ -819,7 +822,7 @@ export class Agent {
             const modelResult = resultVisibleToModel(call, result)
             recordSummarySource(summaryGuard, this.options.grants, call, modelResult)
             recordProjectReview(projectGuard, this.options.grants, call, modelResult)
-            if ((call.risk === 'external' || call.risk === 'command') && result.ok) externalContentSeen = true
+            if (hasUntrustedOutput(call.risk, modelResult)) externalContentSeen = true
             if (call.name === 'find_tools' && modelResult.ok) {
               const output = modelResult.output as { tools?: unknown } | undefined
               const foundNames = Array.isArray(output?.tools)
@@ -1010,7 +1013,7 @@ function systemPrompt(
     '- For dependent tool workflows, use execute_tool_sequence for up to 8 already-loaded tools in one assistant step. Every sequence step still goes through the normal gateway, validation, audit, scope checks, and approvals. Later arguments can use {"$fromStep": 0, "path": "output.id"} to reference an earlier successful result; step indexes start at 0. Run find_tools directly before a sequence if a capability is not loaded. This is a bounded tool-call interface, not arbitrary code execution.',
     '- Use save_skill only when the user explicitly asks to save or improve a reusable procedure. The approval preview shows the full instructions that will guide future chats; skills are plain text and cannot grant tools or permissions.',
     '- Before every write_file change, Mike Assist keeps a bounded local restore point. If the user asks to undo or redo an assistant file change, list_file_checkpoints and restore_file_checkpoint operate only on the exact approved path, verify the file still matches the recorded state, and require one-time approval.',
-    '- Never claim you did something you did not do. If a tool is denied, blocked, or fails, say so plainly.',
+    '- Report tool failures honestly; verify uncertain outcomes before retrying.',
     '- Use paths relative to an approved folder. The "root" argument selects the folder by its label; omit it for the primary folder. Never use absolute paths.',
     '- Do not try to read or write outside the approved folders.',
     '- After a successful write, report the exact folder and relative path returned by the tool. Never claim the file was saved in a different folder.',
@@ -1328,13 +1331,18 @@ function boundCodeExecutionResult(result: ToolResult, output: Record<string, unk
         exitCode: output.exitCode ?? null,
         timedOut: output.timedOut === true,
         cancelled: output.cancelled === true,
+        outcomeUnknown: output.outcomeUnknown === true,
         ...(typeof output.deniedTool === 'string' ? { deniedTool: output.deniedTool.slice(0, 120) } : {}),
         stdout: '',
         stderr: '',
         toolCalls: calls.map((call) => {
           if (!call || typeof call !== 'object') return { name: 'unknown', ok: false }
           const record = call as Record<string, unknown>
-          return { name: typeof record.name === 'string' ? record.name.slice(0, 120) : 'unknown', ok: record.ok === true }
+          return {
+            name: typeof record.name === 'string' ? record.name.slice(0, 120) : 'unknown',
+            ok: record.ok === true,
+            ...(record.outcomeUnknown === true ? { outcomeUnknown: true } : {})
+          }
         }),
         toolCallsOmitted: allCalls - calls.length,
         outputTruncated: true
@@ -1371,7 +1379,8 @@ function toolResultContent(result: ToolResult, toolName?: string): string {
         error: result.error ?? 'The action did not complete.',
         denied: result.denied ?? false,
         blocked: result.blocked ?? false,
-        ...((toolName === SEQUENCE_TOOL_NAME || toolName === EXECUTE_CODE_TOOL_NAME) && result.output !== undefined
+        ...(result.outcomeUnknown ? { outcomeUnknown: true } : {}),
+        ...((toolName === SEQUENCE_TOOL_NAME || toolName === EXECUTE_CODE_TOOL_NAME || toolName === 'run_command') && result.output !== undefined
           ? { output: result.output }
           : {})
       }
@@ -1386,6 +1395,11 @@ function toolResultContent(result: ToolResult, toolName?: string): string {
   return text.length > MAX_TOOL_RESULT_CHARS
     ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n… truncated`
     : text
+}
+
+function hasUntrustedOutput(risk: Risk | undefined, result: ToolResult): boolean {
+  return (risk === 'external' || risk === 'command') &&
+    (result.ok || result.output !== undefined || result.outcomeUnknown === true)
 }
 
 function historyContainsExternalData(history: ProviderMessage[]): boolean {
@@ -1405,19 +1419,23 @@ function historyContainsExternalData(history: ProviderMessage[]): boolean {
       try {
         const result = JSON.parse(entry.content) as {
           ok?: unknown
+          outcomeUnknown?: unknown
           output?: {
-            steps?: Array<{ tool?: unknown; ok?: unknown }>
-            toolCalls?: Array<{ name?: unknown; ok?: unknown }>
+            steps?: Array<{ tool?: unknown; ok?: unknown; output?: unknown; outcomeUnknown?: unknown }>
+            toolCalls?: Array<{ name?: unknown; ok?: unknown; outcomeUnknown?: unknown }>
           }
         }
         const composedCall = untrustedCalls.get(entry.tool_call_id ?? '') === true
-        if (result.ok === true && !composedCall) return true
+        if (result.outcomeUnknown === true) return true
+        if (!composedCall && (result.ok === true || result.output !== undefined)) return true
         if (untrustedCalls.get(entry.tool_call_id ?? '') === true &&
-            result.output?.steps?.some((step) => step.ok === true && typeof step.tool === 'string' && isUntrustedSourceTool(step.tool))) {
+            result.output?.steps?.some((step) => typeof step.tool === 'string' && isUntrustedSourceTool(step.tool) &&
+              (step.ok === true || step.output !== undefined || step.outcomeUnknown === true))) {
           return true
         }
         if (result.output?.toolCalls?.some((call) =>
-          call.ok === true && typeof call.name === 'string' && isUntrustedSourceTool(call.name)
+          typeof call.name === 'string' && isUntrustedSourceTool(call.name) &&
+          (call.ok === true || call.outcomeUnknown === true)
         )) return true
       } catch {
         // Invalid tool results are not considered trustworthy data.

@@ -3,9 +3,12 @@ import path from 'node:path'
 import type { FolderGrant, ToolContext } from '../shared/types'
 
 export class ToolError extends Error {
-  constructor(message: string) {
+  readonly outcomeUnknown: boolean
+
+  constructor(message: string, outcomeUnknown = false) {
     super(message)
     this.name = 'ToolError'
+    this.outcomeUnknown = outcomeUnknown
   }
 }
 

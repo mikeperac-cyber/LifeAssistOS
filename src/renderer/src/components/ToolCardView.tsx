@@ -73,10 +73,28 @@ function ResultBody({ card }: { card: ToolCardState }): React.JSX.Element | null
   if (!result) return null
 
   if (result.denied || result.blocked || !result.ok) {
+    const commandOutput = card.call.name === 'run_command' && result.output && typeof result.output === 'object'
+      ? result.output as { stdout?: unknown; stderr?: unknown }
+      : null
+    const stdout = typeof commandOutput?.stdout === 'string' ? commandOutput.stdout : ''
+    const stderr = typeof commandOutput?.stderr === 'string' ? commandOutput.stderr : ''
+    const visibleCommandOutput = [
+      stdout ? `STDOUT\n${stdout}` : '',
+      stderr ? `STDERR\n${stderr}` : ''
+    ].filter(Boolean).join('\n\n')
     return (
-      <div className={`tool-error ${result.denied ? 'tool-denied' : ''}`}>
-        {result.error ?? 'The action did not complete.'}
-      </div>
+      <>
+        <div className={`tool-error ${result.denied ? 'tool-denied' : ''} ${result.outcomeUnknown ? 'tool-unknown-outcome' : ''}`} role={result.outcomeUnknown ? 'alert' : undefined}>
+          {result.outcomeUnknown && <strong>Outcome unknown. </strong>}
+          {result.error ?? 'The action did not complete.'}
+        </div>
+        {visibleCommandOutput && (
+          <div>
+            <div className="tool-section-label">Command output</div>
+            <pre className="tool-pre tool-content">{visibleCommandOutput}</pre>
+          </div>
+        )}
+      </>
     )
   }
 

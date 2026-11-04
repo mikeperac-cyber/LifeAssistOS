@@ -11,7 +11,7 @@ import { SessionApprovalStore } from '../src/core/gateway/session-approvals'
 import { ToolRegistry } from '../src/core/registry'
 import type { AuditEvent, ToolCall, ToolContext, ToolDef } from '../src/shared/types'
 import { fsTools, writeFileTool } from '../src/tools/fs'
-import { resolveGrantPath } from '../src/tools/paths'
+import { resolveGrantPath, ToolError } from '../src/tools/paths'
 
 let root = ''
 let outside = ''
@@ -411,6 +411,98 @@ describe('Gateway', () => {
     expect(result.error).toContain('timed out')
     expect(Date.now() - started).toBeLessThan(1000)
     expect(audit.list().map((event) => event.type)).toContain('call.failed')
+  })
+
+  it('warns that a mutating tool timeout may still commit after the caller returns', async () => {
+    let committed = false
+    const registry = registryWith([{
+      name: 'slow_write',
+      description: 'A write that finishes after its caller times out',
+      risk: 'write',
+      input: z.object({}),
+      run: async () => new Promise((resolve) => {
+        setTimeout(() => {
+          committed = true
+          resolve({ saved: true })
+        }, 80)
+      })
+    }])
+    const policy: PolicyConfig = {
+      ...testPolicy,
+      tools: { ...testPolicy.tools, slow_write: 'allow' }
+    }
+    const gateway = makeGateway({ registry, policy, toolTimeoutMs: 20 })
+
+    const result = await gateway.execute(call('slow_write', {}))
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('outcome is unknown')
+    expect(result.error).toContain('before retrying')
+    expect(result.outcomeUnknown).toBe(true)
+    expect(committed).toBe(false)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(committed).toBe(true)
+  })
+
+  it('does not report an internally timed-out tool as successful', async () => {
+    const registry = registryWith([{
+      name: 'timed_write',
+      description: 'A tool that reports its own timeout',
+      risk: 'write',
+      input: z.object({}),
+      run: async () => ({ timedOut: true, exitCode: null })
+    }])
+    const policy: PolicyConfig = {
+      ...testPolicy,
+      tools: { ...testPolicy.tools, timed_write: 'allow' }
+    }
+    const result = await makeGateway({ registry, policy }).execute(call('timed_write', {}))
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('timed out')
+    expect(result.outcomeUnknown).toBe(true)
+    expect(audit.list().map((event) => event.type)).toContain('call.failed')
+  })
+
+  it('reports nonzero command exits as failures with possible partial effects', async () => {
+    const registry = registryWith([{
+      name: 'partial_command',
+      description: 'A command that returns a nonzero exit code',
+      risk: 'command',
+      input: z.object({}),
+      run: async () => ({ exitCode: 1, signal: null, timedOut: false })
+    }])
+    const policy: PolicyConfig = {
+      ...testPolicy,
+      tools: { ...testPolicy.tools, partial_command: 'allow' }
+    }
+    const result = await makeGateway({ registry, policy }).execute(call('partial_command', {}))
+
+    expect(result.ok).toBe(false)
+    expect(result.outcomeUnknown).toBe(true)
+    expect(result.error).toContain('may have partially completed')
+    expect(result.error).toContain('before retrying')
+  })
+
+  it('surfaces uncertainty from a mutating remote request failure', async () => {
+    const registry = registryWith([{
+      name: 'remote_write',
+      description: 'A remote write with an uncertain response',
+      risk: 'external',
+      mayHaveSideEffectsOnFailure: true,
+      input: z.object({}),
+      run: async () => { throw new ToolError('The web request timed out.', true) }
+    }])
+    const policy: PolicyConfig = {
+      ...testPolicy,
+      tools: { ...testPolicy.tools, remote_write: 'allow' }
+    }
+    const result = await makeGateway({ registry, policy }).execute(call('remote_write', {}))
+
+    expect(result.ok).toBe(false)
+    expect(result.outcomeUnknown).toBe(true)
+    expect(result.error).toContain('remote outcome is unknown')
+    expect(result.error).toContain('before retrying')
   })
 
   it('reports tool failures', async () => {
