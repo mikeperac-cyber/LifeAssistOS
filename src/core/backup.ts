@@ -28,6 +28,18 @@ const OPTIONAL_DATA_FILES = [
   'google-drive.json',
   'scheduled-tasks.json'
 ]
+const BACKUP_ROOT_FILES = new Set([
+  'conversations.sqlite',
+  'finance.sqlite',
+  'memory.sqlite',
+  'research.sqlite',
+  'vault.sqlite',
+  'planning.sqlite',
+  'coaching.sqlite',
+  'file-checkpoints.sqlite',
+  ...DATA_FILES,
+  ...OPTIONAL_DATA_FILES
+])
 
 export interface BackupExtras {
   research?: ResearchStore
@@ -179,7 +191,7 @@ export async function verifyBackupSnapshot(
     return { valid: false, encrypted: false, error: 'Missing or invalid manifest.json in backup folder.' }
   }
 
-  if (manifest.formatVersion !== 1 || !Array.isArray(manifest.includes)) {
+  if (manifest.formatVersion !== 1 || !isValidManifestIncludes(manifest.includes)) {
     return { valid: false, encrypted: Boolean(manifest.encrypted), error: 'Unsupported backup manifest format.' }
   }
 
@@ -200,6 +212,27 @@ export async function verifyBackupSnapshot(
       const rawEnvelope = await readFile(path.join(target, 'archive.enc'), 'utf8')
       const envelope = JSON.parse(rawEnvelope) as EncryptedArchiveEnvelope
       const payload = decryptArchive(envelope, passphrase)
+      if (
+        !payload ||
+        typeof payload.files !== 'object' ||
+        payload.files === null ||
+        Array.isArray(payload.files)
+      ) {
+        return {
+          valid: false,
+          encrypted: true,
+          error: 'Encrypted backup archive has an invalid file list.'
+        }
+      }
+      for (const [relPath, base64Data] of Object.entries(payload.files)) {
+        if (!isAllowedArchiveFile(relPath, manifest.includes) || typeof base64Data !== 'string') {
+          return {
+            valid: false,
+            encrypted: true,
+            error: 'Encrypted backup contains an unsafe or unexpected entry.'
+          }
+        }
+      }
       for (const item of manifest.includes) {
         if (item === 'audit/') continue
         if (!(item in payload.files)) {
@@ -305,10 +338,19 @@ export async function restoreBackupSnapshot(
       const rawEnvelope = await readFile(path.join(source, 'archive.enc'), 'utf8')
       const envelope = JSON.parse(rawEnvelope) as EncryptedArchiveEnvelope
       const payload = decryptArchive(envelope, options!.passphrase!.trim())
+      const archiveEntries = Object.entries(payload.files)
+      if (archiveEntries.some(([relPath, base64Data]) =>
+        !isAllowedArchiveFile(relPath, verification.includes!) || typeof base64Data !== 'string'
+      )) {
+        throw new Error('Encrypted backup contains an unsafe or unexpected entry.')
+      }
       await rm(path.join(destination, 'audit'), { recursive: true, force: true }).catch(() => undefined)
-      for (const [relPath, base64Data] of Object.entries(payload.files)) {
+      for (const [relPath, base64Data] of archiveEntries) {
         const normalizedRel = relPath.split('/').join(path.sep)
-        const targetFile = path.join(destination, normalizedRel)
+        const targetFile = path.resolve(destination, normalizedRel)
+        if (!isPathInside(destination, targetFile)) {
+          throw new Error('Encrypted backup entry resolves outside Mike Assist app data.')
+        }
         if (targetFile.endsWith('.sqlite')) {
           await rm(`${targetFile}-wal`, { force: true }).catch(() => undefined)
           await rm(`${targetFile}-shm`, { force: true }).catch(() => undefined)
@@ -325,7 +367,10 @@ export async function restoreBackupSnapshot(
           restoredFiles.push('audit/')
           continue
         }
-        const targetFile = path.join(destination, item)
+        const targetFile = path.resolve(destination, item)
+        if (!isPathInside(destination, targetFile)) {
+          throw new Error('Backup entry resolves outside Mike Assist app data.')
+        }
         if (item.endsWith('.sqlite')) {
           await rm(`${targetFile}-wal`, { force: true }).catch(() => undefined)
           await rm(`${targetFile}-shm`, { force: true }).catch(() => undefined)
@@ -339,6 +384,19 @@ export async function restoreBackupSnapshot(
   }
 
   return { restoredFiles }
+}
+
+function isValidManifestIncludes(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => entry === 'audit/' || (typeof entry === 'string' && BACKUP_ROOT_FILES.has(entry))) &&
+    new Set(value).size === value.length
+  )
+}
+
+function isAllowedArchiveFile(relPath: string, includes: readonly string[]): boolean {
+  if (BACKUP_ROOT_FILES.has(relPath)) return includes.includes(relPath)
+  return includes.includes('audit/') && /^audit\/[A-Za-z0-9._-]{1,120}\.jsonl$/.test(relPath)
 }
 
 async function collectFilesRecursively(

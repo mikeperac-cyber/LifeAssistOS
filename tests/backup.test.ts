@@ -1,3 +1,4 @@
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -20,6 +21,44 @@ let backupRoot = ''
 let conversations: ConversationStore
 let finance: FinanceStore
 let memory: MemoryStore
+
+async function addEncryptedArchiveEntry(
+  backupDir: string,
+  passphrase: string,
+  relPath: string,
+  value: string
+): Promise<void> {
+  const archivePath = path.join(backupDir, 'archive.enc')
+  const envelope = JSON.parse(await readFile(archivePath, 'utf8')) as {
+    salt: string
+    iv: string
+    tag: string
+    ciphertext: string
+  }
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    scryptSync(passphrase, Buffer.from(envelope.salt, 'base64'), 32),
+    Buffer.from(envelope.iv, 'base64')
+  )
+  decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'))
+  const plaintext = Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+    decipher.final()
+  ]).toString('utf8')
+  const payload = JSON.parse(plaintext) as { files: Record<string, string> }
+  payload.files[relPath] = Buffer.from(value, 'utf8').toString('base64')
+
+  const salt = randomBytes(16)
+  const iv = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', scryptSync(passphrase, salt, 32), iv)
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()])
+  await writeFile(archivePath, JSON.stringify({
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    ciphertext: ciphertext.toString('base64')
+  }), 'utf8')
+}
 
 beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-backup-'))
@@ -204,6 +243,22 @@ describe('backup snapshot', () => {
     expect(memory.recall('denizli')[0]?.text).toBe('Mike teaches in Denizli')
   })
 
+  it('rejects unsafe paths in an unencrypted backup manifest', async () => {
+    const target = path.join(backupRoot, 'unsafe-manifest')
+    const outsideFile = path.join(dir, 'outside.txt')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    const manifestPath = path.join(target, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { includes: string[] }
+    manifest.includes.push('../../outside.txt')
+    await writeFile(manifestPath, JSON.stringify(manifest), 'utf8')
+    await writeFile(outsideFile, 'keep this file', 'utf8')
+
+    const verification = await verifyBackupSnapshot(target)
+    expect(verification.valid).toBe(false)
+    await expect(restoreBackupSnapshot(target, source)).rejects.toThrow(/manifest/i)
+    expect(await readFile(outsideFile, 'utf8')).toBe('keep this file')
+  })
+
   it('creates, verifies, and restores a passphrase-encrypted backup snapshot', async () => {
     const target = path.join(backupRoot, 'encrypted-backup')
     await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0', {
@@ -245,5 +300,19 @@ describe('backup snapshot', () => {
     )
     expect(finance.report('month').recent).toHaveLength(1)
     expect(memory.list()).toHaveLength(1)
+  })
+
+  it('rejects undeclared traversal entries in an encrypted backup archive', async () => {
+    const target = path.join(backupRoot, 'unsafe-encrypted-backup')
+    const outsideFile = path.join(dir, 'outside-encrypted.txt')
+    const passphrase = 'correct-horse-battery-staple'
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0', { passphrase })
+    await addEncryptedArchiveEntry(target, passphrase, '../../outside-encrypted.txt', 'overwrite')
+    await writeFile(outsideFile, 'keep this file', 'utf8')
+
+    const verification = await verifyBackupSnapshot(target, { passphrase })
+    expect(verification.valid).toBe(false)
+    await expect(restoreBackupSnapshot(target, source, { passphrase })).rejects.toThrow(/unsafe|unexpected/i)
+    expect(await readFile(outsideFile, 'utf8')).toBe('keep this file')
   })
 })
