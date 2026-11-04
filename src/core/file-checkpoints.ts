@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { backup, DatabaseSync } from 'node:sqlite'
+import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -42,12 +43,12 @@ export class FileCheckpointStore {
   private closed = false
 
   constructor(private readonly file: string) {
-    this.db = new DatabaseSync(file)
+    this.db = openSQLiteDatabase(file)
   }
 
   async init(): Promise<void> {
     if (this.closed) {
-      this.db = new DatabaseSync(this.file)
+      this.db = openSQLiteDatabase(this.file)
       this.closed = false
     }
     await mkdir(path.dirname(this.file), { recursive: true })
@@ -119,7 +120,7 @@ export class FileCheckpointStore {
       this.prune(checkpoint.grantId, checkpoint.relativePath)
       this.db.exec('COMMIT')
     } catch (error) {
-      this.db.exec('ROLLBACK')
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original checkpoint failure. */ }
       throw error
     }
     return checkpoint

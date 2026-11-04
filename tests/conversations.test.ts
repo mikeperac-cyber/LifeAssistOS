@@ -117,6 +117,30 @@ describe('ConversationStore', () => {
     }
   })
 
+  it('preserves the original SQLite error when a failed message write already rolled back', () => {
+    const sessionId = store.activeSessionId()!
+    const fault = new DatabaseSync(file)
+    fault.exec(`
+      CREATE TRIGGER fail_message_insert BEFORE INSERT ON chat_messages BEGIN
+        SELECT RAISE(ROLLBACK, 'forced message insert failure');
+      END;
+    `)
+    try {
+      expect(() => store.appendMessage(sessionId, {
+        id: 'failed-message',
+        role: 'user',
+        text: 'This write must roll back.',
+        at: new Date().toISOString()
+      })).toThrow(/forced message insert failure/)
+    } finally {
+      fault.exec('DROP TRIGGER fail_message_insert')
+      fault.close()
+    }
+
+    expect(store.getMessages(sessionId)).toEqual([])
+    expect(store.getSession(sessionId)?.title).toBe('New chat')
+  })
+
   it('keeps provider tool history and active session across restarts', () => {
     const firstId = store.activeSessionId()!
     const second = store.createSession()

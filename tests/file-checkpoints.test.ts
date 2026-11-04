@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, open, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AuditLog } from '../src/core/audit/log'
 import { FileCheckpointStore, MAX_CHECKPOINT_FILE_BYTES } from '../src/core/file-checkpoints'
@@ -61,6 +62,33 @@ async function harness(beforeApproval?: (request: PermissionRequest) => Promise<
 }
 
 describe('assistant file restore points', () => {
+  it('preserves the original SQLite error when checkpoint insertion already rolled back', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'mike-assist-checkpoint-rollback-'))
+    const file = path.join(directory, 'file-checkpoints.sqlite')
+    const checkpoints = new FileCheckpointStore(file)
+    await checkpoints.init()
+    const fault = new DatabaseSync(file)
+    fault.exec(`
+      CREATE TRIGGER fail_checkpoint_insert BEFORE INSERT ON file_checkpoints BEGIN
+        SELECT RAISE(ROLLBACK, 'forced checkpoint insert failure');
+      END;
+    `)
+
+    try {
+      expect(() => checkpoints.create({
+        grantId: 'grant',
+        relativePath: 'notes.txt',
+        beforeContent: Buffer.from('before'),
+        afterContent: Buffer.from('after')
+      })).toThrow(/forced checkpoint insert failure/)
+    } finally {
+      fault.exec('DROP TRIGGER fail_checkpoint_insert')
+      fault.close()
+      checkpoints.close()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('restores an overwritten file and can redo the change', async () => {
     const { root, gateway, approvals } = await harness()
     const target = path.join(root, 'src', 'app.ts')

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
+import { openSQLiteDatabase } from './sqlite'
 import type {
   MemoryFact,
   MemoryFactInput,
@@ -36,12 +37,12 @@ export class MemoryStore {
   private closed = false
 
   constructor(private readonly file: string) {
-    this.db = new DatabaseSync(file)
+    this.db = openSQLiteDatabase(file)
   }
 
   async init(): Promise<void> {
     if (this.closed) {
-      this.db = new DatabaseSync(this.file)
+      this.db = openSQLiteDatabase(this.file)
       this.closed = false
     }
     await mkdir(path.dirname(this.dbPath), { recursive: true })

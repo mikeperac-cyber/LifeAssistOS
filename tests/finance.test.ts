@@ -80,6 +80,17 @@ describe('FinanceStore', () => {
     expect(finance.report('month').totals[0].expenseMinor).toBe(325)
   })
 
+  it('creates missing parent directories before opening a new database', async () => {
+    const nested = new FinanceStore(path.join(dir, 'nested', 'deeper', 'finance.sqlite'))
+    try {
+      await nested.init()
+      nested.add({ direction: 'income', amount: '1.00', currency: 'USD', category: 'other' })
+      expect(nested.report('month').totals[0].incomeMinor).toBe(100)
+    } finally {
+      nested.close()
+    }
+  })
+
   it('exports transactions to CSV and imports them into another ledger', async () => {
     finance.add({
       direction: 'income',

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { backup, DatabaseSync } from 'node:sqlite'
+import { openSQLiteDatabase } from './sqlite'
 import type { ChatImageAttachment, ChatMessage, ChatMode, ChatSession } from '../shared/types'
 import type { ProviderMessage } from './providers/types'
 
@@ -39,12 +40,12 @@ export class ConversationStore {
   private closed = false
 
   constructor(private readonly file: string) {
-    this.db = new DatabaseSync(file)
+    this.db = openSQLiteDatabase(file)
   }
 
   async init(): Promise<void> {
     if (this.closed) {
-      this.db = new DatabaseSync(this.file)
+      this.db = openSQLiteDatabase(this.file)
       this.closed = false
     }
     // DatabaseSync opens the file on construction, so ensure the parent exists
@@ -123,7 +124,7 @@ export class ConversationStore {
         `).run()
         this.db.exec('COMMIT')
       } catch (error) {
-        this.db.exec('ROLLBACK')
+        try { this.db.exec('ROLLBACK') } catch { /* Keep the original migration failure. */ }
         throw error
       }
     }
@@ -447,7 +448,7 @@ export class ConversationStore {
         .run(title, updatedAt, sessionId)
       this.db.exec('COMMIT')
     } catch (error) {
-      this.db.exec('ROLLBACK')
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original write failure. */ }
       throw error
     }
   }

@@ -295,6 +295,36 @@ describe('backup snapshot', () => {
     expect(memory.recall('denizli')[0]?.text).toBe('Mike teaches in Denizli')
   })
 
+  it('removes an optional SQLite database and orphaned WAL files omitted by an older snapshot', async () => {
+    const target = path.join(backupRoot, 'older-snapshot-without-research')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+
+    const researchFile = path.join(source, 'research.sqlite')
+    const research = new ResearchStore(researchFile)
+    await research.init()
+    research.create({ title: 'Local only', question: 'Should disappear with the restored snapshot?' })
+    research.close()
+    await writeFile(`${researchFile}-wal`, 'orphaned WAL data')
+    await writeFile(`${researchFile}-shm`, 'orphaned shared memory data')
+
+    await restoreBackupSnapshot(target, source, {
+      closeStores: () => {
+        conversations.close()
+        finance.close()
+        memory.close()
+        research.close()
+      }
+    })
+
+    await expect(readFile(researchFile)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(`${researchFile}-wal`)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(`${researchFile}-shm`)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    await research.init()
+    expect(research.list()).toEqual([])
+    research.close()
+  })
+
   it('rolls back a failed restore and reopens the prior stores', async () => {
     const target = path.join(backupRoot, 'restore-rollback')
     await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')

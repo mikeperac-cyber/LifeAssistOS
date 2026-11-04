@@ -30,6 +30,13 @@ const OPTIONAL_DATA_FILES = [
   'google-drive.json',
   'scheduled-tasks.json'
 ]
+const OPTIONAL_DATABASE_FILES = [
+  'research.sqlite',
+  'vault.sqlite',
+  'planning.sqlite',
+  'coaching.sqlite',
+  'file-checkpoints.sqlite'
+]
 const BACKUP_ROOT_FILES = new Set([
   'conversations.sqlite',
   'finance.sqlite',
@@ -476,6 +483,14 @@ export async function restoreBackupSnapshot(
     for (const item of OPTIONAL_DATA_FILES) {
       if (!included.has(item)) {
         await rm(path.join(destination, item), { force: true })
+      }
+    }
+    for (const item of OPTIONAL_DATABASE_FILES) {
+      if (!included.has(item)) {
+        const targetFile = path.join(destination, item)
+        await rm(`${targetFile}-wal`, { force: true })
+        await rm(`${targetFile}-shm`, { force: true })
+        await rm(targetFile, { force: true })
       }
     }
 
