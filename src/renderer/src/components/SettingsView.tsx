@@ -20,6 +20,7 @@ import type {
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
+import { APP_THEMES, type AppTheme } from '../theme'
 
 type Access = 'read' | 'read-write'
 
@@ -38,6 +39,8 @@ interface FormState {
 
 export interface SettingsViewProps {
   settings: PublicSettings
+  theme: AppTheme
+  onThemeChange: (theme: AppTheme) => void
   webSearchSettings: PublicWebSearchSettings | null
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
@@ -71,6 +74,8 @@ export interface SettingsViewProps {
 
 export function SettingsView({
   settings,
+  theme,
+  onThemeChange,
   webSearchSettings,
   googleCalendarSettings,
   googleGmailSettings,
@@ -569,6 +574,39 @@ export function SettingsView({
 
   return (
     <div className="settings">
+      <section className="settings-section appearance-section">
+        <div className="section-head">
+          <h2>Appearance</h2>
+          <p>Choose a color theme for this device. Your selection is saved locally.</p>
+        </div>
+        <fieldset className="theme-options">
+          <legend className="visually-hidden">Color theme</legend>
+          {APP_THEMES.map((option) => (
+            <label className={`theme-option ${theme === option.id ? 'selected' : ''}`} key={option.id}>
+              <input
+                type="radio"
+                name="app-theme"
+                value={option.id}
+                checked={theme === option.id}
+                onChange={() => onThemeChange(option.id)}
+              />
+              <span className={`theme-swatch theme-swatch-${option.id}`} aria-hidden="true">
+                <span className="theme-swatch-sidebar" />
+                <span className="theme-swatch-main">
+                  <span />
+                  <span />
+                </span>
+              </span>
+              <span className="theme-option-copy">
+                <strong>{option.label}</strong>
+                <span>{option.description}</span>
+              </span>
+              <span className="theme-option-check" aria-hidden="true">{theme === option.id ? 'Selected' : ''}</span>
+            </label>
+          ))}
+        </fieldset>
+      </section>
+
       <section className="settings-section">
         <div className="section-head">
           <h2>Model provider</h2>

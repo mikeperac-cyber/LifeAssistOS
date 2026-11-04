@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AuditEvent,
   AuditIntegrity,
@@ -49,22 +49,25 @@ import type {
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
 import { ApprovalModal } from './components/ApprovalModal'
-import { ActivityView } from './components/ActivityView'
 import { ChatView } from './components/ChatView'
-import { FinanceView } from './components/FinanceView'
-import { MemoryView } from './components/MemoryView'
-import { WorkflowsView } from './components/WorkflowsView'
-import { ScheduledTasksView } from './components/ScheduledTasksView'
-import { SkillsView } from './components/SkillsView'
-import { SettingsView } from './components/SettingsView'
-import { ResearchView } from './components/ResearchView'
-import { VaultView } from './components/VaultView'
-import { TodayView } from './components/TodayView'
-import { TeachingView } from './components/TeachingView'
-import { CoachView } from './components/CoachView'
-import { IntegrationsView, resolveIntegrationTargetView } from './components/IntegrationsView'
-import { Sidebar, type View } from './components/Sidebar'
+import { Sidebar } from './components/Sidebar'
+import { resolveIntegrationTargetView, VIEW_META, type View } from './navigation'
+import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
 import { statusFor, type TimelineItem } from './types'
+
+const ActivityView = lazy(() => import('./components/ActivityView').then((module) => ({ default: module.ActivityView })))
+const FinanceView = lazy(() => import('./components/FinanceView').then((module) => ({ default: module.FinanceView })))
+const MemoryView = lazy(() => import('./components/MemoryView').then((module) => ({ default: module.MemoryView })))
+const WorkflowsView = lazy(() => import('./components/WorkflowsView').then((module) => ({ default: module.WorkflowsView })))
+const ScheduledTasksView = lazy(() => import('./components/ScheduledTasksView').then((module) => ({ default: module.ScheduledTasksView })))
+const SkillsView = lazy(() => import('./components/SkillsView').then((module) => ({ default: module.SkillsView })))
+const SettingsView = lazy(() => import('./components/SettingsView').then((module) => ({ default: module.SettingsView })))
+const ResearchView = lazy(() => import('./components/ResearchView').then((module) => ({ default: module.ResearchView })))
+const VaultView = lazy(() => import('./components/VaultView').then((module) => ({ default: module.VaultView })))
+const TodayView = lazy(() => import('./components/TodayView').then((module) => ({ default: module.TodayView })))
+const TeachingView = lazy(() => import('./components/TeachingView').then((module) => ({ default: module.TeachingView })))
+const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
+const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
 
 let localSequence = 0
 
@@ -133,6 +136,7 @@ function workflowDraftFor(items: TimelineItem[]): { prompt: string; steps: Workf
 
 export default function App(): React.JSX.Element {
   const [view, setView] = useState<View>('chat')
+  const [appTheme, setAppTheme] = useState<AppTheme>(getSavedAppTheme)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
   const [auditIntegrity, setAuditIntegrity] = useState<AuditIntegrity>({
@@ -201,6 +205,15 @@ export default function App(): React.JSX.Element {
   const toolNamesByCallId = useRef(new Map<string, string>())
   const voiceChatRef = useRef(voiceChatEnabled)
   const chatModeRef = useRef<ChatMode>(chatMode)
+
+  useEffect(() => {
+    applyAppTheme(document.documentElement, appTheme)
+    try {
+      localStorage.setItem(APP_THEME_STORAGE_KEY, appTheme)
+    } catch {
+      // The selected theme remains active for this renderer session.
+    }
+  }, [appTheme])
 
   useEffect(() => {
     voiceChatRef.current = voiceChatEnabled
@@ -1051,53 +1064,8 @@ export default function App(): React.JSX.Element {
       <main className="main">
         <header className="topbar">
           <div className="topbar-titles">
-            <h1>
-              {view === 'chat' ? 'Assistant'
-                : view === 'today' ? 'Today'
-                  : view === 'coach' ? 'Coach'
-                    : view === 'scheduled' ? 'Scheduled'
-                    : view === 'research' ? 'Research'
-                    : view === 'vault' ? 'Knowledge Vault'
-                    : view === 'teaching' ? 'LB English'
-                        : view === 'integrations' ? 'Integrations'
-                          : view === 'memory' ? 'Memory'
-                  : view === 'activity' ? 'Activity'
-                    : view === 'finances' ? 'Finances'
-                      : view === 'workflows' ? 'Workflows'
-                        : view === 'skills' ? 'Skills'
-                        : 'Settings'}
-            </h1>
-            <p>
-              {view === 'chat'
-                ? 'Local tools, gated by you · chat history stays on this device.'
-                : view === 'today'
-                  ? 'Your next actions and capture inbox, stored locally.'
-                  : view === 'coach'
-                    ? 'Personal life and Business / LB English coaching, private by default.'
-                    : view === 'scheduled'
-                      ? 'Automatic check-ins and recurring agent tasks, with action approvals at run time.'
-                  : view === 'research'
-                    ? 'Collect allowlisted sources around one focused question.'
-                    : view === 'vault'
-                      ? 'Search durable notes and captured sources with local FTS5.'
-                      : view === 'teaching'
-                        ? 'IELTS Academic and English teaching packs for LB English.'
-                        : view === 'integrations'
-                          ? 'A transparent map of local data and connected capabilities.'
-                : view === 'memory'
-                  ? 'Facts you approved. Editable, deletable, and cited whenever recalled.'
-                  : view === 'finances'
-                    ? 'Categorized income and expenditure from your local ledger.'
-                    : view === 'workflows'
-                      ? 'Save and replay approved local tool sequences.'
-                      : view === 'skills'
-                        ? 'Reusable instructions that shape how the assistant works.'
-                      : view === 'activity'
-                        ? 'Everything Mike Assist does, as an append-only record. No message contents are stored.'
-                        : view === 'settings'
-                          ? 'Choose the model and the folders Mike Assist may touch.'
-                          : 'Append-only record of every action and decision.'}
-            </p>
+            <h1>{VIEW_META[view].label}</h1>
+            <p>{VIEW_META[view].description}</p>
           </div>
           <div className="topbar-meta">
             {localApiActivity && (
@@ -1207,6 +1175,7 @@ export default function App(): React.JSX.Element {
         </header>
 
         <div className="content">
+          <Suspense fallback={<div className="view-loading" role="status">Loading section…</div>}>
           {view === 'chat' && (
             <ChatView
               items={timeline}
@@ -1301,6 +1270,8 @@ export default function App(): React.JSX.Element {
           {view === 'settings' && settings && (
             <SettingsView
               settings={settings}
+              theme={appTheme}
+              onThemeChange={setAppTheme}
               webSearchSettings={webSearchSettings}
               googleCalendarSettings={googleCalendarSettings}
               googleGmailSettings={googleGmailSettings}
@@ -1339,6 +1310,7 @@ export default function App(): React.JSX.Element {
               <p>Loading settings…</p>
             </div>
           )}
+          </Suspense>
         </div>
       </main>
 

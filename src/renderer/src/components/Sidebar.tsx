@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from 'react'
 import type { FolderGrant } from '../../../shared/types'
+import { NAV_GROUPS, VIEW_META, type View } from '../navigation'
 
-export type View = 'chat' | 'coach' | 'today' | 'scheduled' | 'research' | 'vault' | 'teaching' | 'integrations' | 'memory' | 'activity' | 'finances' | 'workflows' | 'skills' | 'settings'
+export type { View } from '../navigation'
 
 export function Sidebar({
   view,
@@ -17,6 +19,33 @@ export function Sidebar({
   model: string
   preset: string
 }): React.JSX.Element {
+  const [navQuery, setNavQuery] = useState('')
+  const navSearchRef = useRef<HTMLInputElement>(null)
+  const normalizedQuery = navQuery.trim().toLocaleLowerCase()
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => {
+      const label = VIEW_META[item].label === 'Assistant' ? 'Chat' : VIEW_META[item].label
+      return !normalizedQuery ||
+        label.toLocaleLowerCase().includes(normalizedQuery) ||
+        VIEW_META[item].label.toLocaleLowerCase().includes(normalizedQuery) ||
+        group.label.toLocaleLowerCase().includes(normalizedQuery)
+    })
+  })).filter((group) => group.items.length > 0)
+  const firstVisibleView = visibleGroups[0]?.items[0]
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
+        event.preventDefault()
+        setNavQuery('')
+        navSearchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handleShortcut)
+    return () => window.removeEventListener('keydown', handleShortcut)
+  }, [])
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -27,86 +56,58 @@ export function Sidebar({
         </div>
       </div>
 
+      <div className="nav-search-wrap" role="search">
+        <SearchIcon />
+        <input
+          ref={navSearchRef}
+          type="search"
+          value={navQuery}
+          placeholder="Find a section"
+          aria-label="Find a section"
+          aria-keyshortcuts="Control+K Meta+K"
+          onChange={(event) => setNavQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && navQuery) {
+              event.preventDefault()
+              setNavQuery('')
+              return
+            }
+            if (event.key === 'Enter' && firstVisibleView) {
+              event.preventDefault()
+              onChange(firstVisibleView)
+              setNavQuery('')
+            }
+          }}
+        />
+        <kbd className="nav-shortcut">Ctrl K</kbd>
+      </div>
+
       <nav className="nav" aria-label="Main">
-        <button
-          type="button"
-          className={`nav-button ${view === 'chat' ? 'active' : ''}`}
-          aria-current={view === 'chat' ? 'page' : undefined}
-          onClick={() => onChange('chat')}
-        >
-          <ChatIcon />
-          <span>Chat</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-button ${view === 'memory' ? 'active' : ''}`}
-          aria-current={view === 'memory' ? 'page' : undefined}
-          onClick={() => onChange('memory')}
-        >
-          <MemoryIcon />
-          <span>Memory</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'coach' ? 'active' : ''}`} aria-current={view === 'coach' ? 'page' : undefined} onClick={() => onChange('coach')}>
-          <span className="nav-glyph" aria-hidden="true">✧</span><span>Coach</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'today' ? 'active' : ''}`} aria-current={view === 'today' ? 'page' : undefined} onClick={() => onChange('today')}>
-          <span className="nav-glyph" aria-hidden="true">◷</span><span>Today</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'scheduled' ? 'active' : ''}`} aria-current={view === 'scheduled' ? 'page' : undefined} onClick={() => onChange('scheduled')}>
-          <span className="nav-glyph" aria-hidden="true">◴</span><span>Scheduled</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'research' ? 'active' : ''}`} aria-current={view === 'research' ? 'page' : undefined} onClick={() => onChange('research')}>
-          <span className="nav-glyph" aria-hidden="true">⌕</span><span>Research</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'vault' ? 'active' : ''}`} aria-current={view === 'vault' ? 'page' : undefined} onClick={() => onChange('vault')}>
-          <span className="nav-glyph" aria-hidden="true">▣</span><span>Vault</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'teaching' ? 'active' : ''}`} aria-current={view === 'teaching' ? 'page' : undefined} onClick={() => onChange('teaching')}>
-          <span className="nav-glyph" aria-hidden="true">✦</span><span>LB English</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'integrations' ? 'active' : ''}`} aria-current={view === 'integrations' ? 'page' : undefined} onClick={() => onChange('integrations')}>
-          <span className="nav-glyph" aria-hidden="true">⌘</span><span>Integrations</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-button ${view === 'finances' ? 'active' : ''}`}
-          aria-current={view === 'finances' ? 'page' : undefined}
-          onClick={() => onChange('finances')}
-        >
-          <FinanceIcon />
-          <span>Finances</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-button ${view === 'workflows' ? 'active' : ''}`}
-          aria-current={view === 'workflows' ? 'page' : undefined}
-          onClick={() => onChange('workflows')}
-        >
-          <WorkflowIcon />
-          <span>Workflows</span>
-        </button>
-        <button type="button" className={`nav-button ${view === 'skills' ? 'active' : ''}`} aria-current={view === 'skills' ? 'page' : undefined} onClick={() => onChange('skills')}>
-          <span className="nav-glyph" aria-hidden="true">✧</span><span>Skills</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-button ${view === 'settings' ? 'active' : ''}`}
-          aria-current={view === 'settings' ? 'page' : undefined}
-          onClick={() => onChange('settings')}
-        >
-          <SettingsIcon />
-          <span>Settings</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-button ${view === 'activity' ? 'active' : ''}`}
-          aria-current={view === 'activity' ? 'page' : undefined}
-          onClick={() => onChange('activity')}
-        >
-          <AuditIcon />
-          <span>Activity</span>
-          {auditCount > 0 && <span className="nav-count">{auditCount > 999 ? '999+' : auditCount}</span>}
-        </button>
+        {visibleGroups.length === 0 && <p className="nav-empty" role="status">No matching sections.</p>}
+        {visibleGroups.map((group) => (
+          <div className="nav-group" key={group.label}>
+            <span className="nav-group-label">{group.label}</span>
+            {group.items.map((item) => (
+              <button
+                type="button"
+                key={item}
+                className={`nav-button ${view === item ? 'active' : ''}`}
+                aria-current={view === item ? 'page' : undefined}
+                title={VIEW_META[item].label}
+                onClick={() => {
+                  onChange(item)
+                  setNavQuery('')
+                }}
+              >
+                {iconForView(item)}
+                <span>{VIEW_META[item].label === 'Assistant' ? 'Chat' : VIEW_META[item].label}</span>
+                {item === 'activity' && auditCount > 0 && (
+                  <span className="nav-count">{auditCount > 999 ? '999+' : auditCount}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-spacer" />
@@ -171,6 +172,27 @@ export function Sidebar({
       </div>
     </aside>
   )
+}
+
+function iconForView(view: View): React.JSX.Element {
+  if (view === 'chat') return <ChatIcon />
+  if (view === 'memory') return <MemoryIcon />
+  if (view === 'finances') return <FinanceIcon />
+  if (view === 'workflows') return <WorkflowIcon />
+  if (view === 'settings') return <SettingsIcon />
+  if (view === 'activity') return <AuditIcon />
+
+  const glyphs: Record<Exclude<View, 'chat' | 'memory' | 'finances' | 'workflows' | 'settings' | 'activity'>, string> = {
+    coach: '✧',
+    today: '◷',
+    scheduled: '◴',
+    research: '⌕',
+    vault: '▣',
+    teaching: '✦',
+    integrations: '⌘',
+    skills: '✧'
+  }
+  return <span className="nav-glyph" aria-hidden="true">{glyphs[view]}</span>
 }
 
 function FinanceIcon(): React.JSX.Element {
@@ -259,6 +281,15 @@ function AuditIcon(): React.JSX.Element {
       <path d="M7 3h8l4 4v14H7z" />
       <path d="M15 3v4h4" />
       <path d="M10 12h6M10 16h6" />
+    </svg>
+  )
+}
+
+function SearchIcon(): React.JSX.Element {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.8" cy="10.8" r="6.3" />
+      <path d="m16 16 4 4" />
     </svg>
   )
 }

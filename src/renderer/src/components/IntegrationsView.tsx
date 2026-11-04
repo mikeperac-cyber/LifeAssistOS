@@ -1,23 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings } from '../../../shared/ipc'
 import type { McpServerInfo } from '../../../shared/types'
-import type { View } from './Sidebar'
-
-export function resolveIntegrationTargetView(id: string): View {
-  if (id === 'helper') return 'chat'
-  if (id === 'finance' || id === 'finances') return 'finances'
-  if (
-    id === 'today' ||
-    id === 'research' ||
-    id === 'vault' ||
-    id === 'teaching' ||
-    id === 'memory' ||
-    id === 'skills'
-  ) {
-    return id
-  }
-  return 'settings'
-}
+export { resolveIntegrationTargetView } from '../navigation'
 
 interface IntegrationCard {
   id: string
