@@ -207,6 +207,20 @@ describe('backup snapshot', () => {
     expect(missingResult.error).toMatch(/finance\.sqlite/i)
   })
 
+  it('rejects an unencrypted manifest that omits required backup data', async () => {
+    const target = path.join(backupRoot, 'incomplete-manifest')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    const manifestPath = path.join(target, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { includes: string[] }
+    manifest.includes = manifest.includes.filter((item) => item !== 'finance.sqlite' && item !== 'audit/')
+    await writeFile(manifestPath, JSON.stringify(manifest), 'utf8')
+
+    const verification = await verifyBackupSnapshot(target)
+    expect(verification.valid).toBe(false)
+    expect(verification.error).toMatch(/incomplete backup manifest/i)
+    await expect(restoreBackupSnapshot(target, source)).rejects.toThrow(/incomplete backup manifest/i)
+  })
+
   it('restores a backup snapshot over modified app data and cleans up WAL state', async () => {
     const target = path.join(backupRoot, 'restore-test')
     await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')

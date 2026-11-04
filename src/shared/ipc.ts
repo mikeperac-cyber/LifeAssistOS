@@ -163,6 +163,7 @@ export interface BackupResult {
   ok: boolean
   cancelled?: boolean
   error?: string
+  warning?: string
   folderName?: string
 }
 

@@ -40,6 +40,15 @@ const BACKUP_ROOT_FILES = new Set([
   ...DATA_FILES,
   ...OPTIONAL_DATA_FILES
 ])
+const REQUIRED_BACKUP_ENTRIES = [
+  'conversations.sqlite',
+  'finance.sqlite',
+  'memory.sqlite',
+  'settings.json',
+  'grants.json',
+  'allowed-domains.json',
+  'audit/'
+]
 
 export interface BackupExtras {
   research?: ResearchStore
@@ -192,7 +201,7 @@ export async function verifyBackupSnapshot(
   }
 
   if (manifest.formatVersion !== 1 || !isValidManifestIncludes(manifest.includes)) {
-    return { valid: false, encrypted: Boolean(manifest.encrypted), error: 'Unsupported backup manifest format.' }
+    return { valid: false, encrypted: Boolean(manifest.encrypted), error: 'Unsupported or incomplete backup manifest.' }
   }
 
   const encrypted = Boolean(manifest.encrypted)
@@ -396,7 +405,8 @@ function isValidManifestIncludes(value: unknown): value is string[] {
   return (
     Array.isArray(value) &&
     value.every((entry) => entry === 'audit/' || (typeof entry === 'string' && BACKUP_ROOT_FILES.has(entry))) &&
-    new Set(value).size === value.length
+    new Set(value).size === value.length &&
+    REQUIRED_BACKUP_ENTRIES.every((entry) => value.includes(entry))
   )
 }
 

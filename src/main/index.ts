@@ -1131,11 +1131,18 @@ function registerIpc(): void {
           properties: ['openDirectory', 'createDirectory']
         })
     if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before backing up.' }
 
     const userData = app.getPath('userData')
     const backupName = `Mike Assist Backup ${new Date().toISOString().replace(/[:.]/g, '-')}`
     const backupPath = path.resolve(selection.filePaths[0], backupName)
+    const maintenanceWindow = mainWindow
+    const windowWasEnabled = maintenanceWindow && !maintenanceWindow.isDestroyed() ? maintenanceWindow.isEnabled() : false
+    directToolBusy = true
     try {
+      taskReminderScheduler?.stop()
+      if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(false)
+      sendToRenderer({ type: 'busy', busy: true })
       await createBackupSnapshot(userData, backupPath, conversations, finance!, memory!, app.getVersion(), {
         research: research ?? undefined,
         vault: vault ?? undefined,
@@ -1144,10 +1151,20 @@ function registerIpc(): void {
         fileCheckpoints: fileCheckpoints ?? undefined,
         passphrase: typeof passphrase === 'string' && passphrase.trim() ? passphrase.trim() : undefined
       })
-      await audit.append({ type: 'backup.created', data: { formatVersion: 1, encrypted: Boolean(typeof passphrase === 'string' && passphrase.trim()) } })
-      return { ok: true, folderName: backupName }
+      const warning = await audit.append({ type: 'backup.created', data: { formatVersion: 1, encrypted: Boolean(typeof passphrase === 'string' && passphrase.trim()) } })
+        .then(() => undefined)
+        .catch((error) => {
+          console.error('[main] backup completed but audit write failed', error)
+          return 'The backup was created, but the activity log could not record it.'
+        })
+      return { ok: true, folderName: backupName, warning }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      taskReminderScheduler?.start()
+      if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(windowWasEnabled)
+      sendToRenderer({ type: 'busy', busy: false })
     }
   })
 
@@ -1167,10 +1184,17 @@ function registerIpc(): void {
           properties: ['openDirectory']
         })
     if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before restoring.' }
 
     const backupPath = path.resolve(selection.filePaths[0])
     const userData = app.getPath('userData')
+    const maintenanceWindow = mainWindow
+    const windowWasEnabled = maintenanceWindow && !maintenanceWindow.isDestroyed() ? maintenanceWindow.isEnabled() : false
+    directToolBusy = true
     try {
+      taskReminderScheduler?.stop()
+      if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(false)
+      sendToRenderer({ type: 'busy', busy: true })
       await restoreBackupSnapshot(backupPath, userData, {
         passphrase: typeof passphrase === 'string' && passphrase.trim() ? passphrase.trim() : undefined,
         closeStores: async () => {
@@ -1218,10 +1242,20 @@ function registerIpc(): void {
           }
         }
       })
-      await audit?.append({ type: 'backup.restored', data: { formatVersion: 1 } })
-      return { ok: true, folderName: path.basename(backupPath) }
+      const warning = await audit?.append({ type: 'backup.restored', data: { formatVersion: 1 } })
+        .then(() => undefined)
+        .catch((error) => {
+          console.error('[main] restore completed but audit write failed', error)
+          return 'The restore completed, but the activity log could not record it.'
+        })
+      return { ok: true, folderName: path.basename(backupPath), warning }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      taskReminderScheduler?.start()
+      if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(windowWasEnabled)
+      sendToRenderer({ type: 'busy', busy: false })
     }
   })
 

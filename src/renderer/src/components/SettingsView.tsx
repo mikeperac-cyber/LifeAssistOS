@@ -336,7 +336,7 @@ export function SettingsView({
     setBackupMessage('')
     try {
       const result = await onBackup(backupPassphrase.trim() || undefined)
-      if (result.ok) setBackupMessage(`Created ${result.folderName ?? 'backup folder'}.`)
+      if (result.ok) setBackupMessage([`Created ${result.folderName ?? 'backup folder'}.`, result.warning].filter(Boolean).join(' '))
       else if (!result.cancelled) setBackupMessage(result.error ?? 'Could not create the backup.')
     } catch (error) {
       setBackupMessage(errorText(error))
@@ -351,7 +351,7 @@ export function SettingsView({
     setBackupMessage('')
     try {
       const result = await onRestoreBackup(backupPassphrase.trim() || undefined)
-      if (result.ok) setBackupMessage(`Restored from ${result.folderName ?? 'backup folder'}.`)
+      if (result.ok) setBackupMessage([`Restored from ${result.folderName ?? 'backup folder'}.`, result.warning].filter(Boolean).join(' '))
       else if (!result.cancelled) setBackupMessage(result.error ?? 'Could not restore the backup.')
     } catch (error) {
       setBackupMessage(errorText(error))
