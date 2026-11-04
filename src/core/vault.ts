@@ -46,12 +46,38 @@ export class VaultStore {
         id UNINDEXED, title, body, tags
       );
       CREATE INDEX IF NOT EXISTS documents_updated_at ON documents(updated_at);
+      CREATE TABLE IF NOT EXISTS vault_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TRIGGER IF NOT EXISTS documents_fts_insert AFTER INSERT ON documents BEGIN
+        INSERT INTO documents_fts (id, title, body, tags) VALUES (new.id, new.title, new.body, new.tags);
+      END;
+      CREATE TRIGGER IF NOT EXISTS documents_fts_delete AFTER DELETE ON documents BEGIN
+        DELETE FROM documents_fts WHERE id = old.id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS documents_fts_update AFTER UPDATE OF title, body, tags ON documents BEGIN
+        DELETE FROM documents_fts WHERE id = old.id;
+        INSERT INTO documents_fts (id, title, body, tags) VALUES (new.id, new.title, new.body, new.tags);
+      END;
     `)
-    const count = this.db.prepare('SELECT COUNT(*) AS count FROM documents_fts').get() as { count: number }
-    const documents = this.db.prepare('SELECT id, title, body, tags FROM documents').all() as Array<{ id: string; title: string; body: string; tags: string }>
-    if (count.count === 0 && documents.length > 0) {
-      const insert = this.db.prepare('INSERT INTO documents_fts (id, title, body, tags) VALUES (?, ?, ?, ?)')
-      for (const document of documents) insert.run(document.id, document.title, document.body, document.tags)
+    const ftsVersion = this.db.prepare("SELECT value FROM vault_meta WHERE key = 'documents_fts_version'").get() as { value?: string } | undefined
+    if (ftsVersion?.value !== '1') {
+      this.db.exec('BEGIN IMMEDIATE')
+      try {
+        this.db.exec('DELETE FROM documents_fts')
+        const documents = this.db.prepare('SELECT id, title, body, tags FROM documents').all() as Array<{ id: string; title: string; body: string; tags: string }>
+        const insert = this.db.prepare('INSERT INTO documents_fts (id, title, body, tags) VALUES (?, ?, ?, ?)')
+        for (const document of documents) insert.run(document.id, document.title, document.body, storedTags(document.tags))
+        this.db.prepare(`
+          INSERT INTO vault_meta (key, value) VALUES ('documents_fts_version', '1')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run()
+        this.db.exec('COMMIT')
+      } catch (error) {
+        try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+        throw error
+      }
     }
   }
 
@@ -110,17 +136,19 @@ export class VaultStore {
       updatedAt: new Date().toISOString()
     }
     if (!document.title || !document.body) throw new Error('A vault document needs a title and some content.')
-    this.db.prepare('UPDATE documents SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?').run(
-      document.title, document.body, JSON.stringify(document.tags), document.updatedAt, document.id
-    )
-    this.reindex(document)
+    this.transaction(() => {
+      this.db.prepare('UPDATE documents SET title = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?').run(
+        document.title, document.body, JSON.stringify(document.tags), document.updatedAt, document.id
+      )
+    })
     return document
   }
 
   delete(id: string): void {
     this.get(id)
-    this.db.prepare('DELETE FROM documents WHERE id = ?').run(id)
-    this.db.prepare('DELETE FROM documents_fts WHERE id = ?').run(id)
+    this.transaction(() => {
+      this.db.prepare('DELETE FROM documents WHERE id = ?').run(id)
+    })
   }
 
   async backupTo(file: string): Promise<void> {
@@ -136,23 +164,37 @@ export class VaultStore {
   }
 
   private insert(document: VaultDocument): void {
-    this.db.prepare('INSERT INTO documents (id, title, body, tags, source_type, source_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      document.id, document.title, document.body, JSON.stringify(document.tags), document.sourceType, document.sourceRef ?? null, document.createdAt, document.updatedAt
-    )
-    this.reindex(document)
+    this.transaction(() => {
+      this.db.prepare('INSERT INTO documents (id, title, body, tags, source_type, source_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+        document.id, document.title, document.body, JSON.stringify(document.tags), document.sourceType, document.sourceRef ?? null, document.createdAt, document.updatedAt
+      )
+    })
   }
 
-  private reindex(document: VaultDocument): void {
-    this.db.prepare('DELETE FROM documents_fts WHERE id = ?').run(document.id)
-    this.db.prepare('INSERT INTO documents_fts (id, title, body, tags) VALUES (?, ?, ?, ?)').run(
-      document.id, document.title, document.body, document.tags.join(' ')
-    )
+  private transaction<T>(operation: () => T): T {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const result = operation()
+      this.db.exec('COMMIT')
+      return result
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
   }
 
   private get dbPath(): string {
     const row = this.db.prepare('PRAGMA database_list').get() as { file?: string } | undefined
     return row?.file ? path.dirname(row.file) : process.cwd()
   }
+}
+
+function storedTags(value: string): string {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (Array.isArray(parsed)) return parsed.filter((tag): tag is string => typeof tag === 'string').join(' ')
+  } catch { /* Preserve searchability of older plain-text tags. */ }
+  return value
 }
 
 function fromRow(row: DocumentRow): VaultDocument {

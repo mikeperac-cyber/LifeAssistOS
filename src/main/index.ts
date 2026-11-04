@@ -19,7 +19,7 @@ import { PlanningStore } from '../core/planning'
 import { CoachingStore } from '../core/coaching'
 import { FileCheckpointStore } from '../core/file-checkpoints'
 import { TaskReminderScheduler } from '../core/reminders'
-import { ScheduledTaskScheduler, ScheduledTaskStore, type ScheduledRunOutput } from '../core/scheduled-tasks'
+import { ScheduledTaskScheduler, ScheduledTaskStore, type ScheduledRunOutput, type ScheduledTaskRunContext } from '../core/scheduled-tasks'
 import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/google-calendar'
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
@@ -186,20 +186,25 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
 
 async function runScheduledAgentTask(
   task: ScheduledAgentTask,
-  trigger: 'scheduled' | 'manual'
+  trigger: 'scheduled' | 'manual',
+  context: ScheduledTaskRunContext
 ): Promise<ScheduledRunOutput | null> {
   if (!toolRegistry || !audit || !grants || !settings || !agent || hasRunningAssistantTask()) {
     return null
   }
 
   scheduledAgentBusy = true
-  const runId = `scheduled-${task.id}-${randomUUID()}`
+  const runId = `scheduled-${task.id}-${context.runId}`
+  const startedAt = context.startedAt.toISOString()
   let summary = ''
   let failed = false
 
   sendToRenderer({ type: 'busy', busy: true })
   try {
-    await audit.append({ type: 'scheduled_task.started', data: { taskId: task.id, trigger, mode: task.mode } })
+    await audit.append({
+      type: 'scheduled_task.started',
+      data: { runId: context.runId, taskId: task.id, trigger, mode: task.mode, startedAt }
+    })
     const allowedToolNames = new Set(toolRegistry.list()
       .filter((tool) => tool.name !== 'run_command' && tool.name !== 'schedule_agent_task' &&
         tool.name !== 'delegate_task' &&
@@ -247,12 +252,27 @@ async function runScheduledAgentTask(
     }
     await audit.append({
       type: 'scheduled_task.completed',
-      data: { taskId: task.id, trigger, status: output.status, summaryChars: output.summary.length }
+      data: {
+        runId: context.runId,
+        taskId: task.id,
+        trigger,
+        status: output.status,
+        finishedAt: new Date().toISOString()
+      }
     }).catch((error) => console.error('[scheduled-tasks] could not write completion audit', error))
     return output
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    await audit.append({ type: 'scheduled_task.completed', data: { taskId: task.id, trigger, status: 'failed' } })
+    await audit.append({
+      type: 'scheduled_task.completed',
+      data: {
+        runId: context.runId,
+        taskId: task.id,
+        trigger,
+        status: 'failed',
+        finishedAt: new Date().toISOString()
+      }
+    })
       .catch((auditError) => console.error('[scheduled-tasks] could not write completion audit', auditError))
     return { status: 'failed', summary: 'The scheduled task could not finish.', error: detail }
   } finally {
@@ -419,6 +439,8 @@ async function initialize(): Promise<void> {
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
+  if (audit.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
+  else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
 
   const registry = new ToolRegistry()
   toolRegistry = registry
@@ -1186,6 +1208,8 @@ function registerIpc(): void {
           await googleDriveSettings?.init()
           googleDrive?.clearCachedAccessToken()
           await audit?.init()
+          if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
+          else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
           await mcpManager?.init()
           const nextActiveId = conversations?.activeSessionId()
           if (nextActiveId) {

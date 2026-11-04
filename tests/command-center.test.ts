@@ -22,6 +22,24 @@ describe('research desk store', () => {
     store.close()
     await rm(dir, { recursive: true, force: true })
   })
+
+  it('rolls back a captured source when touching its project fails', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-research-atomic-'))
+    const file = path.join(dir, 'research.sqlite')
+    const store = new ResearchStore(file)
+    await store.init()
+    const project = store.create({ title: 'Atomic capture', question: 'Does source capture stay consistent?' })
+    const db = new DatabaseSync(file)
+    db.exec(`CREATE TRIGGER fail_project_touch BEFORE UPDATE ON projects BEGIN SELECT RAISE(FAIL, 'simulated project write failure'); END;`)
+
+    expect(() => store.addSource({ projectId: project.id, url: 'https://example.com/source', content: 'Captured content.' }))
+      .toThrow(/simulated project write failure/)
+    expect(store.get(project.id).sources).toHaveLength(0)
+
+    db.close()
+    store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
 })
 
 describe('FTS5 knowledge vault', () => {
@@ -36,6 +54,27 @@ describe('FTS5 knowledge vault', () => {
     store.delete(document.id)
     expect(store.search('precise')).toHaveLength(0)
     store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('repairs a partially populated search index after restart', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-vault-repair-'))
+    const file = path.join(dir, 'vault.sqlite')
+    const store = new VaultStore(file)
+    await store.init()
+    store.create({ title: 'Indexed document', body: 'This document makes the search index nonempty.' })
+    const db = new DatabaseSync(file)
+    db.exec(`DROP TRIGGER documents_fts_insert; DROP TRIGGER documents_fts_delete; DROP TRIGGER documents_fts_update; DELETE FROM vault_meta WHERE key = 'documents_fts_version';`)
+    db.prepare(`INSERT INTO documents (id, title, body, tags, source_type, source_ref, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run('missing-from-index', 'Recovered document', 'distinctive searchable recovery phrase', '[]', 'manual', null, new Date().toISOString(), new Date().toISOString())
+    db.close()
+    store.close()
+
+    const reopened = new VaultStore(file)
+    await reopened.init()
+    expect(reopened.search('distinctive').map((result) => result.document.id)).toContain('missing-from-index')
+
+    reopened.close()
     await rm(dir, { recursive: true, force: true })
   })
 })
@@ -55,6 +94,24 @@ describe('Today planning store', () => {
     expect(linked.sourceGoalId).toBe('goal-123')
     expect(() => store.addTask({ title: 'Invalid due date', dueDate: '2026-02-31' })).toThrow(/real calendar date/)
     expect(() => store.snapshot('2026-02-31')).toThrow(/real calendar date/)
+    store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('rolls back task creation when linking a converted inbox item fails', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-planning-atomic-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const inbox = store.capture('Convert this only once')
+    const db = new DatabaseSync(file)
+    db.exec(`CREATE TRIGGER fail_inbox_link BEFORE UPDATE ON inbox BEGIN SELECT RAISE(FAIL, 'simulated inbox link failure'); END;`)
+
+    expect(() => store.convertInbox(inbox.id)).toThrow(/simulated inbox link failure/)
+    expect(store.listTasks(true)).toHaveLength(0)
+    expect(store.snapshot().inbox.map((item) => item.id)).toContain(inbox.id)
+
+    db.close()
     store.close()
     await rm(dir, { recursive: true, force: true })
   })

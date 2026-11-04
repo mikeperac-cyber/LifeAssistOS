@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { ChatMode, ScheduledAgentRun, ScheduledAgentTask, ScheduledTaskSchedule } from '../shared/types'
+import type { AuditEvent, ChatMode, ScheduledAgentRun, ScheduledAgentTask, ScheduledTaskSchedule } from '../shared/types'
 
 interface ScheduledTaskFile {
   version: 1
@@ -9,7 +9,7 @@ interface ScheduledTaskFile {
   runs: ScheduledAgentRun[]
 }
 
-const RUN_HISTORY_SAVE_WARNING = 'The run finished, but its history could not be saved. It may run again after Mike Assist restarts.'
+const RUN_HISTORY_SAVE_WARNING = 'The run finished, but its history could not be saved. Its actions may already have taken effect; review them before running it again.'
 
 export interface ScheduledAgentTaskInput {
   name: string
@@ -25,7 +25,16 @@ export interface ScheduledRunOutput {
   persistenceWarning?: string
 }
 
-export type ScheduledTaskRunner = (task: ScheduledAgentTask, trigger: 'scheduled' | 'manual') => Promise<ScheduledRunOutput | null>
+export interface ScheduledTaskRunContext {
+  runId: string
+  startedAt: Date
+}
+
+export type ScheduledTaskRunner = (
+  task: ScheduledAgentTask,
+  trigger: 'scheduled' | 'manual',
+  context: ScheduledTaskRunContext
+) => Promise<ScheduledRunOutput | null>
 
 export class ScheduledTaskStore {
   private tasks: ScheduledAgentTask[] = []
@@ -164,11 +173,14 @@ export class ScheduledTaskStore {
     trigger: 'scheduled' | 'manual',
     output: ScheduledRunOutput,
     startedAt: Date,
-    finishedAt = new Date()
+    finishedAt = new Date(),
+    runId: string = randomUUID()
   ): Promise<ScheduledAgentRun> {
     return this.mutate(async () => {
+      const existing = this.runs.find((entry) => entry.id === runId)
+      if (existing) return cloneRun(existing)
       const run: ScheduledAgentRun = {
-        id: randomUUID(),
+        id: runId,
         taskId,
         trigger,
         status: output.status,
@@ -208,6 +220,95 @@ export class ScheduledTaskStore {
       }
       return cloneRun(run)
     })
+  }
+
+  /** Reconcile scheduled-run intents with their metadata-only audit journal after a restart. */
+  async recoverFromAudit(events: readonly AuditEvent[], now = new Date()): Promise<void> {
+    interface RecoveryCandidate {
+      runId: string
+      taskId: string
+      trigger: 'scheduled' | 'manual'
+      startedAt: Date
+      finishedAt?: Date
+      status?: 'success' | 'failed'
+      legacy: boolean
+    }
+
+    const candidates: RecoveryCandidate[] = []
+    const completedByRunId = new Map<string, AuditEvent>()
+
+    for (const event of events) {
+      const data = event.data
+      if (event.type === 'scheduled_task.started') {
+        const taskId = typeof data.taskId === 'string' ? data.taskId : ''
+        const trigger = data.trigger === 'manual' || data.trigger === 'scheduled' ? data.trigger : null
+        const startedAt = validDate(data.startedAt) ?? validDate(event.at)
+        if (!taskId || !trigger || !startedAt) continue
+        const legacy = typeof data.runId !== 'string' || data.runId.length === 0
+        const runId = legacy ? `legacy-${event.id}` : data.runId as string
+        const candidate: RecoveryCandidate = { runId, taskId, trigger, startedAt, legacy }
+        candidates.push(candidate)
+      } else if (event.type === 'scheduled_task.completed') {
+        if (typeof data.runId === 'string' && data.runId.length > 0) {
+          completedByRunId.set(data.runId, event)
+          continue
+        }
+        // Older releases did not include a run id. Match their completion to
+        // the earliest outstanding start for that task.
+        const taskId = typeof data.taskId === 'string' ? data.taskId : ''
+        const trigger = data.trigger === 'manual' || data.trigger === 'scheduled' ? data.trigger : null
+        const candidate = candidates.find((entry) => entry.legacy && !entry.finishedAt &&
+          entry.taskId === taskId && (!trigger || entry.trigger === trigger) &&
+          event.at >= entry.startedAt.toISOString())
+        if (candidate) {
+          candidate.finishedAt = validDate(data.finishedAt) ?? validDate(event.at) ?? undefined
+          candidate.status = data.status === 'success' ? 'success' : 'failed'
+        }
+      }
+    }
+
+    for (const candidate of candidates) {
+      const completion = candidate.legacy ? undefined : completedByRunId.get(candidate.runId)
+      if (completion && completion.data.taskId === candidate.taskId) {
+        candidate.finishedAt = validDate(completion.data.finishedAt) ?? validDate(completion.at) ?? undefined
+        candidate.status = completion.data.status === 'success' ? 'success' : 'failed'
+      }
+      if (this.runs.some((entry) => entry.id === candidate.runId ||
+        (candidate.legacy && entry.taskId === candidate.taskId &&
+          Math.abs(Date.parse(entry.startedAt) - candidate.startedAt.getTime()) <= 5_000))) continue
+
+      const interrupted = !candidate.finishedAt || !candidate.status
+      const output: ScheduledRunOutput = interrupted
+        ? {
+            status: 'failed',
+            summary: 'The app closed while this run was in progress. Its actions may have partially completed; review their effects before running this task again.',
+            error: 'The run outcome is unknown because Mike Assist closed before completion was recorded. Actions may already have taken effect; review them before retrying.'
+          }
+        : candidate.status === 'success'
+          ? {
+              status: 'success',
+              summary: 'The scheduled run completed, but its detailed response is not available after recovery.'
+            }
+          : {
+              status: 'failed',
+              summary: 'The scheduled run failed before its result was saved; its detailed response is unavailable after recovery.',
+              error: 'The scheduled run failed before its result was saved; its detailed error is unavailable after recovery.'
+            }
+      try {
+        await this.recordRun(
+          candidate.taskId,
+          candidate.trigger,
+          output,
+          candidate.startedAt,
+          candidate.finishedAt ?? now,
+          candidate.runId
+        )
+      } catch (error) {
+        // recordRun has already applied the result in memory. The durable audit
+        // entry remains available for the next restart if this save also fails.
+        console.error('[scheduled-tasks] could not persist recovered run history', error)
+      }
+    }
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
@@ -379,9 +480,10 @@ export class ScheduledTaskScheduler {
     if (this.running.has(task.id)) return null
     this.running.add(task.id)
     const startedAt = this.now()
+    const runId = randomUUID()
     let output: ScheduledRunOutput | null = null
     try {
-      output = await this.run(task, trigger)
+      output = await this.run(task, trigger, { runId, startedAt })
     } catch (error) {
       output = {
         status: 'failed',
@@ -396,13 +498,11 @@ export class ScheduledTaskScheduler {
     const finishedAt = this.now()
     let run: ScheduledAgentRun
     try {
-      run = await this.store.recordRun(task.id, trigger, output, startedAt, finishedAt)
+      run = await this.store.recordRun(task.id, trigger, output, startedAt, finishedAt, runId)
     } catch (error) {
       // recordRun retains the completed action in memory before writing. Recover
       // that record so the UI reports the real result and does not suggest a retry.
-      const persistedInMemory = this.store.listRuns(task.id).find((entry) =>
-        entry.startedAt === startedAt.toISOString() && entry.finishedAt === finishedAt.toISOString()
-      )
+      const persistedInMemory = this.store.listRuns(task.id).find((entry) => entry.id === runId)
       if (!persistedInMemory) throw error
       run = persistedInMemory
       console.error('[scheduled-tasks] run finished but its history could not be saved', error)
@@ -415,4 +515,10 @@ export class ScheduledTaskScheduler {
     }
     return output
   }
+}
+
+function validDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null
 }

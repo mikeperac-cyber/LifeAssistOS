@@ -88,14 +88,14 @@ describe('scheduled agent tasks', () => {
 
     expect(result).toMatchObject({
       ok: true,
-      warning: 'The run finished, but its history could not be saved. It may run again after Mike Assist restarts.',
+      warning: 'The run finished, but its history could not be saved. Its actions may already have taken effect; review them before running it again.',
       task: { runCount: 1, enabled: false }
     })
     expect(store.listRuns(task.id)).toHaveLength(1)
     expect(store.get(task.id).lastError).toBeNull()
-    expect(store.list()[0]?.lastError).toContain('may run again after Mike Assist restarts')
+    expect(store.list()[0]?.lastError).toContain('actions may already have taken effect')
     expect(changed).toHaveBeenCalledOnce()
-    expect(changed.mock.calls[0]?.[2]).toContain('may run again after Mike Assist restarts')
+    expect(changed.mock.calls[0]?.[2]).toContain('actions may already have taken effect')
     errorSpy.mockRestore()
   })
 
@@ -183,5 +183,90 @@ describe('scheduled agent tasks', () => {
     expect(store.get(task.id).enabled).toBe(false)
     expect(store.get(task.id).nextRunAt).toBeNull()
     expect(store.listRuns(task.id)[0].trigger).toBe('manual')
+  })
+
+  it('uses one stable run id for the audit journal and persisted history', async () => {
+    const task = await store.create({
+      name: 'Stable run record',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'once', at: '2099-01-01T00:00:00.000Z' }
+    })
+    let context: { runId: string; startedAt: Date } | undefined
+    const scheduler = new ScheduledTaskScheduler(
+      store,
+      async (_task, _trigger, runContext) => {
+        context = runContext
+        return { status: 'success', summary: 'A short useful result.' }
+      },
+      () => undefined
+    )
+
+    await scheduler.runNow(task.id)
+    expect(context?.runId).toBeTruthy()
+    expect(store.listRuns(task.id)[0]?.id).toBe(context?.runId)
+    expect(store.listRuns(task.id)[0]?.startedAt).toBe(context?.startedAt.toISOString())
+  })
+
+  it('recovers completed runs from the audit journal without storing response text there', async () => {
+    const task = await store.create({
+      name: 'Recovered one-off',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'once', at: '2099-01-01T00:00:00.000Z' }
+    }, new Date('2026-11-05T06:00:00.000Z'))
+    const startedAt = '2026-11-05T06:01:00.000Z'
+    await store.recoverFromAudit([
+      {
+        id: 'audit-start', at: startedAt, sessionId: 'session', type: 'scheduled_task.started',
+        data: { runId: 'stable-run-id', taskId: task.id, trigger: 'scheduled', startedAt }
+      },
+      {
+        id: 'audit-complete', at: '2026-11-05T06:02:00.000Z', sessionId: 'session', type: 'scheduled_task.completed',
+        data: { runId: 'stable-run-id', taskId: task.id, trigger: 'scheduled', status: 'success', finishedAt: '2026-11-05T06:02:00.000Z' }
+      }
+    ], new Date('2026-11-05T07:00:00.000Z'))
+
+    expect(store.listRuns(task.id)).toEqual([expect.objectContaining({
+      id: 'stable-run-id', status: 'success', trigger: 'scheduled', startedAt,
+      finishedAt: '2026-11-05T06:02:00.000Z',
+      summary: expect.stringContaining('detailed response is not available')
+    })])
+    expect(store.get(task.id)).toMatchObject({ enabled: false, runCount: 1 })
+    await store.recoverFromAudit([
+      {
+        id: 'audit-start', at: startedAt, sessionId: 'session', type: 'scheduled_task.started',
+        data: { runId: 'stable-run-id', taskId: task.id, trigger: 'scheduled', startedAt }
+      },
+      {
+        id: 'audit-complete', at: '2026-11-05T06:02:00.000Z', sessionId: 'session', type: 'scheduled_task.completed',
+        data: { runId: 'stable-run-id', taskId: task.id, trigger: 'scheduled', status: 'success', finishedAt: '2026-11-05T06:02:00.000Z' }
+      }
+    ], new Date('2026-11-05T07:00:00.000Z'))
+    expect(store.listRuns(task.id)).toHaveLength(1)
+  })
+
+  it('marks interrupted recurring runs as uncertain and does not immediately replay them', async () => {
+    const createdAt = new Date('2026-11-05T07:00:00.000Z')
+    const task = await store.create({
+      name: 'Recurring review',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'daily', time: '08:30' }
+    }, createdAt)
+    const startedAt = '2026-11-05T08:30:00.000Z'
+    const recoveryTime = new Date('2026-11-06T07:00:00.000Z')
+
+    await store.recoverFromAudit([{
+      id: 'audit-start-only', at: startedAt, sessionId: 'session', type: 'scheduled_task.started',
+      data: { runId: 'interrupted-run', taskId: task.id, trigger: 'scheduled', startedAt }
+    }], recoveryTime)
+
+    expect(store.listRuns(task.id)[0]).toMatchObject({
+      id: 'interrupted-run', status: 'failed', startedAt,
+      error: expect.stringContaining('outcome is unknown')
+    })
+    expect(Date.parse(store.get(task.id).nextRunAt ?? '')).toBeGreaterThan(recoveryTime.getTime())
+    expect(store.due(recoveryTime)).toHaveLength(0)
   })
 })

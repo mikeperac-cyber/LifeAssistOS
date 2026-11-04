@@ -96,24 +96,31 @@ export class ResearchStore {
   }
 
   addSource(input: { projectId: string; url: string; title?: string; content: string }): ResearchSource {
-    this.get(input.projectId)
-    const url = input.url.trim().slice(0, 2000)
-    const content = input.content.trim().slice(0, 100_000)
-    if (!url || !content) throw new Error('A source needs a URL and readable text.')
-    const source: ResearchSource = {
-      id: randomUUID(),
-      projectId: input.projectId,
-      url,
-      title: (input.title?.trim() || new URL(url).hostname).slice(0, 240),
-      content,
-      contentChars: content.length,
-      addedAt: new Date().toISOString()
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.get(input.projectId)
+      const url = input.url.trim().slice(0, 2000)
+      const content = input.content.trim().slice(0, 100_000)
+      if (!url || !content) throw new Error('A source needs a URL and readable text.')
+      const source: ResearchSource = {
+        id: randomUUID(),
+        projectId: input.projectId,
+        url,
+        title: (input.title?.trim() || new URL(url).hostname).slice(0, 240),
+        content,
+        contentChars: content.length,
+        addedAt: new Date().toISOString()
+      }
+      this.db.prepare('INSERT INTO sources (id, project_id, url, title, content, added_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+        source.id, source.projectId, source.url, source.title, source.content, source.addedAt
+      )
+      this.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(source.addedAt, source.projectId)
+      this.db.exec('COMMIT')
+      return source
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
     }
-    this.db.prepare('INSERT INTO sources (id, project_id, url, title, content, added_at) VALUES (?, ?, ?, ?, ?, ?)').run(
-      source.id, source.projectId, source.url, source.title, source.content, source.addedAt
-    )
-    this.db.prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(source.addedAt, source.projectId)
-    return source
   }
 
   removeSource(id: string): void {

@@ -85,4 +85,17 @@ describe('AuditLog hash chain', () => {
     await expect(log.append({ type: 'chat.message', data: { role: 'user', chars: 1 } }))
       .rejects.toThrow(/integrity verification failed/i)
   })
+
+  it('rechecks integrity from disk when the same log instance is reopened', async () => {
+    const file = path.join(dir, '2026-11.jsonl')
+    await writeFile(file, '{bad json}\n', 'utf8')
+    const log = new AuditLog(dir, 'session-a')
+    await log.init()
+    expect(log.getIntegrity().valid).toBe(false)
+
+    await writeFile(file, '', 'utf8')
+    await log.init()
+    expect(log.getIntegrity().valid).toBe(true)
+    await expect(log.append({ type: 'chat.message', data: { role: 'user', chars: 1 } })).resolves.toBeDefined()
+  })
 })

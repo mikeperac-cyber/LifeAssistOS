@@ -32,6 +32,7 @@ export class AuditLog {
 
   async init(): Promise<void> {
     await mkdir(this.dir, { recursive: true })
+    this.corruptLines = 0
     const files = (await readdir(this.dir)).filter((file) => file.endsWith('.jsonl')).sort()
     const loaded: AuditEvent[] = []
 

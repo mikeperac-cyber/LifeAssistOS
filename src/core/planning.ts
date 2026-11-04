@@ -106,11 +106,19 @@ export class PlanningStore {
   }
 
   convertInbox(id: string, input?: { title?: string; dueDate?: string | null; priority?: PlanTaskPriority }): PlanTask {
-    const row = this.db.prepare('SELECT * FROM inbox WHERE id = ?').get(id) as InboxRow | undefined
-    if (!row || row.dismissed_at || row.converted_task_id) throw new Error('That inbox item is no longer active.')
-    const task = this.addTask({ title: input?.title ?? row.text, dueDate: input?.dueDate, priority: input?.priority, sourceInboxId: id })
-    this.db.prepare('UPDATE inbox SET converted_task_id = ? WHERE id = ?').run(task.id, id)
-    return task
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const row = this.db.prepare('SELECT * FROM inbox WHERE id = ?').get(id) as InboxRow | undefined
+      if (!row || row.dismissed_at || row.converted_task_id) throw new Error('That inbox item is no longer active.')
+      const task = this.addTask({ title: input?.title ?? row.text, dueDate: input?.dueDate, priority: input?.priority, sourceInboxId: id })
+      const result = this.db.prepare('UPDATE inbox SET converted_task_id = ? WHERE id = ? AND dismissed_at IS NULL AND converted_task_id IS NULL').run(task.id, id)
+      if (result.changes === 0) throw new Error('That inbox item is no longer active.')
+      this.db.exec('COMMIT')
+      return task
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
   }
 
   dismissInbox(id: string): void {
