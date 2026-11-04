@@ -83,6 +83,33 @@ describe('mcp store', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('drops stored records with malformed argument lists before exposing them', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-mcp-invalid-args-'))
+    const file = path.join(dir, 'mcp-servers.json')
+    await (await import('node:fs/promises')).writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        servers: [{
+          id: 'malformed-args',
+          name: 'broken',
+          transport: 'stdio',
+          command: 'demo-server',
+          args: {},
+          enabled: true,
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }]
+      }),
+      'utf8'
+    )
+
+    const store = new McpServerStore(file)
+    await store.init()
+
+    expect(store.list()).toHaveLength(0)
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('update keeps transports coherent (http clears command, stdio clears url)', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-mcp-update-'))
     const store = new McpServerStore(path.join(dir, 'mcp-servers.json'))

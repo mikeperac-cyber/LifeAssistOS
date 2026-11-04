@@ -111,4 +111,26 @@ describe('FinanceStore', () => {
       second.close()
     }
   })
+
+  it('does not partially import a CSV when a later row is invalid', () => {
+    const csv = [
+      'direction,amount,currency,category,merchant,note,occurredAt',
+      'expense,12.50,USD,groceries,Market,Valid row,2026-11-01T10:00:00.000Z',
+      'income,20.00,NOPE,salary,Employer,Invalid currency,2026-11-02T10:00:00.000Z'
+    ].join('\n')
+
+    expect(() => finance.importCsv(csv)).toThrow(/three-letter ISO currency code/i)
+    expect(finance.report('month', new Date('2026-11-15T12:00:00Z')).totals).toEqual([])
+  })
+
+  it('rejects truncated non-empty CSV rows instead of silently skipping them', () => {
+    const csv = [
+      'direction,amount,currency,category,merchant,note,occurredAt',
+      'expense,12.50,USD,groceries,Market,Valid row,2026-11-01T10:00:00.000Z',
+      'income,20.00,EUR'
+    ].join('\n')
+
+    expect(() => finance.importCsv(csv)).toThrow(/row 3.*four required columns/i)
+    expect(finance.report('month', new Date('2026-11-15T12:00:00Z')).totals).toEqual([])
+  })
 })

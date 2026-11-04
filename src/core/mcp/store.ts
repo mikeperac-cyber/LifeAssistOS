@@ -36,13 +36,16 @@ export class McpServerStore {
   }
 
   list(): McpServerRecord[] {
-    return this.servers.map((entry) => ({ ...entry, args: entry.args ? [...entry.args] : [] }))
+    return this.servers.map((entry) => ({
+      ...entry,
+      args: Array.isArray(entry.args) ? [...entry.args] : []
+    }))
   }
 
   get(id: string): McpServerRecord {
     const found = this.servers.find((entry) => entry.id === id)
     if (!found) throw new Error('That MCP connection no longer exists.')
-    return { ...found, args: found.args ? [...found.args] : [] }
+    return { ...found, args: Array.isArray(found.args) ? [...found.args] : [] }
   }
 
   getByName(name: string): McpServerRecord | undefined {
@@ -177,6 +180,10 @@ function validStoredRecord(record: unknown): boolean {
   if (!NAME_PATTERN.test(entry.name) || entry.enabled !== undefined && typeof entry.enabled !== 'boolean') {
     return false
   }
+  if (
+    entry.args !== undefined &&
+    (!Array.isArray(entry.args) || entry.args.length > 32 || entry.args.some((arg) => typeof arg !== 'string'))
+  ) return false
   if (entry.transport === 'stdio') return typeof entry.command === 'string' && entry.command.trim().length > 0
   if (entry.transport === 'http') {
     return typeof entry.url === 'string' && isAcceptableUrl(entry.url)

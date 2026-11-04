@@ -223,20 +223,30 @@ export class FinanceStore {
     }
 
     let count = 0
-    for (let i = startIndex; i < rows.length; i += 1) {
-      const cells = rows[i]
-      if (cells.length < 4) continue
-      const [direction, amount, currency, category, merchant, note, occurredAt] = cells
-      this.add({
-        direction: direction as FinanceDirection,
-        amount,
-        currency,
-        category: category as FinanceCategory,
-        merchant: merchant || undefined,
-        note: note || undefined,
-        occurredAt: occurredAt || undefined
-      })
-      count += 1
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      for (let i = startIndex; i < rows.length; i += 1) {
+        const cells = rows[i]
+        if (cells.length < 4) {
+          throw new Error(`CSV row ${i + 1} must include the four required columns: direction, amount, currency, and category.`)
+        }
+        if (cells.length > 7) throw new Error(`CSV row ${i + 1} has more than seven columns.`)
+        const [direction, amount, currency, category, merchant, note, occurredAt] = cells
+        this.add({
+          direction: direction as FinanceDirection,
+          amount,
+          currency,
+          category: category as FinanceCategory,
+          merchant: merchant || undefined,
+          note: note || undefined,
+          occurredAt: occurredAt || undefined
+        })
+        count += 1
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the row validation error. */ }
+      throw error
     }
     return count
   }
