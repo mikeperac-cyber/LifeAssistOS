@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AssistantSkill, AssistantSkillInput, AssistantSkillScope, AssistantSkillSummary } from '../shared/types'
+import { readJsonStore } from './json-store'
 
 interface SkillFile {
   version: 1
@@ -22,17 +23,8 @@ export class SkillStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next: AssistantSkill[] = []
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<SkillFile>
-        next = Array.isArray(parsed.skills)
-          ? parsed.skills.filter(isSkill).slice(0, MAX_ASSISTANT_SKILLS).map(cloneSkill)
-          : []
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[skills] could not read skill library; starting empty', error)
-        }
-      }
+      const parsed = await readJsonStore<SkillFile>(this.file, 'skills', isSkillFile)
+      const next = parsed ? parsed.skills.slice(0, MAX_ASSISTANT_SKILLS).map(cloneSkill) : []
       await this.persist(next)
       this.skills = next
     })
@@ -152,6 +144,12 @@ function isSkill(value: unknown): value is AssistantSkill {
     typeof skill.scope === 'string' && SCOPES.has(skill.scope as AssistantSkillScope) &&
     typeof skill.instructions === 'string' && skill.instructions.trim().length > 0 && skill.instructions.length <= MAX_SKILL_INSTRUCTIONS &&
     typeof skill.enabled === 'boolean' && typeof skill.createdAt === 'string' && typeof skill.updatedAt === 'string'
+}
+
+function isSkillFile(value: unknown): value is SkillFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<SkillFile>
+  return file.version === 1 && Array.isArray(file.skills) && file.skills.every(isSkill)
 }
 
 function cloneSkill(skill: AssistantSkill): AssistantSkill {

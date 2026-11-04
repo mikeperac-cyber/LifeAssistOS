@@ -80,7 +80,12 @@ export class LocalApiServer {
 
   private async startServer(): Promise<LocalApiStatus> {
     const server = createServer((request, response) => {
-      void this.handle(request, response)
+      void this.handle(request, response).catch((error) => {
+        console.error('[local-api] request handler failed', error)
+        if (response.destroyed || response.writableEnded) return
+        if (response.headersSent) response.end()
+        else sendError(response, 500, 'The local API request failed.')
+      })
     })
     server.on('error', (error) => console.error('[local-api] server error', error))
     this.server = server
@@ -162,7 +167,7 @@ export class LocalApiServer {
 
     const controller = new AbortController()
     this.activeRequest = controller
-    this.options.onBusyChange?.(true)
+    this.notifyBusyChange(true)
     const cancelIfDisconnected = (): void => {
       if (!response.writableEnded) controller.abort(new Error('The local API client disconnected.'))
     }
@@ -254,7 +259,15 @@ export class LocalApiServer {
       request.removeListener('aborted', cancelIfDisconnected)
       response.removeListener('close', cancelIfDisconnected)
       if (this.activeRequest === controller) this.activeRequest = null
-      this.options.onBusyChange?.(false)
+      this.notifyBusyChange(false)
+    }
+  }
+
+  private notifyBusyChange(busy: boolean): void {
+    try {
+      this.options.onBusyChange?.(busy)
+    } catch (error) {
+      console.error('[local-api] busy notification failed', error)
     }
   }
 

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { FolderGrant, GrantLookup } from '../shared/types'
 import { ToolError } from '../tools/paths'
+import { readJsonStore } from './json-store'
 
 const PRIMARY_ID = 'workspace'
 const PRIMARY_LABEL = 'Workspace'
@@ -28,18 +29,8 @@ export class GrantStore implements GrantLookup {
       await mkdir(path.dirname(this.file), { recursive: true })
       const canonicalDefault = await realpath(defaultRoot)
 
-      let loaded: FolderGrant[] = []
-      try {
-        const text = await readFile(this.file, 'utf8')
-        const parsed = JSON.parse(text) as GrantsFile
-        if (Array.isArray(parsed.grants)) {
-          loaded = parsed.grants.filter(isValidGrant)
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[grants] could not read grants file, starting fresh', error)
-        }
-      }
+      const parsed = await readJsonStore<GrantsFile>(this.file, 'grants', isGrantsFile)
+      const loaded = parsed?.grants ?? []
 
       const primary = loaded.find((grant) => grant.builtIn)
       const others = loaded.filter((grant) => !grant.builtIn)
@@ -170,6 +161,12 @@ function isValidGrant(value: unknown): value is FolderGrant {
     typeof grant.root === 'string' &&
     (grant.access === 'read' || grant.access === 'read-write')
   )
+}
+
+function isGrantsFile(value: unknown): value is GrantsFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<GrantsFile>
+  return file.version === 1 && Array.isArray(file.grants) && file.grants.every(isValidGrant)
 }
 
 async function canonicalFolder(input: string): Promise<string> {

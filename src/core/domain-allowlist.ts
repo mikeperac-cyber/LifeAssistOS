@@ -1,8 +1,9 @@
 import { domainToASCII } from 'node:url'
 import { isIP } from 'node:net'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { readJsonStore } from './json-store'
 
 interface AllowlistFile {
   version: 1
@@ -19,19 +20,8 @@ export class DomainAllowlistStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next = new Set<string>()
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as AllowlistFile
-        next = new Set(
-          Array.isArray(parsed.hosts)
-            ? parsed.hosts.map(normalizeDomain).filter((host): host is string => host !== null)
-            : []
-        )
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[allowlist] could not read domains file; starting empty', error)
-        }
-      }
+      const parsed = await readJsonStore<AllowlistFile>(this.file, 'allowlist', isAllowlistFile)
+      const next = new Set(parsed?.hosts.map(normalizeDomain).filter((host): host is string => host !== null) ?? [])
       await this.persist(next)
       this.hosts = next
     })
@@ -87,6 +77,14 @@ export class DomainAllowlistStore {
       throw error
     }
   }
+}
+
+function isAllowlistFile(value: unknown): value is AllowlistFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<AllowlistFile>
+  return file.version === 1 && Array.isArray(file.hosts) && file.hosts.every((host) =>
+    typeof host === 'string' && normalizeDomain(host) !== null
+  )
 }
 
 export function normalizeDomain(input: string): string | null {

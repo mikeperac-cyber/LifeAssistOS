@@ -1,7 +1,8 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import type { SecretCodec } from './settings'
+import { readJsonStore } from './json-store'
 
 interface WebSearchSettingsFile {
   version: 1
@@ -17,6 +18,12 @@ interface WebSearchSettingsState {
 export interface PublicWebSearchSettings {
   hasApiKey: boolean
   apiKeyStored: boolean
+}
+
+function isWebSearchSettingsFile(value: unknown): value is WebSearchSettingsFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<WebSearchSettingsFile>
+  return file.version === 1 && (file.apiKeyEnc === undefined || typeof file.apiKeyEnc === 'string')
 }
 
 /** Stores an optional Tavily key without ever exposing it to the renderer. */
@@ -35,23 +42,17 @@ export class WebSearchSettingsStore {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
       const next: WebSearchSettingsState = { apiKey: '', apiKeyStored: false }
-      try {
-        const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WebSearchSettingsFile>
-        if (loaded.version === 1 && typeof loaded.apiKeyEnc === 'string' && loaded.apiKeyEnc.length > 0) {
-          next.storedApiKeyEnc = loaded.apiKeyEnc
-          next.apiKeyStored = true
-          if (this.codec?.available) {
-            try {
-              const decrypted = await this.codec.decrypt(loaded.apiKeyEnc)
-              next.apiKey = decrypted.value
-            } catch (error) {
-              console.warn('[web-search] could not decrypt the stored key; preserving its ciphertext', error)
-            }
+      const loaded = await readJsonStore<WebSearchSettingsFile>(this.file, 'web-search', isWebSearchSettingsFile)
+      if (loaded && typeof loaded.apiKeyEnc === 'string' && loaded.apiKeyEnc.length > 0) {
+        next.storedApiKeyEnc = loaded.apiKeyEnc
+        next.apiKeyStored = true
+        if (this.codec?.available) {
+          try {
+            const decrypted = await this.codec.decrypt(loaded.apiKeyEnc)
+            next.apiKey = decrypted.value
+          } catch (error) {
+            console.warn('[web-search] could not decrypt the stored key; preserving its ciphertext', error)
           }
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[web-search] could not read settings file', error)
         }
       }
       this.apply(await this.persist(next))

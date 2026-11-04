@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { AuditEvent, ChatMode, ScheduledAgentRun, ScheduledAgentTask, ScheduledTaskSchedule } from '../shared/types'
+import { readJsonStore } from './json-store'
 
 interface ScheduledTaskFile {
   version: 1
@@ -47,21 +48,9 @@ export class ScheduledTaskStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let nextTasks: ScheduledAgentTask[] = []
-      let nextRuns: ScheduledAgentRun[] = []
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<ScheduledTaskFile>
-        nextTasks = Array.isArray(parsed.tasks)
-          ? parsed.tasks.filter(isScheduledTask).slice(0, 100).map(cloneTask)
-          : []
-        nextRuns = Array.isArray(parsed.runs)
-          ? parsed.runs.filter(isScheduledRun).slice(-100).map(cloneRun)
-          : []
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[scheduled-tasks] could not read saved tasks; starting empty', error)
-        }
-      }
+      const parsed = await readJsonStore<ScheduledTaskFile>(this.file, 'scheduled-tasks', isScheduledTaskFile)
+      const nextTasks = parsed ? parsed.tasks.slice(0, 100).map(cloneTask) : []
+      const nextRuns = parsed ? parsed.runs.slice(-100).map(cloneRun) : []
       await this.persist(nextTasks, nextRuns)
       this.tasks = nextTasks
       this.runs = nextRuns
@@ -408,6 +397,13 @@ function isScheduledRun(value: unknown): value is ScheduledAgentRun {
     (run.trigger === 'scheduled' || run.trigger === 'manual') &&
     (run.status === 'success' || run.status === 'failed') && typeof run.summary === 'string' && run.summary.length <= 6000 &&
     (run.error === null || typeof run.error === 'string') && typeof run.startedAt === 'string' && typeof run.finishedAt === 'string'
+}
+
+function isScheduledTaskFile(value: unknown): value is ScheduledTaskFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<ScheduledTaskFile>
+  return file.version === 1 && Array.isArray(file.tasks) && file.tasks.every(isScheduledTask) &&
+    Array.isArray(file.runs) && file.runs.every(isScheduledRun)
 }
 
 function cloneTask(task: ScheduledAgentTask): ScheduledAgentTask {

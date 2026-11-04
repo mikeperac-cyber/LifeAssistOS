@@ -1,9 +1,10 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
 import type { AppSettings, ProviderSettings } from '../shared/types'
 import { normalizeProviderEndpoint, safeProviderEndpointForDisplay } from '../shared/provider-endpoint'
+import { readJsonStore } from './json-store'
 
 /** Encrypts the API key at rest. In Electron this is backed by safeStorage. */
 export interface SecretCodec {
@@ -49,6 +50,14 @@ export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
   maxSteps: 8
 }
 
+function isSettingsFile(value: unknown): value is SettingsFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<SettingsFile>
+  return file.version === 1 && Boolean(file.provider && typeof file.provider === 'object' && !Array.isArray(file.provider)) &&
+    (file.onboardingComplete === undefined || typeof file.onboardingComplete === 'boolean') &&
+    (file.apiKeyEnc === undefined || typeof file.apiKeyEnc === 'string')
+}
+
 /**
  * Provider configuration, stored outside the audit log. The API key is never
  * returned to the renderer and is only persisted when the OS keychain is
@@ -70,14 +79,7 @@ export class SettingsStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let loaded: SettingsFile | null = null
-      try {
-        loaded = JSON.parse(await readFile(this.file, 'utf8')) as SettingsFile
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[settings] could not read settings file, using defaults', error)
-        }
-      }
+      const loaded = await readJsonStore<SettingsFile>(this.file, 'settings', isSettingsFile)
 
       const next: SettingsStoreState = {
         provider: { ...DEFAULT_PROVIDER_SETTINGS },

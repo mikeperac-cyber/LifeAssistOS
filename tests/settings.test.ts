@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_PROVIDER_SETTINGS, SettingsStore, type SecretCodec } from '../src/core/settings'
 
 let dir = ''
@@ -208,12 +208,21 @@ describe('SettingsStore', () => {
   })
 
   it('recovers from a corrupt settings file', async () => {
-    await writeFile(file, '{not json', 'utf8')
+    const raw = '{not json'
+    await writeFile(file, raw, 'utf8')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    const store = new SettingsStore(file)
-    await store.init()
+    try {
+      const store = new SettingsStore(file)
+      await store.init()
 
-    expect(store.get().provider).toMatchObject(DEFAULT_PROVIDER_SETTINGS)
-    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ version: 1 })
+      const backupName = (await readdir(dir)).find((name) => /^settings\.corrupt-.+\.json$/.test(name))
+      expect(backupName).toBeDefined()
+      expect(await readFile(path.join(dir, backupName as string), 'utf8')).toBe(raw)
+      expect(store.get().provider).toMatchObject(DEFAULT_PROVIDER_SETTINGS)
+      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ version: 1 })
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

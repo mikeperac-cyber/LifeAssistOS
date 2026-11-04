@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { McpServerRecord, McpServerInput } from '../../shared/types'
+import { readJsonStore } from '../json-store'
 
 interface McpServersFile {
   version: 1
@@ -23,17 +24,8 @@ export class McpServerStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next: McpServerRecord[] = []
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as McpServersFile
-        next = Array.isArray(parsed.servers)
-          ? parsed.servers.filter((entry) => validStoredRecord(entry))
-          : []
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[mcp] could not read the servers file; starting empty', error)
-        }
-      }
+      const parsed = await readJsonStore<McpServersFile>(this.file, 'mcp', isMcpServersFile)
+      const next = parsed ? parsed.servers : []
       await this.persist(next)
       this.servers = next
     })
@@ -214,6 +206,12 @@ function validStoredRecord(record: unknown): boolean {
     return typeof entry.url === 'string' && isAcceptableUrl(entry.url)
   }
   return false
+}
+
+function isMcpServersFile(value: unknown): value is McpServersFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<McpServersFile>
+  return file.version === 1 && Array.isArray(file.servers) && file.servers.every(validStoredRecord)
 }
 
 /**

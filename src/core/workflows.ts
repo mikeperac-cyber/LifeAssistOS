@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { WorkflowRecord, WorkflowStep } from '../shared/types'
 import {
@@ -9,6 +9,7 @@ import {
   interpolateWorkflowSteps,
   buildWorkflowDraftFromTurn
 } from '../shared/workflow-params'
+import { readJsonStore } from './json-store'
 
 export {
   REPLAYABLE_WORKFLOW_TOOLS,
@@ -32,22 +33,8 @@ export class WorkflowStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next: WorkflowRecord[] = []
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkflowFile>
-        next = Array.isArray(parsed.workflows)
-          ? parsed.workflows
-              .filter(isWorkflowRecord)
-              .filter((workflow) => workflow.steps.length <= 16 && workflow.steps.every((step) =>
-                (REPLAYABLE_WORKFLOW_TOOLS as readonly string[]).includes(step.tool)
-              ))
-              .map(cloneWorkflow)
-          : []
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[workflows] could not read workflow templates; starting empty', error)
-        }
-      }
+      const parsed = await readJsonStore<WorkflowFile>(this.file, 'workflows', isWorkflowFile)
+      const next = parsed ? parsed.workflows.map(cloneWorkflow) : []
       await this.persist(next)
       this.workflows = next
     })
@@ -160,6 +147,16 @@ function isWorkflowRecord(value: unknown): value is WorkflowRecord {
     )
   )
   return valid
+}
+
+function isWorkflowFile(value: unknown): value is WorkflowFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<WorkflowFile>
+  return file.version === 1 && Array.isArray(file.workflows) && file.workflows.every((workflow) =>
+    isWorkflowRecord(workflow) && workflow.steps.every((step) =>
+      (REPLAYABLE_WORKFLOW_TOOLS as readonly string[]).includes(step.tool)
+    )
+  )
 }
 
 function cloneWorkflow(workflow: WorkflowRecord): WorkflowRecord {

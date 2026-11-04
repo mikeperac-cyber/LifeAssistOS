@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +20,53 @@ afterEach(async () => {
 })
 
 describe('scheduled agent tasks', () => {
+  it('preserves malformed saved tasks before initializing an empty store', async () => {
+    const raw = '{"version":1,"tasks":[broken'
+    await writeFile(file, raw, 'utf8')
+    const recovered = new ScheduledTaskStore(file)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      await recovered.init()
+      const backupName = (await readdir(dir)).find((name) => /^scheduled-tasks\.corrupt-.+\.json$/.test(name))
+
+      expect(backupName).toBeDefined()
+      expect(await readFile(path.join(dir, backupName as string), 'utf8')).toBe(raw)
+      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ tasks: [], runs: [] })
+      expect(recovered.list()).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('preserves scheduled files with an unsupported shape before resetting them', async () => {
+    const raw = JSON.stringify({ version: 2, tasks: 'not a task list', runs: [] })
+    await writeFile(file, raw, 'utf8')
+    const recovered = new ScheduledTaskStore(file)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    try {
+      await recovered.init()
+      const backupName = (await readdir(dir)).find((name) => /^scheduled-tasks\.corrupt-.+\.json$/.test(name))
+
+      expect(backupName).toBeDefined()
+      expect(await readFile(path.join(dir, backupName as string), 'utf8')).toBe(raw)
+      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ tasks: [], runs: [] })
+      expect(recovered.list()).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not replace a saved file when it cannot be read', async () => {
+    await rm(file)
+    await mkdir(file)
+    const unreadable = new ScheduledTaskStore(file)
+
+    await expect(unreadable.init()).rejects.toBeDefined()
+    expect((await stat(file)).isDirectory()).toBe(true)
+  })
+
   it('does not create a task in memory when its save fails', async () => {
     await rm(file)
     await mkdir(file)

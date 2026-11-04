@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -8,6 +8,7 @@ import { authorizeGoogleDesktop, normalizeGoogleClientId, type GoogleOAuthClient
 export { createGoogleOAuthReceiver, normalizeGoogleClientId } from './google-oauth'
 export type { GoogleOAuthClient, GoogleOAuthTokens, OAuthVerifier } from './google-oauth'
 import { requestPinnedHttps, type PinnedHttpsRequestOptions, type ResponseBody } from '../tools/web'
+import { readJsonStore } from './json-store'
 
 export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned'
 const GOOGLE_TOKEN_URL = new URL('https://oauth2.googleapis.com/token')
@@ -25,6 +26,13 @@ interface GoogleCalendarSettingsFile {
   version: 1
   clientId: string
   refreshTokenEnc?: string
+}
+
+function isGoogleCalendarSettingsFile(value: unknown): value is GoogleCalendarSettingsFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<GoogleCalendarSettingsFile>
+  return file.version === 1 && typeof file.clientId === 'string' &&
+    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string')
 }
 
 interface GoogleCalendarStoreState {
@@ -52,30 +60,22 @@ export class GoogleCalendarSettingsStore {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
       let next: GoogleCalendarStoreState = { clientId: '', refreshToken: '' }
-      try {
-        const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GoogleCalendarSettingsFile>
-        if (loaded.version === 1) {
-          if (typeof loaded.clientId === 'string') {
-            try {
-              next.clientId = normalizeGoogleClientId(loaded.clientId, true)
-            } catch {
-              next.clientId = ''
-            }
-          }
-          if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
-            next.storedRefreshTokenEnc = loaded.refreshTokenEnc
-            if (this.codec?.available) {
-              try {
-                next.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
-              } catch (error) {
-                console.warn('[google-calendar] could not decrypt the stored token; preserving its ciphertext', error)
-              }
-            }
-          }
+      const loaded = await readJsonStore<GoogleCalendarSettingsFile>(this.file, 'google-calendar', isGoogleCalendarSettingsFile)
+      if (loaded) {
+        try {
+          next.clientId = normalizeGoogleClientId(loaded.clientId, true)
+        } catch {
+          next.clientId = ''
         }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[google-calendar] could not read settings file', error)
+        if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
+          next.storedRefreshTokenEnc = loaded.refreshTokenEnc
+          if (this.codec?.available) {
+            try {
+              next.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
+            } catch (error) {
+              console.warn('[google-calendar] could not decrypt the stored token; preserving its ciphertext', error)
+            }
+          }
         }
       }
       this.apply(await this.persist(next))

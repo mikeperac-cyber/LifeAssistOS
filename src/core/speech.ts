@@ -1,7 +1,8 @@
 import { isIP } from 'node:net'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { readJsonStore } from './json-store'
 
 interface SpeechFile {
   version: 1
@@ -18,15 +19,8 @@ export class SpeechSettingsStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next = ''
-      try {
-        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<SpeechFile>
-        if (typeof parsed.endpoint === 'string') next = normalizeLocalSpeechEndpoint(parsed.endpoint)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[speech] could not read local transcription settings', error)
-        }
-      }
+      const parsed = await readJsonStore<SpeechFile>(this.file, 'speech', isSpeechFile)
+      const next = parsed ? normalizeLocalSpeechEndpoint(parsed.endpoint) : ''
       await this.persist(next)
       this.endpoint = next
     })
@@ -64,6 +58,18 @@ export class SpeechSettingsStore {
       await rm(temporary, { force: true }).catch(() => undefined)
       throw error
     }
+  }
+}
+
+function isSpeechFile(value: unknown): value is SpeechFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<SpeechFile>
+  if (file.version !== 1 || typeof file.endpoint !== 'string') return false
+  try {
+    normalizeLocalSpeechEndpoint(file.endpoint)
+    return true
+  } catch {
+    return false
   }
 }
 

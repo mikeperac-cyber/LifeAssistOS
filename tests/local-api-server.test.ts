@@ -190,6 +190,35 @@ describe('local OpenAI-compatible API', () => {
     expect(busyChanges).toEqual([true, false])
   })
 
+  it('releases its request slot when renderer busy notifications throw', async () => {
+    let busy = false
+    server = new LocalApiServer({
+      model: () => model,
+      busy: () => busy,
+      onBusyChange: (active) => {
+        busy = active
+        throw new Error('renderer unavailable')
+      },
+      run: async () => 'answer'
+    })
+    const status = await server.start()
+    const headers = {
+      Authorization: `Bearer ${status.token}`,
+      'Content-Type': 'application/json'
+    }
+    const request = (): Promise<Response> => fetch(`${status.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ messages: [{ role: 'user', content: 'Hello' }] })
+    })
+
+    const first = await request()
+    expect(first.status).toBe(200)
+    expect(busy).toBe(false)
+    const second = await request()
+    expect(second.status).toBe(200)
+  })
+
   it('rejects a second request while busy and bounds unsupported input', async () => {
     const run = vi.fn(async () => 'answer')
     server = new LocalApiServer({ model: () => model, busy: () => true, run })

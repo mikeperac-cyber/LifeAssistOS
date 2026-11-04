@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { SecretCodec } from './settings'
 import { authorizeGoogleDesktop, normalizeGoogleClientId, type GoogleOAuthClient } from './google-oauth'
 import { requestPinnedHttps, type PinnedHttpsRequestOptions, type ResponseBody } from '../tools/web'
+import { readJsonStore } from './json-store'
 
 export const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
 const GOOGLE_TOKEN_URL = new URL('https://oauth2.googleapis.com/token')
@@ -45,6 +46,13 @@ interface GoogleDriveSettingsFile {
   version: 1
   clientId: string
   refreshTokenEnc?: string
+}
+
+function isGoogleDriveSettingsFile(value: unknown): value is GoogleDriveSettingsFile {
+  if (!value || typeof value !== 'object') return false
+  const file = value as Partial<GoogleDriveSettingsFile>
+  return file.version === 1 && typeof file.clientId === 'string' &&
+    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string')
 }
 
 interface GoogleDriveStoreState {
@@ -100,26 +108,18 @@ export class GoogleDriveSettingsStore {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
       let next: GoogleDriveStoreState = { clientId: '', refreshToken: '' }
-      try {
-        const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GoogleDriveSettingsFile>
-        if (loaded.version === 1) {
-          if (typeof loaded.clientId === 'string') {
-            try { next.clientId = normalizeGoogleClientId(loaded.clientId, true) } catch { next.clientId = '' }
-          }
-          if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
-            next.storedRefreshTokenEnc = loaded.refreshTokenEnc
-            if (this.codec?.available) {
-              try {
-                next.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
-              } catch (error) {
-                console.warn('[google-drive] could not decrypt the stored token; preserving its ciphertext', error)
-              }
+      const loaded = await readJsonStore<GoogleDriveSettingsFile>(this.file, 'google-drive', isGoogleDriveSettingsFile)
+      if (loaded) {
+        try { next.clientId = normalizeGoogleClientId(loaded.clientId, true) } catch { next.clientId = '' }
+        if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
+          next.storedRefreshTokenEnc = loaded.refreshTokenEnc
+          if (this.codec?.available) {
+            try {
+              next.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
+            } catch (error) {
+              console.warn('[google-drive] could not decrypt the stored token; preserving its ciphertext', error)
             }
           }
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          console.warn('[google-drive] could not read settings file', error)
         }
       }
       this.apply(await this.persist(next))
