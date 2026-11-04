@@ -1,5 +1,6 @@
 import { isIP } from 'node:net'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 interface SpeechFile {
@@ -10,20 +11,25 @@ interface SpeechFile {
 /** User-configured local transcription endpoint. Remote hosts are rejected. */
 export class SpeechSettingsStore {
   private endpoint = ''
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<SpeechFile>
-      if (typeof parsed.endpoint === 'string') this.endpoint = normalizeLocalSpeechEndpoint(parsed.endpoint)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[speech] could not read local transcription settings', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let next = ''
+      try {
+        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<SpeechFile>
+        if (typeof parsed.endpoint === 'string') next = normalizeLocalSpeechEndpoint(parsed.endpoint)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[speech] could not read local transcription settings', error)
+        }
       }
-    }
-    await this.persist()
+      await this.persist(next)
+      this.endpoint = next
+    })
   }
 
   get(): string {
@@ -32,19 +38,32 @@ export class SpeechSettingsStore {
 
   async update(input: string): Promise<string> {
     const endpoint = normalizeLocalSpeechEndpoint(input)
-    this.endpoint = endpoint
-    await this.persist()
-    return endpoint
+    return this.mutate(async () => {
+      await this.persist(endpoint)
+      this.endpoint = endpoint
+      return endpoint
+    })
   }
 
-  private async persist(): Promise<void> {
-    const temporary = `${this.file}.tmp`
-    await writeFile(
-      temporary,
-      `${JSON.stringify({ version: 1, endpoint: this.endpoint } satisfies SpeechFile, null, 2)}\n`,
-      'utf8'
-    )
-    await rename(temporary, this.file)
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(endpoint: string): Promise<void> {
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(
+        temporary,
+        `${JSON.stringify({ version: 1, endpoint } satisfies SpeechFile, null, 2)}\n`,
+        'utf8'
+      )
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 

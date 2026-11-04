@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -22,6 +22,36 @@ afterEach(async () => {
 })
 
 describe('SkillStore', () => {
+  it('does not enable an unsaved skill after its write fails', async () => {
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.save({
+      name: 'Not saved',
+      description: 'A skill whose file write will fail.',
+      scope: 'general',
+      instructions: 'Keep claims tied to evidence and mark uncertainty.'
+    })).rejects.toBeDefined()
+
+    expect(store.list()).toEqual([])
+    expect(store.enabledSummaries()).toEqual([])
+  })
+
+  it('does not disable a skill in memory when saving the change fails', async () => {
+    const skill = await store.save({
+      name: 'Keep enabled',
+      description: 'A skill that should remain available.',
+      scope: 'general',
+      instructions: 'Keep claims tied to evidence and mark uncertainty.'
+    })
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.setEnabled(skill.id, false)).rejects.toBeDefined()
+
+    expect(store.getEnabled(skill.id).enabled).toBe(true)
+  })
+
   it('saves and reloads skills while filtering coach scopes and disabled entries', async () => {
     const personal = await store.save({
       name: 'Personal check-in',

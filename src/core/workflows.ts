@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { WorkflowRecord, WorkflowStep } from '../shared/types'
 import {
@@ -25,28 +25,32 @@ interface WorkflowFile {
 
 export class WorkflowStore {
   private workflows: WorkflowRecord[] = []
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkflowFile>
-      this.workflows = Array.isArray(parsed.workflows)
-        ? parsed.workflows
-            .filter(isWorkflowRecord)
-            .filter((workflow) => workflow.steps.length <= 16 && workflow.steps.every((step) =>
-              (REPLAYABLE_WORKFLOW_TOOLS as readonly string[]).includes(step.tool)
-            ))
-            .map(cloneWorkflow)
-        : []
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[workflows] could not read workflow templates; starting empty', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let next: WorkflowRecord[] = []
+      try {
+        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WorkflowFile>
+        next = Array.isArray(parsed.workflows)
+          ? parsed.workflows
+              .filter(isWorkflowRecord)
+              .filter((workflow) => workflow.steps.length <= 16 && workflow.steps.every((step) =>
+                (REPLAYABLE_WORKFLOW_TOOLS as readonly string[]).includes(step.tool)
+              ))
+              .map(cloneWorkflow)
+          : []
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[workflows] could not read workflow templates; starting empty', error)
+        }
       }
-      this.workflows = []
-    }
-    await this.persist()
+      await this.persist(next)
+      this.workflows = next
+    })
   }
 
   list(): WorkflowRecord[] {
@@ -62,54 +66,72 @@ export class WorkflowStore {
   }
 
   async save(input: { name: string; prompt: string; steps: WorkflowStep[] }): Promise<WorkflowRecord> {
-    const name = input.name.replace(/\s+/g, ' ').trim()
-    const prompt = input.prompt.trim()
-    if (name.length < 2 || name.length > 80) throw new Error('Workflow names must be 2–80 characters.')
-    if (!prompt || prompt.length > 4000) throw new Error('The workflow prompt is empty or too long.')
-    if (input.steps.length === 0 || input.steps.length > 16) throw new Error('A workflow must contain 1–16 steps.')
-    if (this.workflows.length >= 100) throw new Error('The workflow library is full. Remove an old workflow first.')
+    return this.mutate(async () => {
+      const name = input.name.replace(/\s+/g, ' ').trim()
+      const prompt = input.prompt.trim()
+      if (name.length < 2 || name.length > 80) throw new Error('Workflow names must be 2–80 characters.')
+      if (!prompt || prompt.length > 4000) throw new Error('The workflow prompt is empty or too long.')
+      if (input.steps.length === 0 || input.steps.length > 16) throw new Error('A workflow must contain 1–16 steps.')
+      if (this.workflows.length >= 100) throw new Error('The workflow library is full. Remove an old workflow first.')
 
-    const allowed = new Set<string>(REPLAYABLE_WORKFLOW_TOOLS)
-    const steps = input.steps.map((step) => {
-      if (!allowed.has(step.tool)) throw new Error(`The ${step.tool} tool cannot be saved in a workflow.`)
-      const serialized = JSON.stringify(step.args)
-      if (serialized.length > 250_000) throw new Error('A workflow step is too large to save.')
-      return {
-        tool: step.tool,
-        args: JSON.parse(serialized) as unknown,
-        summary: step.summary.slice(0, 240)
+      const allowed = new Set<string>(REPLAYABLE_WORKFLOW_TOOLS)
+      const steps = input.steps.map((step) => {
+        if (!allowed.has(step.tool)) throw new Error(`The ${step.tool} tool cannot be saved in a workflow.`)
+        const serialized = JSON.stringify(step.args)
+        if (serialized.length > 250_000) throw new Error('A workflow step is too large to save.')
+        return {
+          tool: step.tool,
+          args: JSON.parse(serialized) as unknown,
+          summary: step.summary.slice(0, 240)
+        }
+      })
+
+      if (this.workflows.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) {
+        throw new Error('A workflow with that name already exists.')
       }
+
+      const workflow: WorkflowRecord = {
+        id: randomUUID(),
+        name,
+        prompt,
+        steps,
+        createdAt: new Date().toISOString()
+      }
+      const next = [...this.workflows, workflow]
+      await this.persist(next)
+      this.workflows = next
+      return cloneWorkflow(workflow)
     })
-
-    if (this.workflows.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) {
-      throw new Error('A workflow with that name already exists.')
-    }
-
-    const workflow: WorkflowRecord = {
-      id: randomUUID(),
-      name,
-      prompt,
-      steps,
-      createdAt: new Date().toISOString()
-    }
-    this.workflows.push(workflow)
-    await this.persist()
-    return cloneWorkflow(workflow)
   }
 
   async remove(id: string): Promise<WorkflowRecord> {
-    const index = this.workflows.findIndex((workflow) => workflow.id === id)
-    if (index < 0) throw new Error('That workflow no longer exists.')
-    const [removed] = this.workflows.splice(index, 1)
-    await this.persist()
-    return cloneWorkflow(removed)
+    return this.mutate(async () => {
+      const index = this.workflows.findIndex((workflow) => workflow.id === id)
+      if (index < 0) throw new Error('That workflow no longer exists.')
+      const removed = this.workflows[index]
+      const next = this.workflows.filter((workflow) => workflow.id !== id)
+      await this.persist(next)
+      this.workflows = next
+      return cloneWorkflow(removed)
+    })
   }
 
-  private async persist(): Promise<void> {
-    const payload: WorkflowFile = { version: 1, workflows: this.workflows }
-    const temporary = `${this.file}.tmp`
-    await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.file)
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(workflows: WorkflowRecord[]): Promise<void> {
+    const payload: WorkflowFile = { version: 1, workflows }
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 

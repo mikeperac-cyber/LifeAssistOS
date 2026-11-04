@@ -190,6 +190,7 @@ export interface ScheduledTaskMutationResult {
 export interface ScheduledTaskRunResult {
   ok: boolean
   error?: string
+  warning?: string
   task?: ScheduledAgentTask
 }
 

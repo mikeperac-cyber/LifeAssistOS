@@ -128,7 +128,8 @@ export function ScheduledTasksView({
     setStatus('')
     try {
       const result = await onRun(task.id)
-      setStatus(result.ok ? `“${task.name}” finished.` : result.error ?? 'The scheduled task did not finish.')
+      const resultMessage = result.ok ? `“${task.name}” finished.` : result.error ?? 'The scheduled task did not finish.'
+      setStatus(result.warning ? `${resultMessage} ${result.warning}` : resultMessage)
     } catch (error) {
       setStatus(errorText(error))
     } finally {

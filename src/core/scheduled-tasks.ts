@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ChatMode, ScheduledAgentRun, ScheduledAgentTask, ScheduledTaskSchedule } from '../shared/types'
 
@@ -8,6 +8,8 @@ interface ScheduledTaskFile {
   tasks: ScheduledAgentTask[]
   runs: ScheduledAgentRun[]
 }
+
+const RUN_HISTORY_SAVE_WARNING = 'The run finished, but its history could not be saved. It may run again after Mike Assist restarts.'
 
 export interface ScheduledAgentTaskInput {
   name: string
@@ -20,6 +22,7 @@ export interface ScheduledRunOutput {
   status: 'success' | 'failed'
   summary: string
   error?: string
+  persistenceWarning?: string
 }
 
 export type ScheduledTaskRunner = (task: ScheduledAgentTask, trigger: 'scheduled' | 'manual') => Promise<ScheduledRunOutput | null>
@@ -27,34 +30,44 @@ export type ScheduledTaskRunner = (task: ScheduledAgentTask, trigger: 'scheduled
 export class ScheduledTaskStore {
   private tasks: ScheduledAgentTask[] = []
   private runs: ScheduledAgentRun[] = []
-  private writeQueue: Promise<void> = Promise.resolve()
+  private mutationQueue: Promise<void> = Promise.resolve()
+  private readonly runPersistenceWarnings = new Map<string, string>()
 
   constructor(private readonly file: string) {}
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<ScheduledTaskFile>
-      this.tasks = Array.isArray(parsed.tasks)
-        ? parsed.tasks.filter(isScheduledTask).slice(0, 100).map(cloneTask)
-        : []
-      this.runs = Array.isArray(parsed.runs)
-        ? parsed.runs.filter(isScheduledRun).slice(-100).map(cloneRun)
-        : []
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[scheduled-tasks] could not read saved tasks; starting empty', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let nextTasks: ScheduledAgentTask[] = []
+      let nextRuns: ScheduledAgentRun[] = []
+      try {
+        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<ScheduledTaskFile>
+        nextTasks = Array.isArray(parsed.tasks)
+          ? parsed.tasks.filter(isScheduledTask).slice(0, 100).map(cloneTask)
+          : []
+        nextRuns = Array.isArray(parsed.runs)
+          ? parsed.runs.filter(isScheduledRun).slice(-100).map(cloneRun)
+          : []
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[scheduled-tasks] could not read saved tasks; starting empty', error)
+        }
       }
-      this.tasks = []
-      this.runs = []
-    }
-    await this.persist()
+      await this.persist(nextTasks, nextRuns)
+      this.tasks = nextTasks
+      this.runs = nextRuns
+    })
   }
 
   list(): ScheduledAgentTask[] {
     return [...this.tasks]
       .sort((left, right) => (left.nextRunAt ?? left.createdAt).localeCompare(right.nextRunAt ?? right.createdAt))
-      .map(cloneTask)
+      .map((task) => {
+        const copy = cloneTask(task)
+        const warning = this.runPersistenceWarnings.get(task.id)
+        if (warning) copy.lastError = copy.lastError ? `${copy.lastError} ${warning}` : warning
+        return copy
+      })
   }
 
   get(id: string): ScheduledAgentTask {
@@ -68,60 +81,74 @@ export class ScheduledTaskStore {
   }
 
   async create(input: ScheduledAgentTaskInput, now = new Date()): Promise<ScheduledAgentTask> {
-    if (this.tasks.length >= 100) throw new Error('The scheduled task list is full. Remove an old task first.')
-    const name = input.name.replace(/\s+/g, ' ').trim()
-    const prompt = input.prompt.trim()
-    if (name.length < 2 || name.length > 100) throw new Error('Task names must be 2–100 characters.')
-    if (prompt.length < 5 || prompt.length > 6000) throw new Error('Task instructions must be 5–6,000 characters.')
-    validateMode(input.mode)
-    validateSchedule(input.schedule)
-    const schedule = cloneSchedule(input.schedule)
-    const nextRunAt = nextScheduledOccurrence(schedule, now)
-    if (!nextRunAt) throw new Error('Choose a future time for a one-time scheduled task.')
-    if (this.tasks.some((entry) => entry.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
-      throw new Error('A scheduled task with that name already exists.')
-    }
+    return this.mutate(async () => {
+      if (this.tasks.length >= 100) throw new Error('The scheduled task list is full. Remove an old task first.')
+      const name = input.name.replace(/\s+/g, ' ').trim()
+      const prompt = input.prompt.trim()
+      if (name.length < 2 || name.length > 100) throw new Error('Task names must be 2–100 characters.')
+      if (prompt.length < 5 || prompt.length > 6000) throw new Error('Task instructions must be 5–6,000 characters.')
+      validateMode(input.mode)
+      validateSchedule(input.schedule)
+      const schedule = cloneSchedule(input.schedule)
+      const nextRunAt = nextScheduledOccurrence(schedule, now)
+      if (!nextRunAt) throw new Error('Choose a future time for a one-time scheduled task.')
+      if (this.tasks.some((entry) => entry.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+        throw new Error('A scheduled task with that name already exists.')
+      }
 
-    const createdAt = now.toISOString()
-    const task: ScheduledAgentTask = {
-      id: randomUUID(),
-      name,
-      prompt,
-      mode: input.mode,
-      schedule,
-      enabled: true,
-      nextRunAt,
-      lastRunAt: null,
-      lastOutcome: null,
-      lastSummary: null,
-      lastError: null,
-      runCount: 0,
-      createdAt,
-      updatedAt: createdAt
-    }
-    this.tasks.push(task)
-    await this.persist()
-    return cloneTask(task)
+      const createdAt = now.toISOString()
+      const task: ScheduledAgentTask = {
+        id: randomUUID(),
+        name,
+        prompt,
+        mode: input.mode,
+        schedule,
+        enabled: true,
+        nextRunAt,
+        lastRunAt: null,
+        lastOutcome: null,
+        lastSummary: null,
+        lastError: null,
+        runCount: 0,
+        createdAt,
+        updatedAt: createdAt
+      }
+      const nextTasks = [...this.tasks, task]
+      await this.persist(nextTasks, this.runs)
+      this.tasks = nextTasks
+      return cloneTask(task)
+    })
   }
 
   async setEnabled(id: string, enabled: boolean, now = new Date()): Promise<ScheduledAgentTask> {
-    const task = this.findMutable(id)
-    if (enabled && task.schedule.kind === 'once' && Date.parse(task.schedule.at) <= now.getTime()) {
-      throw new Error('That one-time task has passed. Run it manually or create a new schedule.')
-    }
-    task.enabled = enabled
-    if (enabled) task.nextRunAt = nextScheduledOccurrence(task.schedule, now)
-    task.updatedAt = now.toISOString()
-    await this.persist()
-    return cloneTask(task)
+    return this.mutate(async () => {
+      const index = this.tasks.findIndex((entry) => entry.id === id)
+      if (index < 0) throw new Error('That scheduled task no longer exists.')
+      const task = cloneTask(this.tasks[index])
+      if (enabled && task.schedule.kind === 'once' && Date.parse(task.schedule.at) <= now.getTime()) {
+        throw new Error('That one-time task has passed. Run it manually or create a new schedule.')
+      }
+      task.enabled = enabled
+      if (enabled) task.nextRunAt = nextScheduledOccurrence(task.schedule, now)
+      task.updatedAt = now.toISOString()
+      const nextTasks = [...this.tasks]
+      nextTasks[index] = task
+      await this.persist(nextTasks, this.runs)
+      this.tasks = nextTasks
+      return cloneTask(task)
+    })
   }
 
   async remove(id: string): Promise<ScheduledAgentTask> {
-    const index = this.tasks.findIndex((entry) => entry.id === id)
-    if (index < 0) throw new Error('That scheduled task no longer exists.')
-    const [removed] = this.tasks.splice(index, 1)
-    await this.persist()
-    return cloneTask(removed)
+    return this.mutate(async () => {
+      const index = this.tasks.findIndex((entry) => entry.id === id)
+      if (index < 0) throw new Error('That scheduled task no longer exists.')
+      const removed = this.tasks[index]
+      const nextTasks = this.tasks.filter((entry) => entry.id !== id)
+      await this.persist(nextTasks, this.runs)
+      this.tasks = nextTasks
+      return cloneTask(removed)
+    })
   }
 
   due(through = new Date()): ScheduledAgentTask[] {
@@ -139,56 +166,71 @@ export class ScheduledTaskStore {
     startedAt: Date,
     finishedAt = new Date()
   ): Promise<ScheduledAgentRun> {
-    const run: ScheduledAgentRun = {
-      id: randomUUID(),
-      taskId,
-      trigger,
-      status: output.status,
-      summary: output.summary.trim().slice(0, 6000),
-      error: output.error?.trim().slice(0, 1000) || null,
-      startedAt: startedAt.toISOString(),
-      finishedAt: finishedAt.toISOString()
-    }
-    this.runs.push(run)
-    this.runs = this.runs.slice(-100)
-    const task = this.tasks.find((entry) => entry.id === taskId)
-    if (task) {
-      task.lastRunAt = run.finishedAt
-      task.lastOutcome = run.status
-      task.lastSummary = run.summary
-      task.lastError = run.error
-      task.runCount += 1
-      task.updatedAt = run.finishedAt
-      if (task.schedule.kind === 'once') {
-        task.enabled = false
-        task.nextRunAt = null
-      } else if (task.enabled) {
-        task.nextRunAt = nextScheduledOccurrence(task.schedule, finishedAt)
+    return this.mutate(async () => {
+      const run: ScheduledAgentRun = {
+        id: randomUUID(),
+        taskId,
+        trigger,
+        status: output.status,
+        summary: output.summary.trim().slice(0, 6000),
+        error: output.error?.trim().slice(0, 1000) || null,
+        startedAt: startedAt.toISOString(),
+        finishedAt: finishedAt.toISOString()
       }
-    }
-    await this.persist()
-    return cloneRun(run)
+      const nextRuns = [...this.runs, run].slice(-100)
+      const nextTasks = this.tasks.map((entry) => {
+        if (entry.id !== taskId) return entry
+        const task = cloneTask(entry)
+        task.lastRunAt = run.finishedAt
+        task.lastOutcome = run.status
+        task.lastSummary = run.summary
+        task.lastError = run.error
+        task.runCount += 1
+        task.updatedAt = run.finishedAt
+        if (task.schedule.kind === 'once') {
+          task.enabled = false
+          task.nextRunAt = null
+        } else if (task.enabled) {
+          task.nextRunAt = nextScheduledOccurrence(task.schedule, finishedAt)
+        }
+        return task
+      })
+
+      // The agent action has already run. Keep its result in memory even if the
+      // history write fails, so this session does not immediately repeat it.
+      this.tasks = nextTasks
+      this.runs = nextRuns
+      try {
+        await this.persist(nextTasks, nextRuns)
+      } catch (error) {
+        this.runPersistenceWarnings.set(taskId, RUN_HISTORY_SAVE_WARNING)
+        throw error
+      }
+      return cloneRun(run)
+    })
   }
 
-  private findMutable(id: string): ScheduledAgentTask {
-    const task = this.tasks.find((entry) => entry.id === id)
-    if (!task) throw new Error('That scheduled task no longer exists.')
-    return task
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
   }
 
-  private persist(): Promise<void> {
+  private async persist(tasks: ScheduledAgentTask[], runs: ScheduledAgentRun[]): Promise<void> {
     const payload: ScheduledTaskFile = {
       version: 1,
-      tasks: this.tasks.map(cloneTask),
-      runs: this.runs.map(cloneRun)
+      tasks: tasks.map(cloneTask),
+      runs: runs.map(cloneRun)
     }
-    const operation = this.writeQueue.then(async () => {
-      const temporary = `${this.file}.${randomUUID()}.tmp`
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
       await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
       await rename(temporary, this.file)
-    })
-    this.writeQueue = operation.catch(() => undefined)
-    return operation
+      this.runPersistenceWarnings.clear()
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 
@@ -288,7 +330,7 @@ export class ScheduledTaskScheduler {
   constructor(
     private readonly store: ScheduledTaskStore,
     private readonly run: ScheduledTaskRunner,
-    private readonly changed: (task: ScheduledAgentTask, result: ScheduledAgentRun) => void | Promise<void>,
+    private readonly changed: (task: ScheduledAgentTask, result: ScheduledAgentRun, warning?: string) => void | Promise<void>,
     private readonly intervalMs = 15_000,
     private readonly now: () => Date = () => new Date()
   ) {}
@@ -306,11 +348,16 @@ export class ScheduledTaskScheduler {
     this.timer = undefined
   }
 
-  async runNow(id: string): Promise<{ ok: boolean; error?: string; task?: ScheduledAgentTask }> {
+  async runNow(id: string): Promise<{ ok: boolean; error?: string; warning?: string; task?: ScheduledAgentTask }> {
     const task = this.store.get(id)
     const result = await this.execute(task, 'manual')
     if (!result) return { ok: false, error: 'Another task is running. Try again when it finishes.' }
-    return { ok: result.status === 'success', error: result.error, task: this.store.list().find((entry) => entry.id === id) }
+    return {
+      ok: result.status === 'success',
+      error: result.error,
+      warning: result.persistenceWarning,
+      task: this.store.list().find((entry) => entry.id === id)
+    }
   }
 
   isRunning(id: string): boolean { return this.running.has(id) }
@@ -346,10 +393,24 @@ export class ScheduledTaskScheduler {
     }
     if (!output) return null
 
-    const run = await this.store.recordRun(task.id, trigger, output, startedAt, this.now())
+    const finishedAt = this.now()
+    let run: ScheduledAgentRun
+    try {
+      run = await this.store.recordRun(task.id, trigger, output, startedAt, finishedAt)
+    } catch (error) {
+      // recordRun retains the completed action in memory before writing. Recover
+      // that record so the UI reports the real result and does not suggest a retry.
+      const persistedInMemory = this.store.listRuns(task.id).find((entry) =>
+        entry.startedAt === startedAt.toISOString() && entry.finishedAt === finishedAt.toISOString()
+      )
+      if (!persistedInMemory) throw error
+      run = persistedInMemory
+      console.error('[scheduled-tasks] run finished but its history could not be saved', error)
+      output = { ...output, persistenceWarning: RUN_HISTORY_SAVE_WARNING }
+    }
     const current = this.store.list().find((entry) => entry.id === task.id)
     if (current) {
-      try { await this.changed(current, run) }
+      try { await this.changed(current, run, output.persistenceWarning) }
       catch (error) { console.error('[scheduled-tasks] completion handler failed', error) }
     }
     return output

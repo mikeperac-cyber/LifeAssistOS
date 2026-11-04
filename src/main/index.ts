@@ -598,12 +598,13 @@ async function initialize(): Promise<void> {
     scheduledTaskScheduler = new ScheduledTaskScheduler(
       scheduledTasks,
       runScheduledAgentTask,
-      async (_task, run) => {
+      async (_task, run, persistenceWarning) => {
         sendToRenderer({ type: 'scheduled_tasks_changed' })
         if (!Notification.isSupported()) return
-        const body = run.status === 'success'
+        const resultMessage = run.status === 'success'
           ? 'A scheduled result is ready in Mike Assist.'
           : 'A scheduled run needs attention. Open Mike Assist to review it.'
+        const body = persistenceWarning ? `${resultMessage} ${persistenceWarning}` : resultMessage
         const notification = new Notification({ title: 'Mike Assist scheduled task', body })
         notification.on('click', () => {
           if (!mainWindow || mainWindow.isDestroyed()) createWindow()

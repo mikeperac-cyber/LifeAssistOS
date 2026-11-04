@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -16,6 +16,18 @@ afterEach(async () => {
 })
 
 describe('local speech endpoint', () => {
+  it('keeps the active endpoint unchanged when saving an update fails', async () => {
+    const file = path.join(dir, 'speech.json')
+    const store = new SpeechSettingsStore(file)
+    await store.init()
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.update('http://127.0.0.1:8080/v1/audio/transcriptions')).rejects.toBeDefined()
+
+    expect(store.get()).toBe('')
+  })
+
   it('accepts local IPv4 and localhost transcription endpoints', () => {
     expect(normalizeLocalSpeechEndpoint('http://127.0.0.1:8080/v1/audio/transcriptions'))
       .toBe('http://127.0.0.1:8080/v1/audio/transcriptions')

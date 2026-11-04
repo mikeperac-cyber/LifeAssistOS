@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +20,85 @@ afterEach(async () => {
 })
 
 describe('scheduled agent tasks', () => {
+  it('does not create a task in memory when its save fails', async () => {
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.create({
+      name: 'Unsaved reminder',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'once', at: '2099-01-01T00:00:00.000Z' }
+    })).rejects.toBeDefined()
+
+    expect(store.list()).toEqual([])
+  })
+
+  it('keeps a scheduled task enabled when saving a disable fails', async () => {
+    const task = await store.create({
+      name: 'Keep enabled',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'daily', time: '08:30' }
+    })
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.setEnabled(task.id, false)).rejects.toBeDefined()
+
+    expect(store.get(task.id).enabled).toBe(true)
+  })
+
+  it('keeps a scheduled task when saving its removal fails', async () => {
+    const task = await store.create({
+      name: 'Keep stored',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'daily', time: '08:30' }
+    })
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.remove(task.id)).rejects.toBeDefined()
+
+    expect(store.get(task.id).name).toBe('Keep stored')
+  })
+
+  it('reports a completed run when saving its history fails', async () => {
+    const clock = { value: new Date('2026-11-05T06:00:00.000Z') }
+    const task = await store.create({
+      name: 'Completed action',
+      prompt: 'Review my tasks and suggest one priority.',
+      mode: 'assistant',
+      schedule: { kind: 'once', at: '2099-01-01T00:00:00.000Z' }
+    }, clock.value)
+    await rm(file)
+    await mkdir(file)
+    const changed = vi.fn()
+    const scheduler = new ScheduledTaskScheduler(
+      store,
+      async () => ({ status: 'success', summary: 'One useful task is due today.' }),
+      changed,
+      10_000,
+      () => clock.value
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const result = await scheduler.runNow(task.id)
+
+    expect(result).toMatchObject({
+      ok: true,
+      warning: 'The run finished, but its history could not be saved. It may run again after Mike Assist restarts.',
+      task: { runCount: 1, enabled: false }
+    })
+    expect(store.listRuns(task.id)).toHaveLength(1)
+    expect(store.get(task.id).lastError).toBeNull()
+    expect(store.list()[0]?.lastError).toContain('may run again after Mike Assist restarts')
+    expect(changed).toHaveBeenCalledOnce()
+    expect(changed.mock.calls[0]?.[2]).toContain('may run again after Mike Assist restarts')
+    errorSpy.mockRestore()
+  })
+
   it('computes daily and weekday runs in local time', () => {
     const tuesdayMorning = new Date(2026, 10, 3, 7, 0, 0)
     expect(nextScheduledOccurrence({ kind: 'daily', time: '08:30' }, tuesdayMorning))

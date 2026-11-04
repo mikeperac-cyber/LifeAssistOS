@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -26,6 +26,33 @@ afterEach(async () => {
 })
 
 describe('WorkflowStore', () => {
+  it('does not publish a workflow in memory when saving it fails', async () => {
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.save({
+      name: 'Not saved',
+      prompt: 'Read a local note and summarize it.',
+      steps: [{ tool: 'list_dir', args: {}, summary: 'List files' }]
+    })).rejects.toBeDefined()
+
+    expect(store.list()).toEqual([])
+  })
+
+  it('keeps a workflow when saving its removal fails', async () => {
+    const workflow = await store.save({
+      name: 'Keep this',
+      prompt: 'Read a local note and summarize it.',
+      steps: [{ tool: 'list_dir', args: {}, summary: 'List files' }]
+    })
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.remove(workflow.id)).rejects.toBeDefined()
+
+    expect(store.get(workflow.id)).toEqual(workflow)
+  })
+
   it('persists exact local tool arguments and loads them after restart', async () => {
     const steps: WorkflowStep[] = [
       { tool: 'list_dir', args: { root: 'Workspace', path: 'reports' }, summary: 'List Workspace/reports' },
