@@ -112,6 +112,19 @@ describe('SettingsStore', () => {
     expect(reloaded.get().provider.apiKey).toBe('sk-encrypted')
   })
 
+  it('clears a previously loaded API key when reloading settings without one', async () => {
+    const store = new SettingsStore(file, codec)
+    await store.init()
+    await store.update({ apiKey: 'sk-before-restore' })
+    await writeFile(file, JSON.stringify({ version: 1, provider: DEFAULT_PROVIDER_SETTINGS }), 'utf8')
+
+    await store.init()
+
+    expect(store.get().provider.apiKey).toBeUndefined()
+    expect(store.public().provider.hasApiKey).toBe(false)
+    expect(JSON.parse(await readFile(file, 'utf8')).apiKeyEnc).toBeUndefined()
+  })
+
   it('preserves encrypted key material if OS encryption is temporarily unavailable', async () => {
     const store = new SettingsStore(file, codec)
     await store.init()

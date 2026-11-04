@@ -24,6 +24,9 @@ export class WebSearchSettingsStore {
   ) {}
 
   async init(): Promise<void> {
+    this.apiKey = ''
+    this.storedApiKeyEnc = undefined
+    this.apiKeyStored = false
     await mkdir(path.dirname(this.file), { recursive: true })
     try {
       const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<WebSearchSettingsFile>

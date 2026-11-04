@@ -62,7 +62,7 @@ export function ApprovalModal({
 
         {request.tainted && (
           <div className="taint-warning">
-            This write may use untrusted content from the web, email, a helper, MCP, or a command. Check the proposed content carefully.
+            This action may use untrusted content from the web, email, a helper, MCP, or a command. Check the proposed action carefully.
           </div>
         )}
 

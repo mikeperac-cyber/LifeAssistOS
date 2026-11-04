@@ -62,6 +62,19 @@ describe('Google Drive settings and fixed API boundary', () => {
     expect(cleared.revocationAttempted).toBe(false)
   })
 
+  it('clears a previously loaded connection when reinitializing from a missing settings file', async () => {
+    const store = new GoogleDriveSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('drive-before-restore')
+    await rm(file)
+
+    await store.init()
+
+    expect(store.public()).toMatchObject({ clientId: '', connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
   it('uses browser PKCE and requests only the read-only Drive scope', async () => {
     const store = new GoogleDriveSettingsStore(file, codec)
     await store.init()

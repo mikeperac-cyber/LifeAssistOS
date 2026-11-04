@@ -56,6 +56,19 @@ describe('Google Calendar settings and OAuth', () => {
     await expect(reloaded.updateClientId('234567890123-next.apps.googleusercontent.com')).rejects.toThrow(/Disconnect/)
   })
 
+  it('clears a previously loaded connection when reinitializing from a missing settings file', async () => {
+    const store = new GoogleCalendarSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('calendar-before-restore')
+    await rm(file)
+
+    await store.init()
+
+    expect(store.public()).toMatchObject({ clientId: '', connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
   it('keeps refresh tokens session-only when OS encryption is unavailable', async () => {
     const store = new GoogleCalendarSettingsStore(file)
     await store.init()

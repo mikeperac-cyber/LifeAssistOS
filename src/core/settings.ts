@@ -58,6 +58,11 @@ export class SettingsStore {
   ) {}
 
   async init(): Promise<void> {
+    this.provider = { ...DEFAULT_PROVIDER_SETTINGS }
+    this.apiKey = ''
+    this.apiKeyStored = false
+    this.onboardingComplete = false
+    this.storedApiKeyEnc = undefined
     await mkdir(path.dirname(this.file), { recursive: true })
 
     let loaded: SettingsFile | null = null

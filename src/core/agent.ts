@@ -27,6 +27,7 @@ import {
   type ProviderToolSpec
 } from './providers/types'
 import type { ToolRegistry } from './registry'
+import { isMutating } from './gateway/policy'
 import type { StoredChatImageAttachment } from './image-attachments'
 import {
   EXECUTE_CODE_TOOL_NAME,
@@ -386,7 +387,7 @@ export class Agent {
             args,
             summary: summarizeCall(step.tool, args),
             risk,
-            tainted: externalContentSeen && risk !== undefined && risk !== 'read'
+            tainted: externalContentSeen && risk !== undefined && isMutating(risk)
           }
           perTurnToolCalls.set(step.tool, (perTurnToolCalls.get(step.tool) ?? 0) + 1)
           this.options.emit({ type: 'tool_call', call: nestedCall })
@@ -468,18 +469,18 @@ export class Agent {
 
         let codeToolCalls = 0
         const runNestedTool = async (name: string, args: unknown): Promise<ToolResult> => {
+          const risk = this.options.registry.riskOf(name)
           const nestedCall: ToolCall = {
             id: randomUUID(),
             name,
             args,
             summary: summarizeCall(name, args),
-            risk: this.options.registry.riskOf(name),
-            tainted: externalContentSeen && this.options.registry.riskOf(name) !== 'read'
+            risk,
+            tainted: externalContentSeen && risk !== undefined && isMutating(risk)
           }
           this.options.emit({ type: 'tool_call', call: nestedCall })
 
           let nestedResult: ToolResult
-          const risk = nestedCall.risk
           const perToolCount = perTurnToolCalls.get(name) ?? 0
           const perToolLimit = this.options.perTurnToolLimits?.[name]
           const toolNotEnabled = !enabledTools.has(name)
@@ -765,13 +766,14 @@ export class Agent {
             const raw = response.toolCalls[rawIndex]
             if (!raw) break
             const parsed = parseArguments(raw.function.arguments)
+            const risk = this.options.registry.riskOf(raw.function.name)
             const call: ToolCall = {
               id: raw.id || randomUUID(),
               name: raw.function.name,
               args: parsed.ok ? parsed.value : { invalidJson: raw.function.arguments.slice(0, 500) },
               summary: summarizeCall(raw.function.name, parsed.ok ? parsed.value : {}),
-              risk: this.options.registry.riskOf(raw.function.name),
-              tainted: externalContentSeen && this.options.registry.riskOf(raw.function.name) === 'write'
+              risk,
+              tainted: externalContentSeen && risk !== undefined && isMutating(risk)
             }
 
             if (call.name !== SEQUENCE_TOOL_NAME) this.options.emit({ type: 'tool_call', call })

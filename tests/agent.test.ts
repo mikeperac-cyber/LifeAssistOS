@@ -957,6 +957,31 @@ describe('Agent', () => {
     ).toBe(true)
   })
 
+  it('marks direct external actions tainted after successful web results', async () => {
+    const approvals: PermissionRequest[] = []
+    const sendEmail: ToolDef<{ recipient: string; body: string }, { sent: boolean }> = {
+      name: 'gmail_send_message',
+      description: 'Send an approved email.',
+      risk: 'external',
+      input: z.object({ recipient: z.string(), body: z.string() }),
+      scope: () => ({ kind: 'none' }),
+      run: async () => ({ sent: true })
+    }
+    const { agent } = await harness(
+      [
+        toolReply('web_search', { query: 'information to include' }),
+        toolReply('gmail_send_message', { recipient: 'learner@example.com', body: 'Web result summary' }),
+        textReply('The email was sent.')
+      ],
+      { extraTools: [webSearchStub(), sendEmail], approvalRequests: approvals }
+    )
+
+    await agent.handleUserMessage('Search for the information and email a summary.')
+
+    expect(approvals.map((request) => request.tool)).toEqual(['web_search', 'gmail_send_message'])
+    expect(approvals[1].tainted).toBe(true)
+  })
+
   it('requires reading the key files before completing a project review', async () => {
     await mkdir(path.join(root, 'src'), { recursive: true })
     await writeFile(path.join(root, 'src', 'main.ts'), 'export function start() { return true }', 'utf8')

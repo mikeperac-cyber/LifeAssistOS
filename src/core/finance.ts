@@ -214,21 +214,17 @@ export class FinanceStore {
   }
 
   importCsv(rawCsv: string): number {
-    const lines = rawCsv
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-    if (lines.length === 0) return 0
+    const rows = parseCsvRows(rawCsv).filter((row) => row.some((cell) => cell.trim().length > 0))
+    if (rows.length === 0) return 0
 
     let startIndex = 0
-    if (/^direction\s*,/i.test(lines[0])) {
+    if (rows[0][0]?.replace(/^\uFEFF/, '').trim().toLowerCase() === 'direction') {
       startIndex = 1
     }
 
     let count = 0
-    for (let i = startIndex; i < lines.length; i += 1) {
-      const cells = parseCsvLine(lines[i])
+    for (let i = startIndex; i < rows.length; i += 1) {
+      const cells = rows[i]
       if (cells.length < 4) continue
       const [direction, amount, currency, category, merchant, note, occurredAt] = cells
       this.add({
@@ -268,14 +264,15 @@ function escapeCsvCell(value: string): string {
   return value
 }
 
-function parseCsvLine(line: string): string[] {
-  const cells: string[] = []
+function parseCsvRows(csv: string): string[][] {
+  const rows: string[][] = []
+  let cells: string[] = []
   let current = ''
   let inQuotes = false
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i]
+  for (let i = 0; i < csv.length; i += 1) {
+    const ch = csv[i]
     if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') {
+      if (ch === '"' && csv[i + 1] === '"') {
         current += '"'
         i += 1
       } else if (ch === '"') {
@@ -288,12 +285,22 @@ function parseCsvLine(line: string): string[] {
     } else if (ch === ',') {
       cells.push(current)
       current = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && csv[i + 1] === '\n') i += 1
+      cells.push(current)
+      rows.push(cells)
+      cells = []
+      current = ''
     } else {
       current += ch
     }
   }
-  cells.push(current)
-  return cells
+  if (inQuotes) throw new Error('CSV contains an unterminated quoted field.')
+  if (cells.length > 0 || current.length > 0) {
+    cells.push(current)
+    rows.push(cells)
+  }
+  return rows
 }
 
 export function currencyFractionDigits(currency: string): number {

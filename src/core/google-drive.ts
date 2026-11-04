@@ -88,6 +88,9 @@ export class GoogleDriveSettingsStore {
   constructor(private readonly file: string, private readonly codec?: SecretCodec) {}
 
   async init(): Promise<void> {
+    this.clientId = ''
+    this.refreshToken = ''
+    this.storedRefreshTokenEnc = undefined
     await mkdir(path.dirname(this.file), { recursive: true })
     try {
       const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GoogleDriveSettingsFile>
@@ -190,6 +193,11 @@ export class GoogleDriveService {
 
   isReady(): boolean {
     return Boolean(this.store.getClientId() && this.store.getRefreshToken())
+  }
+
+  clearCachedAccessToken(): void {
+    this.accessToken = ''
+    this.accessTokenExpiresAt = 0
   }
 
   async connect(): Promise<PublicGoogleDriveSettings> {

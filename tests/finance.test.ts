@@ -87,7 +87,7 @@ describe('FinanceStore', () => {
       currency: 'EUR',
       category: 'salary',
       merchant: 'LB English, Ltd.',
-      note: 'Autumn term "bonus"',
+      note: 'Autumn term "bonus"\nPaid in full',
       occurredAt: '2026-11-01T10:00:00.000Z'
     })
     const csv = finance.exportCsv()
@@ -106,7 +106,7 @@ describe('FinanceStore', () => {
         incomeMinor: 45050
       })
       expect(report.recent[0].merchant).toBe('LB English, Ltd.')
-      expect(report.recent[0].note).toBe('Autumn term "bonus"')
+      expect(report.recent[0].note).toBe('Autumn term "bonus"\nPaid in full')
     } finally {
       second.close()
     }

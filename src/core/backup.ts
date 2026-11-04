@@ -314,7 +314,7 @@ export async function restoreBackupSnapshot(
   userDataDir: string,
   options?: {
     passphrase?: string
-    closeStores?: () => void
+    closeStores?: () => void | Promise<void>
     reopenStores?: () => Promise<void>
   }
 ): Promise<{ restoredFiles: string[] }> {
@@ -329,7 +329,7 @@ export async function restoreBackupSnapshot(
     throw new Error(verification.error ?? 'Backup verification failed.')
   }
 
-  options?.closeStores?.()
+  await options?.closeStores?.()
   await mkdir(destination, { recursive: true })
 
   const restoredFiles: string[] = []
@@ -377,6 +377,12 @@ export async function restoreBackupSnapshot(
         }
         await copyFile(path.join(source, item), targetFile)
         restoredFiles.push(item)
+      }
+    }
+    const included = new Set(verification.includes)
+    for (const item of OPTIONAL_DATA_FILES) {
+      if (!included.has(item)) {
+        await rm(path.join(destination, item), { force: true })
       }
     }
   } finally {

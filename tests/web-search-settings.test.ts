@@ -76,4 +76,16 @@ describe('WebSearchSettingsStore', () => {
     await expect(store.updateApiKey('short')).rejects.toThrow(/valid Tavily API key/)
     await expect(store.updateApiKey('unsafe\r\nkeyvalue')).rejects.toThrow(/valid Tavily API key/)
   })
+
+  it('clears a previously loaded API key when reinitializing from a missing settings file', async () => {
+    const store = new WebSearchSettingsStore(file, codec)
+    await store.init()
+    await store.updateApiKey('tavily-before-restore')
+    await rm(file)
+
+    await store.init()
+
+    expect(store.getApiKey()).toBeUndefined()
+    expect(store.public()).toEqual({ hasApiKey: false, apiKeyStored: false })
+  })
 })

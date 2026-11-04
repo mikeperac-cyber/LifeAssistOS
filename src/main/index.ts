@@ -1150,7 +1150,8 @@ function registerIpc(): void {
     try {
       await restoreBackupSnapshot(backupPath, userData, {
         passphrase: typeof passphrase === 'string' && passphrase.trim() ? passphrase.trim() : undefined,
-        closeStores: () => {
+        closeStores: async () => {
+          await mcpManager?.dispose()
           conversations?.close()
           finance?.close()
           memory?.close()
@@ -1176,7 +1177,15 @@ function registerIpc(): void {
           await scheduledTasks?.init()
           await skills?.init()
           await settings?.init()
+          await webSearchSettings?.init()
+          await googleCalendarSettings?.init()
+          googleCalendar?.clearCachedAccessToken()
+          await googleGmailSettings?.init()
+          googleGmail?.clearCachedAccessToken()
+          await googleDriveSettings?.init()
+          googleDrive?.clearCachedAccessToken()
           await audit?.init()
+          await mcpManager?.init()
           const nextActiveId = conversations?.activeSessionId()
           if (nextActiveId) {
             activeConversationId = nextActiveId

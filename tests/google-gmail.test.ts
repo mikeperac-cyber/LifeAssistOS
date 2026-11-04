@@ -56,6 +56,19 @@ describe('Google Gmail settings and OAuth', () => {
     expect(cleared.settings).toMatchObject({ connected: false, tokenStored: false })
   })
 
+  it('clears a previously loaded connection when reinitializing from a missing settings file', async () => {
+    const store = new GoogleGmailSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('gmail-before-restore')
+    await rm(file)
+
+    await store.init()
+
+    expect(store.public()).toMatchObject({ clientId: '', connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
   it('uses the shared system-browser PKCE flow and requires every Gmail permission', async () => {
     const store = new GoogleGmailSettingsStore(file, codec)
     await store.init()

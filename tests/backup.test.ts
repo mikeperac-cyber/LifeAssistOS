@@ -259,6 +259,20 @@ describe('backup snapshot', () => {
     expect(await readFile(outsideFile, 'utf8')).toBe('keep this file')
   })
 
+  it('removes optional settings that were absent from the restored backup', async () => {
+    const target = path.join(backupRoot, 'missing-optional-settings')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    const manifestPath = path.join(target, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { includes: string[] }
+    manifest.includes = manifest.includes.filter((item) => item !== 'web-search.json')
+    await writeFile(manifestPath, JSON.stringify(manifest), 'utf8')
+    await rm(path.join(target, 'web-search.json'))
+
+    await restoreBackupSnapshot(target, source)
+
+    await expect(readFile(path.join(source, 'web-search.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('creates, verifies, and restores a passphrase-encrypted backup snapshot', async () => {
     const target = path.join(backupRoot, 'encrypted-backup')
     await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0', {
