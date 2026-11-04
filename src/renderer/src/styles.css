@@ -30,7 +30,7 @@
   --code-muted: #a8b8cc;
   --scrollbar-thumb: #1b2533;
   --scrollbar-thumb-hover: #263345;
-  --focus-ring: rgba(86, 214, 192, 0.62);
+  --focus-ring: var(--accent-strong);
   --glow-accent: rgba(86, 214, 192, 0.06);
   --glow-blue: rgba(122, 167, 240, 0.05);
   --brand-gradient: linear-gradient(145deg, #63e3cb, #2aa792);
@@ -72,7 +72,7 @@
   --code-muted: #52647b;
   --scrollbar-thumb: #cbd5e1;
   --scrollbar-thumb-hover: #aab8c8;
-  --focus-ring: rgba(21, 121, 111, 0.55);
+  --focus-ring: var(--accent-strong);
   --glow-accent: rgba(21, 121, 111, 0.08);
   --glow-blue: rgba(40, 91, 153, 0.05);
   --brand-gradient: linear-gradient(145deg, #238f83, #11695f);
@@ -108,7 +108,7 @@
   --topbar-bg: rgba(9, 21, 15, 0.74);
   --scrollbar-thumb: #20382a;
   --scrollbar-thumb-hover: #31513d;
-  --focus-ring: rgba(124, 221, 164, 0.62);
+  --focus-ring: var(--accent-strong);
   --glow-accent: rgba(124, 221, 164, 0.07);
   --glow-blue: rgba(141, 185, 239, 0.045);
   --brand-gradient: linear-gradient(145deg, #8ee7b2, #48b77b);
@@ -142,7 +142,7 @@
   --topbar-bg: rgba(14, 11, 24, 0.76);
   --scrollbar-thumb: #30283f;
   --scrollbar-thumb-hover: #443858;
-  --focus-ring: rgba(196, 168, 255, 0.62);
+  --focus-ring: var(--accent-strong);
   --glow-accent: rgba(196, 168, 255, 0.075);
   --glow-blue: rgba(145, 181, 243, 0.045);
   --brand-gradient: linear-gradient(145deg, #d1bcff, #9877e6);
@@ -306,7 +306,9 @@ summary:focus-visible {
 }
 
 .nav-search-wrap:focus-within {
-  border-color: var(--accent);
+  border-color: var(--accent-strong);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
   box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
@@ -1139,9 +1141,11 @@ summary:focus-visible {
 }
 
 .composer:focus-within {
-  border-color: rgba(86, 214, 192, 0.32);
+  border-color: var(--accent-strong);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
   box-shadow:
-    0 0 0 3px rgba(86, 214, 192, 0.07),
+    0 0 0 3px var(--accent-dim),
     0 12px 40px rgba(0, 0, 0, 0.3);
 }
 
@@ -1908,8 +1912,7 @@ summary:focus-visible {
 }
 
 .domain-add input:focus {
-  border-color: rgba(86, 214, 192, 0.45);
-  outline: none;
+  border-color: var(--accent-strong);
 }
 
 .voice-button {
@@ -2527,9 +2530,8 @@ summary:focus-visible {
 .scheduled-form input:focus,
 .scheduled-form textarea:focus,
 .scheduled-form select:focus {
-  border-color: rgba(86, 214, 192, 0.45);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(86, 214, 192, 0.06);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .scheduled-form-row {
@@ -2898,8 +2900,7 @@ summary:focus-visible {
 }
 
 .skill-instructions:focus {
-  border-color: rgba(86, 214, 192, 0.45);
-  outline: none;
+  border-color: var(--accent-strong);
 }
 
 .skill-editor-actions {
@@ -3096,7 +3097,7 @@ summary:focus-visible {
 .vault-editor textarea:focus,
 .task-add input:focus,
 .task-add select:focus,
-.inbox-add input:focus { border-color: rgba(86, 214, 192, 0.45); outline: none; box-shadow: 0 0 0 3px rgba(86, 214, 192, 0.06); }
+.inbox-add input:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-dim); }
 
 .research-main { padding: 21px; }
 .research-header { margin-bottom: 16px; }
@@ -3203,7 +3204,7 @@ summary:focus-visible {
 .coach-profile label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10.5px; font-weight: 600; }
 .coach-profile select, .coach-profile textarea, .coach-checkin select, .coach-checkin textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
 .coach-profile textarea, .coach-checkin textarea { resize: vertical; line-height: 1.5; }
-.coach-profile select:focus, .coach-profile textarea:focus, .coach-checkin select:focus, .coach-checkin textarea:focus { border-color: rgba(86, 214, 192, 0.45); outline: none; box-shadow: 0 0 0 3px rgba(86, 214, 192, 0.06); }
+.coach-profile select:focus, .coach-profile textarea:focus, .coach-checkin select:focus, .coach-checkin textarea:focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-dim); }
 .privacy-chip { padding: 4px 7px; border: 1px solid rgba(86, 214, 192, 0.2); border-radius: 999px; background: var(--accent-dim); color: var(--accent); font-size: 9px; white-space: nowrap; }
 .coach-goal-list { display: flex; flex-direction: column; gap: 7px; }
 .coach-goal { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); }
@@ -3220,9 +3221,9 @@ summary:focus-visible {
 .coach-goal .ghost-button { padding: 5px 8px; font-size: 10px; }
 .coach-goal-form { display: grid; grid-template-columns: 1.2fr 1fr 130px auto; gap: 7px; margin-top: 3px; }
 .coach-goal-form input { min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10.5px; }
-.coach-goal-form input:focus { border-color: rgba(86, 214, 192, .45); outline: none; }
+.coach-goal-form input:focus { border-color: var(--accent-strong); }
 .coach-goal-form textarea { grid-column: 1 / -1; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10.5px; resize: vertical; }
-.coach-goal-form textarea:focus { border-color: rgba(86, 214, 192, .45); outline: none; }
+.coach-goal-form textarea:focus { border-color: var(--accent-strong); }
 .coach-checkin { grid-column: 1; }
 .coach-journal { grid-column: 2; grid-row: 2; }
 .coach-prompt { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
@@ -3653,8 +3654,7 @@ summary:focus-visible {
 .field select:focus,
 .grant-add select:focus,
 .access-select:focus {
-  border-color: rgba(86, 214, 192, 0.45);
-  outline: none;
+  border-color: var(--accent-strong);
 }
 
 .field-hint {

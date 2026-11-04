@@ -355,9 +355,8 @@
 .mcp-field-row select:focus,
 .mcp-add-form > label input:focus,
 .mcp-import-text:focus {
-  border-color: rgba(86, 214, 192, 0.45);
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(86, 214, 192, 0.06);
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .mcp-grow {
