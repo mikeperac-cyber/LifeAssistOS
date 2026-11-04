@@ -66,6 +66,14 @@ export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }
   { label: 'System', items: ['activity', 'settings'] }
 ]
 
+export function shouldHandleNavigationShortcut(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'defaultPrevented'>,
+  focusIsProtected = false
+): boolean {
+  return !focusIsProtected && !event.defaultPrevented && !event.altKey && !event.shiftKey &&
+    (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k'
+}
+
 export function resolveIntegrationTargetView(id: string): View {
   if (id === 'helper') return 'chat'
   if (id === 'finance' || id === 'finances') return 'finances'

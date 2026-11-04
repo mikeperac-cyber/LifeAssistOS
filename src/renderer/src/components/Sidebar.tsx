@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FolderGrant } from '../../../shared/types'
-import { NAV_GROUPS, VIEW_META, type View } from '../navigation'
+import { NAV_GROUPS, shouldHandleNavigationShortcut, VIEW_META, type View } from '../navigation'
 
 export type { View } from '../navigation'
 
@@ -36,11 +36,14 @@ export function Sidebar({
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent): void => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k') {
-        event.preventDefault()
-        setNavQuery('')
-        navSearchRef.current?.focus()
-      }
+      const target = event.target instanceof Element ? event.target : null
+      const focusIsProtected = target !== null && target !== navSearchRef.current &&
+        target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog') !== null
+      if (!shouldHandleNavigationShortcut(event, focusIsProtected)) return
+
+      event.preventDefault()
+      setNavQuery('')
+      navSearchRef.current?.focus()
     }
     window.addEventListener('keydown', handleShortcut)
     return () => window.removeEventListener('keydown', handleShortcut)
@@ -82,7 +85,7 @@ export function Sidebar({
         <kbd className="nav-shortcut">Ctrl K</kbd>
       </div>
 
-      <nav className="nav" aria-label="Main">
+      <nav className="nav" aria-label="Main navigation">
         {visibleGroups.length === 0 && <p className="nav-empty" role="status">No matching sections.</p>}
         {visibleGroups.map((group) => (
           <div className="nav-group" key={group.label}>
