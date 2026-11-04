@@ -539,6 +539,34 @@ summary:focus-visible {
   font-size: 11.5px;
 }
 
+.app-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--amber-dim);
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.app-warning button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.app-warning button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .model-badge {
   display: inline-flex;
   align-items: center;

@@ -150,6 +150,7 @@ export type AuditType =
   | 'conversation.switched'
   | 'conversation.renamed'
   | 'conversation.deleted'
+  | 'conversation.message_deleted'
   | 'call.proposed'
   | 'policy.decided'
   | 'approval.requested'
@@ -189,6 +190,7 @@ export type AuditType =
   | 'backup.restored'
   | 'speech.endpoint_changed'
   | 'onboarding.completed'
+  | 'finance.imported'
   | 'workflow.saved'
   | 'workflow.removed'
   | 'workflow.started'
@@ -210,6 +212,7 @@ export type AuditType =
   | 'mcp.failed'
   | 'mcp.tools_changed'
   | 'research.project_created'
+  | 'research.project_archived'
   | 'research.project_removed'
   | 'research.source_added'
   | 'research.source_removed'
@@ -222,6 +225,7 @@ export type AuditType =
   | 'plan.reminder_notified'
   | 'plan.inbox_captured'
   | 'plan.inbox_converted'
+  | 'plan.inbox_dismissed'
   | 'coaching.profile_updated'
   | 'coaching.goal_created'
   | 'coaching.goal_updated'
@@ -668,6 +672,7 @@ export type AssistEvent =
   | { type: 'permission_request'; request: PermissionRequest }
   | { type: 'permission_resolved'; requestId: string; approved: boolean; expired?: boolean }
   | { type: 'audit'; event: AuditEvent }
+  | { type: 'warning'; message: string }
   | { type: 'error'; message: string }
   | { type: 'busy'; busy: boolean }
   | { type: 'step'; index: number; max: number }

@@ -146,6 +146,7 @@ export default function App(): React.JSX.Element {
   })
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   const [busy, setBusy] = useState(false)
+  const [appWarning, setAppWarning] = useState('')
   const [step, setStep] = useState<{ index: number; max: number } | null>(null)
   const [grants, setGrants] = useState<FolderGrant[]>([])
   const [allowedDomains, setAllowedDomains] = useState<string[]>([])
@@ -395,6 +396,10 @@ export default function App(): React.JSX.Element {
             ...previous,
             { kind: 'message', message: systemMessage(event.message) }
           ])
+          break
+
+        case 'warning':
+          setAppWarning(event.message)
           break
 
         case 'busy':
@@ -1173,6 +1178,13 @@ export default function App(): React.JSX.Element {
             </span>
           </div>
         </header>
+
+        {appWarning && (
+          <div className="app-warning" role="status" aria-live="polite">
+            <span>{appWarning}</span>
+            <button type="button" onClick={() => setAppWarning('')} aria-label="Dismiss warning">Dismiss</button>
+          </div>
+        )}
 
         <div className="content">
           <Suspense fallback={<div className="view-loading" role="status">Loading section…</div>}>

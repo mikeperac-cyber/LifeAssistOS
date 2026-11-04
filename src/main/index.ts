@@ -20,6 +20,7 @@ import { CoachingStore } from '../core/coaching'
 import { FileCheckpointStore } from '../core/file-checkpoints'
 import { TaskReminderScheduler } from '../core/reminders'
 import { ScheduledTaskScheduler, ScheduledTaskStore, type ScheduledRunOutput, type ScheduledTaskRunContext } from '../core/scheduled-tasks'
+import { appendMutationAudit as appendMutationAuditSafely } from './ipc/mutation-audit'
 import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/google-calendar'
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
@@ -156,6 +157,18 @@ function sendToRenderer(event: AssistEvent): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('assist:event', event)
   }
+}
+
+function reportAppWarning(message: string): void {
+  try {
+    sendToRenderer({ type: 'warning', message })
+  } catch (error) {
+    console.error('[main] could not deliver warning to renderer', error)
+  }
+}
+
+function appendAuditAfterMutation(event: Parameters<AuditLog['append']>[0]): Promise<boolean> {
+  return appendMutationAuditSafely(audit, event, reportAppWarning)
 }
 
 function providerFrom(config: ProviderSettings, role: ProviderModelRole = 'default'): Provider {
@@ -755,6 +768,7 @@ function registerIpc(): void {
     try {
       const raw = await readFile(selection.filePaths[0], 'utf8')
       const imported = finance.importCsv(raw)
+      if (imported > 0) await appendAuditAfterMutation({ type: 'finance.imported', data: { count: imported } })
       return { ok: true, imported }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -831,7 +845,7 @@ function registerIpc(): void {
 
     try {
       const fact = memory.update(id, cleanPatch)
-      await audit.append({ type: 'memory.updated', data: { fields } })
+      await appendAuditAfterMutation({ type: 'memory.updated', data: { fields } })
       return { ok: true, fact }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -843,7 +857,7 @@ function registerIpc(): void {
     if (typeof id !== 'string') return { ok: false, error: 'Invalid memory fact.' }
     try {
       const fact = memory.archive(id)
-      await audit.append({ type: 'memory.archived', data: {} })
+      await appendAuditAfterMutation({ type: 'memory.archived', data: {} })
       return { ok: true, fact }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -855,7 +869,7 @@ function registerIpc(): void {
     if (typeof id !== 'string') return { ok: false, error: 'Invalid memory fact.' }
     try {
       memory.delete(id)
-      await audit.append({ type: 'memory.deleted', data: {} })
+      await appendAuditAfterMutation({ type: 'memory.deleted', data: {} })
       return { ok: true }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -872,7 +886,7 @@ function registerIpc(): void {
         query,
         facts: memory.recall(query, typeof limit === 'number' ? limit : 6)
       }
-      await audit.append({ type: 'memory.recalled', data: { facts: recall.facts.length, via: 'viewer' } })
+      await appendAuditAfterMutation({ type: 'memory.recalled', data: { facts: recall.facts.length, via: 'viewer' } })
       return { ok: true, recall }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -892,8 +906,9 @@ function registerIpc(): void {
     }
     try {
       const record = await mcpStore.add(valid)
-      await audit?.append({ type: 'mcp.server_added', data: { transport: record.transport } })
-      await mcpManager.queueConnect(record.id)
+      await appendAuditAfterMutation({ type: 'mcp.server_added', data: { transport: record.transport } })
+      try { await mcpManager.queueConnect(record.id) }
+      catch (error) { reportAppWarning(`The MCP connection was saved, but it could not connect: ${errorMessage(error)}`) }
       return { ok: true, servers: mcpManager.info() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -910,9 +925,13 @@ function registerIpc(): void {
     const clean = patch as Partial<Parameters<InstanceType<typeof McpServerStore>['update']>[1]>
     try {
       const record = await mcpStore.update(id, clean)
-      await audit?.append({ type: 'settings.changed', data: { kind: 'mcp' } })
-      if (record.enabled) await mcpManager.queueConnect(id)
-      else await mcpManager.queueDisable(id)
+      await appendAuditAfterMutation({ type: 'settings.changed', data: { kind: 'mcp' } })
+      try {
+        if (record.enabled) await mcpManager.queueConnect(id)
+        else await mcpManager.queueDisable(id)
+      } catch (error) {
+        reportAppWarning(`MCP settings were saved, but the connection could not be refreshed: ${errorMessage(error)}`)
+      }
       return { ok: true, servers: mcpManager.info() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -924,8 +943,9 @@ function registerIpc(): void {
     if (typeof id !== 'string') return { ok: false, error: 'Invalid MCP connection.' }
     try {
       await mcpStore.remove(id)
-      await mcpManager.queueRemove(id)
-      await audit?.append({ type: 'mcp.server_removed', data: {} })
+      await appendAuditAfterMutation({ type: 'mcp.server_removed', data: {} })
+      try { await mcpManager.queueRemove(id) }
+      catch (error) { reportAppWarning(`The MCP connection was removed from settings, but its live connection could not be stopped: ${errorMessage(error)}`) }
       return { ok: true, servers: mcpManager.info() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -983,9 +1003,12 @@ function registerIpc(): void {
         }
         try {
           const record = await mcpStore.add(valid)
-          await audit?.append({ type: 'mcp.server_added', data: { transport: record.transport } })
-          if (record.enabled) await mcpManager.queueConnect(record.id)
           added += 1
+          await appendAuditAfterMutation({ type: 'mcp.server_added', data: { transport: record.transport } })
+          if (record.enabled) {
+            try { await mcpManager.queueConnect(record.id) }
+            catch (error) { reportAppWarning(`An MCP server was saved but could not connect: ${errorMessage(error)}`) }
+          }
         } catch {
           skipped += 1
         }
@@ -998,7 +1021,6 @@ function registerIpc(): void {
 
   registerDomainIpcHandlers({
     ipcMain,
-    getAudit: () => audit,
     getGateway: () => gateway,
     getResearch: () => research,
     getVault: () => vault,
@@ -1008,6 +1030,7 @@ function registerIpc(): void {
     getScheduledTasks: () => scheduledTasks,
     getScheduledTaskScheduler: () => scheduledTaskScheduler,
     getSkills: () => skills,
+    appendAuditAfterMutation,
     hasRunningAssistantTask,
     setDirectToolBusy: (busy) => {
       directToolBusy = busy
@@ -1050,8 +1073,10 @@ function registerIpc(): void {
     workflowRunController = controller
     let completedSteps = 0
     let failure = ''
+    let workflowStarted = false
     try {
       await audit?.append({ type: 'workflow.started', data: { workflowId: workflow.id, stepCount: interpolatedSteps.length } })
+      workflowStarted = Boolean(audit)
       emitSystemMessage(`Running saved workflow with ${interpolatedSteps.length} recorded steps.`)
       for (const step of interpolatedSteps) {
         if (controller.signal.aborted) {
@@ -1075,7 +1100,7 @@ function registerIpc(): void {
         completedSteps += 1
       }
 
-      await audit?.append({
+      await appendAuditAfterMutation({
         type: 'workflow.completed',
         data: { workflowId: workflow.id, completedSteps, totalSteps: interpolatedSteps.length, success: !failure }
       })
@@ -1084,6 +1109,12 @@ function registerIpc(): void {
         : `Workflow completed all ${completedSteps} recorded steps.`)
       return { ok: !failure, completedSteps, totalSteps: interpolatedSteps.length, error: failure || undefined }
     } catch (error) {
+      if (workflowStarted) {
+        await appendAuditAfterMutation({
+          type: 'workflow.completed',
+          data: { workflowId: workflow.id, completedSteps, totalSteps: interpolatedSteps.length, success: false }
+        })
+      }
       return { ok: false, completedSteps, totalSteps: interpolatedSteps.length, error: errorMessage(error) }
     } finally {
       directToolBusy = false
@@ -1269,7 +1300,7 @@ function registerIpc(): void {
       const created = conversations.createSession()
       agent.switchSession(created.id)
       activeConversationId = created.id
-      await audit?.append({ type: 'conversation.created', data: { sessionId: created.id } })
+      await appendAuditAfterMutation({ type: 'conversation.created', data: { sessionId: created.id } })
       return chatStateResult()
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1286,7 +1317,7 @@ function registerIpc(): void {
       conversations.setActiveSession(id)
       agent.switchSession(id)
       activeConversationId = id
-      await audit?.append({ type: 'conversation.switched', data: { sessionId: id } })
+      await appendAuditAfterMutation({ type: 'conversation.switched', data: { sessionId: id } })
       return chatStateResult()
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1303,7 +1334,7 @@ function registerIpc(): void {
     }
     try {
       conversations.renameSession(sessionId, title)
-      await audit?.append({ type: 'conversation.renamed', data: { sessionId } })
+      await appendAuditAfterMutation({ type: 'conversation.renamed', data: { sessionId } })
       return chatStateResult()
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1323,7 +1354,7 @@ function registerIpc(): void {
         agent.switchSession(next.activeSessionId)
         activeConversationId = next.activeSessionId
       }
-      await audit?.append({ type: 'conversation.deleted', data: { sessionId: id } })
+      await appendAuditAfterMutation({ type: 'conversation.deleted', data: { sessionId: id } })
       return chatStateResult()
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1343,6 +1374,7 @@ function registerIpc(): void {
     }
     try {
       conversations.deleteMessage(sessionId, messageId)
+      await appendAuditAfterMutation({ type: 'conversation.message_deleted', data: { sessionId } })
       return chatStateResult()
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1405,7 +1437,7 @@ function registerIpc(): void {
     }
     try {
       const endpoint = await speechSettings.update(input)
-      await audit?.append({
+      await appendAuditAfterMutation({
         type: 'speech.endpoint_changed',
         data: { configured: endpoint.length > 0 }
       })
@@ -1433,7 +1465,7 @@ function registerIpc(): void {
     if (!settings) return { ok: false, error: 'Settings are not loaded yet.' }
     try {
       await settings.completeOnboarding()
-      await audit?.append({ type: 'onboarding.completed' })
+      await appendAuditAfterMutation({ type: 'onboarding.completed' })
       return { ok: true, settings: settings.public() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1446,7 +1478,7 @@ function registerIpc(): void {
     }
     try {
       const domains = await domainAllowlist.add(input)
-      await audit?.append({ type: 'domain.added', data: { host: normalizeDomain(input) } })
+      await appendAuditAfterMutation({ type: 'domain.added', data: { host: normalizeDomain(input) } })
       return { ok: true, domains }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1459,7 +1491,7 @@ function registerIpc(): void {
     }
     try {
       const domains = await domainAllowlist.remove(input)
-      await audit?.append({ type: 'domain.removed', data: { host: normalizeDomain(input) } })
+      await appendAuditAfterMutation({ type: 'domain.removed', data: { host: normalizeDomain(input) } })
       return { ok: true, domains }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1487,12 +1519,10 @@ function registerIpc(): void {
 
     try {
       const grant = await grants.add({ folderPath: picked.filePaths[0], access })
-      await audit
-        ?.append({
-          type: 'grant.added',
-          data: { grantId: grant.id, label: grant.label, access: grant.access }
-        })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({
+        type: 'grant.added',
+        data: { grantId: grant.id, label: grant.label, access: grant.access }
+      })
 
       return { ok: true, grants: grants.list() }
     } catch (error) {
@@ -1507,12 +1537,10 @@ function registerIpc(): void {
 
     try {
       const removed = await grants.remove(id)
-      await audit
-        ?.append({
-          type: 'grant.removed',
-          data: { grantId: removed.id, label: removed.label }
-        })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({
+        type: 'grant.removed',
+        data: { grantId: removed.id, label: removed.label }
+      })
 
       return { ok: true, grants: grants.list() }
     } catch (error) {
@@ -1531,12 +1559,10 @@ function registerIpc(): void {
 
     try {
       const updated = await grants.setAccess(id, access)
-      await audit
-        ?.append({
-          type: 'grant.access_changed',
-          data: { grantId: updated.id, label: updated.label, access: updated.access }
-        })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({
+        type: 'grant.access_changed',
+        data: { grantId: updated.id, label: updated.label, access: updated.access }
+      })
 
       return { ok: true, grants: grants.list() }
     } catch (error) {
@@ -1554,7 +1580,7 @@ function registerIpc(): void {
     }
     try {
       const status = enabled ? await localApiServer.start() : await localApiServer.stop()
-      await audit?.append({ type: enabled ? 'local_api.enabled' : 'local_api.disabled' })
+      await appendAuditAfterMutation({ type: enabled ? 'local_api.enabled' : 'local_api.disabled' })
       return { ok: true, status }
     } catch (error) {
       return { ok: false, error: errorMessage(error), status: localApiServer.status() }
@@ -1571,12 +1597,10 @@ function registerIpc(): void {
 
     try {
       const updated = await webSearchSettings.updateApiKey(input as string | null)
-      await audit
-        ?.append({
-          type: 'web_search.settings_changed',
-          data: { enabled: updated.hasApiKey, encryptedAtRest: updated.apiKeyStored }
-        })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({
+        type: 'web_search.settings_changed',
+        data: { enabled: updated.hasApiKey, encryptedAtRest: updated.apiKeyStored }
+      })
       return { ok: true, settings: updated }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1593,8 +1617,7 @@ function registerIpc(): void {
     if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
     try {
       const updated = await googleCalendarSettings.updateClientId(input)
-      await audit?.append({ type: 'google_calendar.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_calendar.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
       return { ok: true, settings: updated }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1607,8 +1630,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const updated = await googleCalendar.connect()
-      await audit?.append({ type: 'google_calendar.connected', data: { tokenStored: updated.tokenStored } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_calendar.connected', data: { tokenStored: updated.tokenStored } })
       return { ok: true, settings: updated, message: 'Google Calendar connected. Calendar actions still ask for approval.' }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1623,8 +1645,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleCalendar.disconnect()
-      await audit?.append({ type: 'google_calendar.disconnected', data: { revoked: result.revoked } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_calendar.disconnected', data: { revoked: result.revoked } })
       return {
         ok: true,
         settings: result.settings,
@@ -1651,8 +1672,7 @@ function registerIpc(): void {
     if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
     try {
       const updated = await googleGmailSettings.updateClientId(input)
-      await audit?.append({ type: 'google_gmail.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_gmail.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
       return { ok: true, settings: updated }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1665,8 +1685,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const updated = await googleGmail.connect()
-      await audit?.append({ type: 'google_gmail.connected', data: { tokenStored: updated.tokenStored } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_gmail.connected', data: { tokenStored: updated.tokenStored } })
       return { ok: true, settings: updated, message: 'Gmail connected. Email reads and drafts ask for approval; sending also requires typed SEND confirmation.' }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1681,8 +1700,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleGmail.disconnect()
-      await audit?.append({ type: 'google_gmail.disconnected', data: { revoked: result.revoked } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_gmail.disconnected', data: { revoked: result.revoked } })
       return {
         ok: true,
         settings: result.settings,
@@ -1709,8 +1727,7 @@ function registerIpc(): void {
     if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
     try {
       const updated = await googleDriveSettings.updateClientId(input)
-      await audit?.append({ type: 'google_drive.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_drive.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
       return { ok: true, settings: updated }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1723,8 +1740,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const updated = await googleDrive.connect()
-      await audit?.append({ type: 'google_drive.connected', data: { tokenStored: updated.tokenStored } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_drive.connected', data: { tokenStored: updated.tokenStored } })
       return { ok: true, settings: updated, message: 'Google Drive connected. Each file search and read still asks for approval.' }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1739,8 +1755,7 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleDrive.disconnect()
-      await audit?.append({ type: 'google_drive.disconnected', data: { revoked: result.revoked } })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({ type: 'google_drive.disconnected', data: { revoked: result.revoked } })
       return {
         ok: true,
         settings: result.settings,
@@ -1765,18 +1780,16 @@ function registerIpc(): void {
 
     try {
       const updated = await settings.update(patch)
-      await audit
-        ?.append({
-          type: 'settings.changed',
-          data: {
-            preset: updated.provider.preset,
-            model: updated.provider.model,
-            contextLength: updated.provider.contextLength,
-            temperature: updated.provider.temperature,
-            maxSteps: updated.provider.maxSteps
-          }
-        })
-        .catch((error) => console.error('[main] audit write failed', error))
+      await appendAuditAfterMutation({
+        type: 'settings.changed',
+        data: {
+          preset: updated.provider.preset,
+          model: updated.provider.model,
+          contextLength: updated.provider.contextLength,
+          temperature: updated.provider.temperature,
+          maxSteps: updated.provider.maxSteps
+        }
+      })
 
       return { ok: true, settings: settings.public() }
     } catch (error) {

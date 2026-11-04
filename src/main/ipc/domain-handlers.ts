@@ -22,7 +22,6 @@ import type {
 
 export interface DomainIpcContext {
   ipcMain: IpcMain
-  getAudit: () => AuditLog | null
   getGateway: () => Gateway | null
   getResearch: () => ResearchStore | null
   getVault: () => VaultStore | null
@@ -32,6 +31,7 @@ export interface DomainIpcContext {
   getScheduledTasks: () => ScheduledTaskStore | null
   getScheduledTaskScheduler: () => ScheduledTaskScheduler | null
   getSkills: () => SkillStore | null
+  appendAuditAfterMutation: (event: Parameters<AuditLog['append']>[0]) => Promise<boolean>
   hasRunningAssistantTask: () => boolean
   setDirectToolBusy: (busy: boolean) => void
   errorMessage: (error: unknown) => string
@@ -67,7 +67,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
     try {
       const project = research.create({ title: value.title, question: value.question })
-      await ctx.getAudit()?.append({ type: 'research.project_created', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'research.project_created', data: {} })
       return { ok: true, project, projects: research.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -79,6 +79,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!research || typeof id !== 'string') return { ok: false, error: 'Invalid research project.' }
     try {
       const project = research.archive(id)
+      await ctx.appendAuditAfterMutation({ type: 'research.project_archived', data: {} })
       return { ok: true, project, projects: research.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -90,7 +91,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!research || typeof id !== 'string') return { ok: false, error: 'Invalid research project.' }
     try {
       research.remove(id)
-      await ctx.getAudit()?.append({ type: 'research.project_removed', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'research.project_removed', data: {} })
       return { ok: true, projects: research.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -136,7 +137,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         title: typeof output.title === 'string' ? output.title : undefined,
         content: output.text
       })
-      await ctx.getAudit()?.append({ type: 'research.source_added', data: { chars: source.contentChars } })
+      await ctx.appendAuditAfterMutation({ type: 'research.source_added', data: { chars: source.contentChars } })
       return { ok: true, source, projects: research.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -150,7 +151,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!research || typeof id !== 'string') return { ok: false, error: 'Invalid research source.' }
     try {
       research.removeSource(id)
-      await ctx.getAudit()?.append({ type: 'research.source_removed', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'research.source_removed', data: {} })
       return { ok: true, projects: research.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -179,7 +180,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         sourceType: value.sourceType as VaultSourceType | undefined,
         sourceRef: typeof value.sourceRef === 'string' ? value.sourceRef : undefined
       })
-      await ctx.getAudit()?.append({ type: 'vault.document_created', data: { chars: document.body.length } })
+      await ctx.appendAuditAfterMutation({ type: 'vault.document_created', data: { chars: document.body.length } })
       return { ok: true, document }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -196,7 +197,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     try {
       const patch = value.patch as { title?: string; body?: string; tags?: string[] }
       const document = vault.update(value.id, patch)
-      await ctx.getAudit()?.append({ type: 'vault.document_updated', data: { chars: document.body.length } })
+      await ctx.appendAuditAfterMutation({ type: 'vault.document_updated', data: { chars: document.body.length } })
       return { ok: true, document }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -208,7 +209,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!vault || typeof id !== 'string') return { ok: false, error: 'Invalid vault document.' }
     try {
       vault.delete(id)
-      await ctx.getAudit()?.append({ type: 'vault.document_deleted', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'vault.document_deleted', data: {} })
       return { ok: true }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -239,7 +240,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         priority: value.priority as PlanTaskPriority | undefined,
         sourceGoalId: typeof value.sourceGoalId === 'string' ? value.sourceGoalId : undefined
       })
-      await ctx.getAudit()?.append({ type: 'plan.task_created', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'plan.task_created', data: {} })
       return { ok: true, task, snapshot: planning.snapshot() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -263,7 +264,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         priority: patch.priority as PlanTaskPriority | undefined,
         status: patch.status as PlanTaskStatus | undefined
       })
-      await ctx.getAudit()?.append({ type: task.status === 'done' ? 'plan.task_completed' : 'plan.task_updated', data: {} })
+      await ctx.appendAuditAfterMutation({ type: task.status === 'done' ? 'plan.task_completed' : 'plan.task_updated', data: {} })
       return { ok: true, task, snapshot: planning.snapshot() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -275,7 +276,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!planning || typeof text !== 'string') return { ok: false, error: 'Capture some text first.' }
     try {
       const item = planning.capture(text)
-      await ctx.getAudit()?.append({ type: 'plan.inbox_captured', data: { chars: item.text.length } })
+      await ctx.appendAuditAfterMutation({ type: 'plan.inbox_captured', data: { chars: item.text.length } })
       return { ok: true, inbox: planning.snapshot().inbox, snapshot: planning.snapshot() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -292,7 +293,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         ...value.input,
         priority: value.input?.priority as PlanTaskPriority | undefined
       })
-      await ctx.getAudit()?.append({ type: 'plan.inbox_converted', data: {} })
+      await ctx.appendAuditAfterMutation({ type: 'plan.inbox_converted', data: {} })
       return { ok: true, task, snapshot: planning.snapshot() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -304,6 +305,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (!planning || typeof id !== 'string') return { ok: false, error: 'Invalid inbox item.' }
     try {
       planning.dismissInbox(id)
+      await ctx.appendAuditAfterMutation({ type: 'plan.inbox_dismissed', data: {} })
       return { ok: true, snapshot: planning.snapshot() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -325,7 +327,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         reflectionRetention: value.reflectionRetention as 'ephemeral' | 'journal' | undefined,
         boundaries: typeof value.boundaries === 'string' ? value.boundaries : undefined
       })
-      await ctx.getAudit()?.append({
+      await ctx.appendAuditAfterMutation({
         type: 'coaching.profile_updated',
         data: { style: profile.style, retention: profile.reflectionRetention }
       })
@@ -365,7 +367,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     try {
       const result = await gateway.execute(call)
       if (!result.ok) return result
-      await ctx.getAudit()?.append({ type: 'coaching.goal_created', data: { area: value.area } })
+      await ctx.appendAuditAfterMutation({ type: 'coaching.goal_created', data: { area: value.area } })
       return { ...result, context: coaching.context(), goal: result.output }
     } finally {
       ctx.setDirectToolBusy(false)
@@ -391,7 +393,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         ...patch,
         status: patch.status as 'active' | 'paused' | 'completed' | undefined
       })
-      await ctx.getAudit()?.append({
+      await ctx.appendAuditAfterMutation({
         type: goal.status === 'completed' ? 'coaching.goal_completed' : 'coaching.goal_updated',
         data: {}
       })
@@ -427,7 +429,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     try {
       const result = await gateway.execute(call)
       if (result.ok) {
-        await ctx.getAudit()?.append({
+        await ctx.appendAuditAfterMutation({
           type: 'coaching.journal_saved',
           data: { kind: value.kind, area: value.area }
         })
@@ -450,7 +452,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
     try {
       await workflows.save({ name, prompt, steps: steps as WorkflowStep[] })
-      await ctx.getAudit()?.append({ type: 'workflow.saved', data: { stepCount: steps.length } })
+      await ctx.appendAuditAfterMutation({ type: 'workflow.saved', data: { stepCount: steps.length } })
       return { ok: true, workflows: workflows.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -462,7 +464,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (typeof id !== 'string' || !workflows) return { ok: false, error: 'Invalid workflow.' }
     try {
       await workflows.remove(id)
-      await ctx.getAudit()?.append({ type: 'workflow.removed', data: { workflowId: id } })
+      await ctx.appendAuditAfterMutation({ type: 'workflow.removed', data: { workflowId: id } })
       return { ok: true, workflows: workflows.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -498,7 +500,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         mode: value.mode as ChatMode,
         schedule: value.schedule as ScheduledTaskSchedule
       })
-      await ctx.getAudit()?.append({
+      await ctx.appendAuditAfterMutation({
         type: 'scheduled_task.created',
         data: { taskId: task.id, mode: task.mode, schedule: task.schedule.kind }
       })
@@ -518,7 +520,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
     try {
       const task = await scheduledTasks.setEnabled(value.id, value.enabled)
-      await ctx.getAudit()?.append({ type: 'scheduled_task.updated', data: { taskId: task.id, enabled: task.enabled } })
+      await ctx.appendAuditAfterMutation({ type: 'scheduled_task.updated', data: { taskId: task.id, enabled: task.enabled } })
       return { ok: true, task, tasks: scheduledTasks.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -532,7 +534,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (scheduler?.isRunning(id)) return { ok: false, error: 'Wait for this scheduled run to finish before removing it.' }
     try {
       const task = await scheduledTasks.remove(id)
-      await ctx.getAudit()?.append({ type: 'scheduled_task.removed', data: { taskId: task.id } })
+      await ctx.appendAuditAfterMutation({ type: 'scheduled_task.removed', data: { taskId: task.id } })
       return { ok: true, task, tasks: scheduledTasks.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -570,7 +572,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
     try {
       const skill = await skills.save(value as AssistantSkillInput)
-      await ctx.getAudit()?.append({
+      await ctx.appendAuditAfterMutation({
         type: 'skill.changed',
         data: { operation: value.id ? 'updated' : 'created', skillId: skill.id }
       })
@@ -591,7 +593,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
     try {
       const skill = await skills.setEnabled(value.id, value.enabled)
-      await ctx.getAudit()?.append({
+      await ctx.appendAuditAfterMutation({
         type: 'skill.changed',
         data: { operation: value.enabled ? 'enabled' : 'disabled', skillId: skill.id }
       })
@@ -608,7 +610,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (typeof id !== 'string') return { ok: false, error: 'Choose a skill to delete.' }
     try {
       const skill = await skills.remove(id)
-      await ctx.getAudit()?.append({ type: 'skill.changed', data: { operation: 'deleted', skillId: skill.id } })
+      await ctx.appendAuditAfterMutation({ type: 'skill.changed', data: { operation: 'deleted', skillId: skill.id } })
       return { ok: true, skills: skills.list() }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
