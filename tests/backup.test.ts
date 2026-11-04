@@ -1,10 +1,15 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createBackupSnapshot, restoreBackupSnapshot, verifyBackupSnapshot } from '../src/core/backup'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createBackupSnapshot,
+  recoverInterruptedBackupRestore,
+  restoreBackupSnapshot,
+  verifyBackupSnapshot
+} from '../src/core/backup'
 import { AuditLog } from '../src/core/audit/log'
 import { ConversationStore } from '../src/core/conversations'
 import { FinanceStore } from '../src/core/finance'
@@ -207,6 +212,28 @@ describe('backup snapshot', () => {
     expect(missingResult.error).toMatch(/finance\.sqlite/i)
   })
 
+  it('rejects a backup whose SQLite file is present but corrupt', async () => {
+    const target = path.join(backupRoot, 'corrupt-sqlite')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    await writeFile(path.join(target, 'finance.sqlite'), 'not a SQLite database', 'utf8')
+
+    const verification = await verifyBackupSnapshot(target)
+    expect(verification.valid).toBe(false)
+    expect(verification.error).toMatch(/SQLite integrity check.*finance\.sqlite/i)
+    await expect(restoreBackupSnapshot(target, source)).rejects.toThrow(/SQLite integrity check/i)
+  })
+
+  it('checks SQLite contents inside encrypted backups after decrypting them', async () => {
+    const target = path.join(backupRoot, 'encrypted-corrupt-sqlite')
+    const passphrase = 'correct-horse-battery-staple'
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0', { passphrase })
+    await addEncryptedArchiveEntry(target, passphrase, 'finance.sqlite', 'not a SQLite database')
+
+    const verification = await verifyBackupSnapshot(target, { passphrase })
+    expect(verification.valid).toBe(false)
+    expect(verification.error).toMatch(/SQLite integrity check.*finance\.sqlite/i)
+  })
+
   it('rejects an unencrypted manifest that omits required backup data', async () => {
     const target = path.join(backupRoot, 'incomplete-manifest')
     await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
@@ -219,6 +246,17 @@ describe('backup snapshot', () => {
     expect(verification.valid).toBe(false)
     expect(verification.error).toMatch(/incomplete backup manifest/i)
     await expect(restoreBackupSnapshot(target, source)).rejects.toThrow(/incomplete backup manifest/i)
+  })
+
+  it('returns a normal verification error for a null manifest', async () => {
+    const target = path.join(backupRoot, 'null-manifest')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    await writeFile(path.join(target, 'manifest.json'), 'null', 'utf8')
+
+    const verification = await verifyBackupSnapshot(target)
+    expect(verification.valid).toBe(false)
+    expect(verification.error).toMatch(/invalid manifest/i)
+    await expect(restoreBackupSnapshot(target, source)).rejects.toThrow(/invalid manifest/i)
   })
 
   it('restores a backup snapshot over modified app data and cleans up WAL state', async () => {
@@ -255,6 +293,90 @@ describe('backup snapshot', () => {
     ])
     expect(memory.recall('disappear')).toEqual([])
     expect(memory.recall('denizli')[0]?.text).toBe('Mike teaches in Denizli')
+  })
+
+  it('rolls back a failed restore and reopens the prior stores', async () => {
+    const target = path.join(backupRoot, 'restore-rollback')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    conversations.appendMessage(conversations.activeSessionId()!, {
+      id: 'before-failed-restore',
+      role: 'user',
+      text: 'This must survive a failed restore.',
+      at: new Date().toISOString()
+    })
+    memory.add({ text: 'Keep this fact if restore fails.', scope: 'general' })
+    const currentSettings = '{"keep":"current settings"}\n'
+    await writeFile(path.join(source, 'settings.json'), currentSettings, 'utf8')
+
+    const closeStores = vi.fn(async () => {
+      conversations.close()
+      finance.close()
+      memory.close()
+      // Verification already passed; simulate the selected backup changing before it is copied.
+      await rm(path.join(target, 'workflows.json'))
+    })
+    const reopenStores = vi.fn(async () => {
+      await conversations.init()
+      await finance.init()
+      await memory.init()
+    })
+
+    await expect(restoreBackupSnapshot(target, source, { closeStores, reopenStores })).rejects.toBeDefined()
+
+    expect(closeStores).toHaveBeenCalledOnce()
+    expect(reopenStores).toHaveBeenCalledOnce()
+    expect(await readFile(path.join(source, 'settings.json'), 'utf8')).toBe(currentSettings)
+    expect(conversations.getMessages(conversations.activeSessionId()!).map((entry) => entry.text)).toContain(
+      'This must survive a failed restore.'
+    )
+    expect(memory.recall('failed restore')).toHaveLength(1)
+    expect((await readdir(source)).some((name) => name.startsWith('.mike-assist-restore-pending-'))).toBe(false)
+  })
+
+  it('reopens stores when closing them fails partway through restore', async () => {
+    const target = path.join(backupRoot, 'restore-close-failure')
+    await createBackupSnapshot(source, target, conversations, finance, memory, '0.1.0')
+    const closeStores = vi.fn(async () => { throw new Error('A database refused to close.') })
+    const reopenStores = vi.fn(async () => undefined)
+
+    await expect(restoreBackupSnapshot(target, source, { closeStores, reopenStores })).rejects.toThrow(/refused to close/i)
+
+    expect(closeStores).toHaveBeenCalledOnce()
+    expect(reopenStores).toHaveBeenCalledOnce()
+    expect(await readFile(path.join(source, 'settings.json'), 'utf8')).toBe('{}\n')
+  })
+
+  it('recovers a restore transaction before the stores are reopened', async () => {
+    const recoveryDir = path.join(dir, 'interrupted-user-data')
+    const transactionDir = path.join(recoveryDir, `.mike-assist-restore-pending-${'a'.repeat(24)}`)
+    const previousDir = path.join(transactionDir, 'previous')
+    const requiredFiles = [
+      'conversations.sqlite', 'finance.sqlite', 'memory.sqlite', 'settings.json',
+      'grants.json', 'allowed-domains.json'
+    ]
+    await mkdir(path.join(previousDir, 'audit'), { recursive: true })
+    await mkdir(path.join(recoveryDir, 'audit'), { recursive: true })
+    await writeFile(path.join(recoveryDir, 'settings.json'), '{"restored":true}\n', 'utf8')
+    await writeFile(path.join(recoveryDir, 'speech.json'), '{"restored":true}\n', 'utf8')
+    await writeFile(path.join(recoveryDir, 'keep.txt'), 'unmanaged file', 'utf8')
+    await writeFile(path.join(recoveryDir, 'audit', 'current.jsonl'), 'current audit\n', 'utf8')
+    for (const name of requiredFiles) {
+      const previous = name === 'settings.json' ? '{"previous":true}\n' : `previous ${name}`
+      await writeFile(path.join(previousDir, name), previous, 'utf8')
+    }
+    await writeFile(path.join(previousDir, 'audit', 'previous.jsonl'), 'previous audit\n', 'utf8')
+    await writeFile(path.join(transactionDir, 'transaction.json'), JSON.stringify({
+      version: 1,
+      previousEntries: [...requiredFiles, 'audit/']
+    }), 'utf8')
+
+    await recoverInterruptedBackupRestore(recoveryDir)
+
+    expect(await readFile(path.join(recoveryDir, 'settings.json'), 'utf8')).toBe('{"previous":true}\n')
+    expect(await readFile(path.join(recoveryDir, 'audit', 'previous.jsonl'), 'utf8')).toBe('previous audit\n')
+    await expect(readFile(path.join(recoveryDir, 'speech.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await readFile(path.join(recoveryDir, 'keep.txt'), 'utf8')).toBe('unmanaged file')
+    await expect(readdir(transactionDir)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('rejects unsafe paths in an unencrypted backup manifest', async () => {

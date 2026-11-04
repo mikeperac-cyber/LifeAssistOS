@@ -4,7 +4,12 @@ import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Agent } from '../core/agent'
 import { AuditLog } from '../core/audit/log'
-import { createBackupSnapshot, restoreBackupSnapshot } from '../core/backup'
+import {
+  BackupRestoreRestartRequiredError,
+  createBackupSnapshot,
+  recoverInterruptedBackupRestore,
+  restoreBackupSnapshot
+} from '../core/backup'
 import { createConversationStore, type ConversationStore } from '../core/conversations'
 import { DomainAllowlistStore, normalizeDomain } from '../core/domain-allowlist'
 import { resolveExternalPopupUrl } from '../core/external-links'
@@ -379,11 +384,12 @@ function memoryInputArgs(input: unknown): { text: string; scope: string; reviewI
 }
 
 async function initialize(): Promise<void> {
+  const userData = app.getPath('userData')
+  await recoverInterruptedBackupRestore(userData)
+
   const workspace = path.join(app.getPath('documents'), 'Mike Assist Workspace')
   await mkdir(workspace, { recursive: true })
   const workspaceDir = await realpath(workspace)
-
-  const userData = app.getPath('userData')
 
   conversations = await createConversationStore(userData)
   const sessionId = conversations.activeSessionId()
@@ -1221,6 +1227,7 @@ function registerIpc(): void {
     const userData = app.getPath('userData')
     const maintenanceWindow = mainWindow
     const windowWasEnabled = maintenanceWindow && !maintenanceWindow.isDestroyed() ? maintenanceWindow.isEnabled() : false
+    let restartAfterRestoreRecovery = false
     directToolBusy = true
     try {
       taskReminderScheduler?.stop()
@@ -1281,12 +1288,24 @@ function registerIpc(): void {
         })
       return { ok: true, folderName: path.basename(backupPath), warning }
     } catch (error) {
+      restartAfterRestoreRecovery = error instanceof BackupRestoreRestartRequiredError
+      if (restartAfterRestoreRecovery) console.error('[main] restore requires startup recovery', error)
       return { ok: false, error: errorMessage(error) }
     } finally {
-      directToolBusy = false
-      taskReminderScheduler?.start()
-      if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(windowWasEnabled)
-      sendToRenderer({ type: 'busy', busy: false })
+      if (restartAfterRestoreRecovery) {
+        scheduledTaskScheduler?.stop()
+        taskReminderScheduler?.stop()
+        void localApiServer?.stop().catch((error) => console.error('[main] could not stop the local API before recovery restart', error))
+        setTimeout(() => {
+          app.relaunch()
+          app.exit(0)
+        }, 1_000)
+      } else {
+        directToolBusy = false
+        taskReminderScheduler?.start()
+        if (maintenanceWindow && !maintenanceWindow.isDestroyed()) maintenanceWindow.setEnabled(windowWasEnabled)
+        sendToRenderer({ type: 'busy', busy: false })
+      }
     }
   })
 
