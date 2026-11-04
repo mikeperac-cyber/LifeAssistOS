@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -110,6 +110,18 @@ describe('SettingsStore', () => {
     const reloaded = new SettingsStore(file, codec)
     await reloaded.init()
     expect(reloaded.get().provider.apiKey).toBe('sk-encrypted')
+  })
+
+  it('does not apply an API key update when persisting it fails', async () => {
+    const store = new SettingsStore(file, codec)
+    await store.init()
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.update({ apiKey: 'sk-not-saved' })).rejects.toBeDefined()
+
+    expect(store.get().provider.apiKey).toBeUndefined()
+    expect(store.public().provider).toMatchObject({ hasApiKey: false, apiKeyStored: false })
   })
 
   it('clears a previously loaded API key when reloading settings without one', async () => {

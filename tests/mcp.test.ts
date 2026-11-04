@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -65,6 +65,36 @@ describe('mcp store', () => {
     const reloaded = new McpServerStore(file)
     await reloaded.init()
     expect(reloaded.list().map((record) => record.name)).toEqual(['demo', 'web'])
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('does not add an MCP connection in memory when saving it fails', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-mcp-write-failure-'))
+    const file = path.join(dir, 'mcp-servers.json')
+    const store = new McpServerStore(file)
+    await store.init()
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.add({ name: 'demo', transport: 'stdio', command: 'demo-server', enabled: true }))
+      .rejects.toBeDefined()
+
+    expect(store.list()).toEqual([])
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('keeps an MCP connection registered when saving its removal fails', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-mcp-remove-failure-'))
+    const file = path.join(dir, 'mcp-servers.json')
+    const store = new McpServerStore(file)
+    await store.init()
+    const record = await store.add({ name: 'demo', transport: 'stdio', command: 'demo-server', enabled: true })
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.remove(record.id)).rejects.toBeDefined()
+
+    expect(store.get(record.id).enabled).toBe(true)
     await rm(dir, { recursive: true, force: true })
   })
 

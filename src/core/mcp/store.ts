@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { McpServerRecord, McpServerInput } from '../../shared/types'
 
@@ -16,23 +16,27 @@ const NAME_PATTERN = /^[a-zA-Z0-9_-]{1,24}$/
  */
 export class McpServerStore {
   private servers: McpServerRecord[] = []
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as McpServersFile
-      this.servers = Array.isArray(parsed.servers)
-        ? parsed.servers.filter((entry) => validStoredRecord(entry))
-        : []
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[mcp] could not read the servers file; starting empty', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let next: McpServerRecord[] = []
+      try {
+        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as McpServersFile
+        next = Array.isArray(parsed.servers)
+          ? parsed.servers.filter((entry) => validStoredRecord(entry))
+          : []
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[mcp] could not read the servers file; starting empty', error)
+        }
       }
-      this.servers = []
-    }
-    await this.persist()
+      await this.persist(next)
+      this.servers = next
+    })
   }
 
   list(): McpServerRecord[] {
@@ -49,7 +53,8 @@ export class McpServerStore {
   }
 
   getByName(name: string): McpServerRecord | undefined {
-    return this.servers.find((entry) => entry.name === name)
+    const found = this.servers.find((entry) => entry.name === name)
+    return found ? { ...found, args: Array.isArray(found.args) ? [...found.args] : [] } : undefined
   }
 
   /** Validates a raw record coming from the renderer before it is stored. */
@@ -83,82 +88,102 @@ export class McpServerStore {
   }
 
   async add(input: McpServerInput): Promise<McpServerRecord> {
-    if (!NAME_PATTERN.test(input.name.trim()) || this.getByName(input.name)) {
-      throw new Error('Choose a unique name of 1-24 letters, digits, dashes, or underscores.')
-    }
-    const record: McpServerRecord = {
-      id: randomUUID(),
-      name: input.name.trim(),
-      transport: input.transport,
-      command: input.command,
-      args: input.args ?? [],
-      url: input.url,
-      enabled: input.enabled !== false,
-      createdAt: new Date().toISOString()
-    }
-    this.servers.push(record)
-    await this.persist()
-    return { ...record, args: [...(record.args ?? [])] }
+    return this.mutate(async () => {
+      if (!NAME_PATTERN.test(input.name.trim()) || this.getByName(input.name)) {
+        throw new Error('Choose a unique name of 1-24 letters, digits, dashes, or underscores.')
+      }
+      const record: McpServerRecord = {
+        id: randomUUID(),
+        name: input.name.trim(),
+        transport: input.transport,
+        command: input.command,
+        args: input.args ?? [],
+        url: input.url,
+        enabled: input.enabled !== false,
+        createdAt: new Date().toISOString()
+      }
+      const next = [...this.servers, record]
+      await this.persist(next)
+      this.servers = next
+      return { ...record, args: [...(record.args ?? [])] }
+    })
   }
 
   async update(id: string, patch: Partial<McpServerInput>): Promise<McpServerRecord> {
-    const index = this.servers.findIndex((entry) => entry.id === id)
-    if (index < 0) throw new Error('That MCP connection no longer exists.')
-    const record: McpServerRecord = {
-      ...this.servers[index],
-      args: [...(this.servers[index].args ?? [])]
-    }
-    if (patch.name !== undefined) {
-      const name = patch.name.trim()
-      if (!NAME_PATTERN.test(name) || (name !== record.name && this.getByName(name))) {
-        throw new Error('Choose a unique name of 1-24 letters, digits, dashes, or underscores.')
+    return this.mutate(async () => {
+      const index = this.servers.findIndex((entry) => entry.id === id)
+      if (index < 0) throw new Error('That MCP connection no longer exists.')
+      const record: McpServerRecord = {
+        ...this.servers[index],
+        args: [...(this.servers[index].args ?? [])]
       }
-      record.name = name
-    }
-    if (patch.command !== undefined) record.command = typeof patch.command === 'string' ? patch.command.trim() : undefined
-    if (patch.args !== undefined) {
-      record.args = Array.isArray(patch.args)
-        ? patch.args.filter((entry): entry is string => typeof entry === 'string').slice(0, 32)
-        : []
-    }
-    if (patch.url !== undefined) {
-      const url = typeof patch.url === 'string' ? patch.url.trim() : ''
-      record.url = url || undefined
-    }
-    if (patch.transport !== undefined && (patch.transport === 'stdio' || patch.transport === 'http')) {
-      record.transport = patch.transport
-    }
-    if (patch.enabled !== undefined) record.enabled = patch.enabled !== false
-
-    if (record.transport === 'stdio' && !record.command) {
-      throw new Error('Stdio connections need a command to launch.')
-    }
-    if (record.transport === 'http') {
-      if (!record.url || !isAcceptableUrl(record.url)) {
-        throw new Error('HTTP connections need an https URL (or loopback http).')
+      if (patch.name !== undefined) {
+        const name = patch.name.trim()
+        if (!NAME_PATTERN.test(name) || (name !== record.name && this.getByName(name))) {
+          throw new Error('Choose a unique name of 1-24 letters, digits, dashes, or underscores.')
+        }
+        record.name = name
       }
-      record.command = undefined
-      record.args = []
-    }
-    if (record.transport === 'stdio') record.url = undefined
+      if (patch.command !== undefined) record.command = typeof patch.command === 'string' ? patch.command.trim() : undefined
+      if (patch.args !== undefined) {
+        record.args = Array.isArray(patch.args)
+          ? patch.args.filter((entry): entry is string => typeof entry === 'string').slice(0, 32)
+          : []
+      }
+      if (patch.url !== undefined) {
+        const url = typeof patch.url === 'string' ? patch.url.trim() : ''
+        record.url = url || undefined
+      }
+      if (patch.transport !== undefined && (patch.transport === 'stdio' || patch.transport === 'http')) {
+        record.transport = patch.transport
+      }
+      if (patch.enabled !== undefined) record.enabled = patch.enabled !== false
 
-    this.servers[index] = record
-    await this.persist()
-    return { ...record, args: [...(record.args ?? [])] }
+      if (record.transport === 'stdio' && !record.command) {
+        throw new Error('Stdio connections need a command to launch.')
+      }
+      if (record.transport === 'http') {
+        if (!record.url || !isAcceptableUrl(record.url)) {
+          throw new Error('HTTP connections need an https URL (or loopback http).')
+        }
+        record.command = undefined
+        record.args = []
+      }
+      if (record.transport === 'stdio') record.url = undefined
+
+      const next = [...this.servers]
+      next[index] = record
+      await this.persist(next)
+      this.servers = next
+      return { ...record, args: [...(record.args ?? [])] }
+    })
   }
 
   async remove(id: string): Promise<void> {
-    const before = this.servers.length
-    this.servers = this.servers.filter((entry) => entry.id !== id)
-    if (this.servers.length === before) throw new Error('That MCP connection no longer exists.')
-    await this.persist()
+    await this.mutate(async () => {
+      const next = this.servers.filter((entry) => entry.id !== id)
+      if (next.length === this.servers.length) throw new Error('That MCP connection no longer exists.')
+      await this.persist(next)
+      this.servers = next
+    })
   }
 
-  private async persist(): Promise<void> {
-    const payload: McpServersFile = { version: 1, servers: this.servers }
-    const temporary = `${this.file}.tmp`
-    await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.file)
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(servers: McpServerRecord[]): Promise<void> {
+    const payload: McpServersFile = { version: 1, servers }
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 

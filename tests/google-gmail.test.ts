@@ -1,5 +1,5 @@
 import { get as httpGet } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -69,6 +69,19 @@ describe('Google Gmail settings and OAuth', () => {
     expect(store.getRefreshToken()).toBeUndefined()
   })
 
+  it('does not report a refresh token connected when persisting it fails', async () => {
+    const store = new GoogleGmailSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.saveRefreshToken('gmail-refresh-secret')).rejects.toBeDefined()
+
+    expect(store.public()).toMatchObject({ connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
   it('uses the shared system-browser PKCE flow and requires every Gmail permission', async () => {
     const store = new GoogleGmailSettingsStore(file, codec)
     await store.init()
@@ -112,6 +125,36 @@ describe('Google Gmail settings and OAuth', () => {
     expect(auth.searchParams.get('code_challenge')).toBe('gmail-challenge')
     expect(tokenOptions).toMatchObject({ code: 'mail-approved', codeVerifier: 'gmail-verifier' })
     expect(result).toMatchObject({ connected: true, tokenStored: true })
+  })
+
+  it('does not cache an access token when its rotated refresh token cannot be saved', async () => {
+    const store = new GoogleGmailSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('gmail-old-refresh')
+    await rm(file)
+    await mkdir(file)
+
+    let tokenRequests = 0
+    const request: GmailRequest = async (url) => {
+      if (url.hostname === 'oauth2.googleapis.com') {
+        tokenRequests += 1
+        return { status: 200, contentType: 'application/json', text: JSON.stringify({
+          access_token: 'gmail-new-access', expires_in: 3600, refresh_token: 'gmail-rotated-refresh'
+        }) }
+      }
+      return { status: 200, contentType: 'application/json', text: JSON.stringify({ messages: [] }) }
+    }
+    const service = new GoogleGmailService(store, { request, openExternal: async () => undefined })
+    const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
+    const signal = new AbortController().signal
+
+    await expect(service.requestGmailApi(url, 'GET', signal)).rejects.toBeDefined()
+    expect(store.getRefreshToken()).toBe('gmail-old-refresh')
+    await rm(file, { recursive: true, force: true })
+
+    await expect(service.requestGmailApi(url, 'GET', signal)).resolves.toMatchObject({ status: 200 })
+    expect(tokenRequests).toBe(2)
   })
 
   it('limits network requests to supported Gmail REST routes and the exact API host', () => {

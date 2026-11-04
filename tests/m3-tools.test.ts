@@ -247,6 +247,31 @@ describe('domain allowlist and web URL validation', () => {
     await expect(store.add('*.example.com')).rejects.toThrow(/public domain/i)
   })
 
+  it('does not allow a domain in memory when saving it fails', async () => {
+    const file = path.join(dataDir, 'domains.json')
+    const store = new DomainAllowlistStore(file)
+    await store.init()
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.add('example.com')).rejects.toBeDefined()
+
+    expect(store.allows('example.com')).toBe(false)
+  })
+
+  it('keeps a domain allowlisted when saving its removal fails', async () => {
+    const file = path.join(dataDir, 'domains.json')
+    const store = new DomainAllowlistStore(file)
+    await store.init()
+    await store.add('example.com')
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.remove('example.com')).rejects.toBeDefined()
+
+    expect(store.allows('example.com')).toBe(true)
+  })
+
   it('permits only HTTPS on an exact allowlisted host', () => {
     expect(validateUrl('https://example.com/article#top', (host) => host === 'example.com').toString())
       .toBe('https://example.com/article')

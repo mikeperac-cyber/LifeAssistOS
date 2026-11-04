@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { FolderGrant, GrantLookup } from '../shared/types'
 import { ToolError } from '../tools/paths'
@@ -19,42 +19,45 @@ interface GrantsFile {
  */
 export class GrantStore implements GrantLookup {
   private grants: FolderGrant[] = []
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
 
   async init(defaultRoot: string): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    const canonicalDefault = await realpath(defaultRoot)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      const canonicalDefault = await realpath(defaultRoot)
 
-    let loaded: FolderGrant[] = []
-    try {
-      const text = await readFile(this.file, 'utf8')
-      const parsed = JSON.parse(text) as GrantsFile
-      if (Array.isArray(parsed.grants)) {
-        loaded = parsed.grants.filter(isValidGrant)
+      let loaded: FolderGrant[] = []
+      try {
+        const text = await readFile(this.file, 'utf8')
+        const parsed = JSON.parse(text) as GrantsFile
+        if (Array.isArray(parsed.grants)) {
+          loaded = parsed.grants.filter(isValidGrant)
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[grants] could not read grants file, starting fresh', error)
+        }
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[grants] could not read grants file, starting fresh', error)
-      }
-    }
 
-    const primary = loaded.find((grant) => grant.builtIn)
-    const others = loaded.filter((grant) => !grant.builtIn)
+      const primary = loaded.find((grant) => grant.builtIn)
+      const others = loaded.filter((grant) => !grant.builtIn)
+      const next: FolderGrant[] = [
+        {
+          id: primary?.id ?? PRIMARY_ID,
+          label: primary?.label ?? PRIMARY_LABEL,
+          root: canonicalDefault,
+          access: 'read-write',
+          createdAt: primary?.createdAt ?? new Date().toISOString(),
+          builtIn: true
+        },
+        ...others
+      ]
 
-    this.grants = [
-      {
-        id: primary?.id ?? PRIMARY_ID,
-        label: primary?.label ?? PRIMARY_LABEL,
-        root: canonicalDefault,
-        access: 'read-write',
-        createdAt: primary?.createdAt ?? new Date().toISOString(),
-        builtIn: true
-      },
-      ...others
-    ]
-
-    await this.persist()
+      await this.persist(next)
+      this.grants = next
+    })
   }
 
   list(): FolderGrant[] {
@@ -85,59 +88,76 @@ export class GrantStore implements GrantLookup {
   }
 
   async add(input: { folderPath: string; label?: string; access: 'read' | 'read-write' }): Promise<FolderGrant> {
-    const canonical = await canonicalFolder(input.folderPath)
+    return this.mutate(async () => {
+      const canonical = await canonicalFolder(input.folderPath)
+      if (this.grants.some((grant) => samePath(grant.root, canonical))) {
+        throw new ToolError('That folder is already approved.')
+      }
 
-    if (this.grants.some((grant) => samePath(grant.root, canonical))) {
-      throw new ToolError('That folder is already approved.')
-    }
+      const label = (input.label ?? path.basename(canonical) ?? canonical).trim() || path.basename(canonical)
+      const clash = this.grants.find((grant) => grant.label.toLowerCase() === label.toLowerCase())
+      const uniqueLabel = clash ? `${label} (${this.grants.length + 1})` : label
+      const grant: FolderGrant = {
+        id: randomUUID(),
+        label: uniqueLabel,
+        root: canonical,
+        access: input.access,
+        createdAt: new Date().toISOString()
+      }
 
-    const label = (input.label ?? path.basename(canonical) ?? canonical).trim() || path.basename(canonical)
-    const clash = this.grants.find((grant) => grant.label.toLowerCase() === label.toLowerCase())
-    const uniqueLabel = clash ? `${label} (${this.grants.length + 1})` : label
-
-    const grant: FolderGrant = {
-      id: randomUUID(),
-      label: uniqueLabel,
-      root: canonical,
-      access: input.access,
-      createdAt: new Date().toISOString()
-    }
-
-    this.grants.push(grant)
-    await this.persist()
-    return { ...grant }
+      const next = [...this.grants, grant]
+      await this.persist(next)
+      this.grants = next
+      return { ...grant }
+    })
   }
 
   async remove(id: string): Promise<FolderGrant> {
-    const index = this.grants.findIndex((grant) => grant.id === id)
-    if (index === -1) throw new ToolError('That folder is not approved.')
-    if (this.grants[index].builtIn) throw new ToolError('The workspace folder cannot be removed.')
-
-    const [removed] = this.grants.splice(index, 1)
-    await this.persist()
-    return { ...removed }
+    return this.mutate(async () => {
+      const index = this.grants.findIndex((grant) => grant.id === id)
+      if (index === -1) throw new ToolError('That folder is not approved.')
+      if (this.grants[index].builtIn) throw new ToolError('The workspace folder cannot be removed.')
+      const removed = this.grants[index]
+      const next = this.grants.filter((grant) => grant.id !== id)
+      await this.persist(next)
+      this.grants = next
+      return { ...removed }
+    })
   }
 
   async setAccess(id: string, access: 'read' | 'read-write'): Promise<FolderGrant> {
-    const grant = this.grants.find((entry) => entry.id === id)
-    if (!grant) throw new ToolError('That folder is not approved.')
-    if (grant.builtIn && access !== 'read-write') {
-      throw new ToolError('The workspace folder must stay writable.')
-    }
+    return this.mutate(async () => {
+      const grant = this.grants.find((entry) => entry.id === id)
+      if (!grant) throw new ToolError('That folder is not approved.')
+      if (grant.builtIn && access !== 'read-write') {
+        throw new ToolError('The workspace folder must stay writable.')
+      }
+      if (grant.access === access) return { ...grant }
 
-    const previous = grant.access
-    if (previous === access) return { ...grant }
-
-    grant.access = access
-    await this.persist()
-    return { ...grant }
+      const updated = { ...grant, access }
+      const next = this.grants.map((entry) => entry.id === id ? updated : entry)
+      await this.persist(next)
+      this.grants = next
+      return { ...updated }
+    })
   }
 
-  private async persist(): Promise<void> {
-    const payload: GrantsFile = { version: 1, grants: this.grants }
-    const temp = `${this.file}.tmp`
-    await writeFile(temp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temp, this.file)
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(grants: FolderGrant[]): Promise<void> {
+    const payload: GrantsFile = { version: 1, grants }
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 

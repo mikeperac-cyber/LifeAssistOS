@@ -1,6 +1,7 @@
 import { domainToASCII } from 'node:url'
 import { isIP } from 'node:net'
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 
 interface AllowlistFile {
@@ -11,25 +12,29 @@ interface AllowlistFile {
 /** Exact HTTPS hosts a user has chosen to allow for read-only web fetches. */
 export class DomainAllowlistStore {
   private hosts = new Set<string>()
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
 
   async init(): Promise<void> {
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as AllowlistFile
-      this.hosts = new Set(
-        Array.isArray(parsed.hosts)
-          ? parsed.hosts.map(normalizeDomain).filter((host): host is string => host !== null)
-          : []
-      )
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[allowlist] could not read domains file; starting empty', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let next = new Set<string>()
+      try {
+        const parsed = JSON.parse(await readFile(this.file, 'utf8')) as AllowlistFile
+        next = new Set(
+          Array.isArray(parsed.hosts)
+            ? parsed.hosts.map(normalizeDomain).filter((host): host is string => host !== null)
+            : []
+        )
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[allowlist] could not read domains file; starting empty', error)
+        }
       }
-      this.hosts = new Set()
-    }
-    await this.persist()
+      await this.persist(next)
+      this.hosts = next
+    })
   }
 
   list(): string[] {
@@ -44,23 +49,43 @@ export class DomainAllowlistStore {
   async add(input: string): Promise<string[]> {
     const domain = normalizeDomain(input)
     if (!domain) throw new Error('Enter a valid public domain, such as example.com.')
-    this.hosts.add(domain)
-    await this.persist()
-    return this.list()
+    return this.mutate(async () => {
+      const next = new Set(this.hosts)
+      next.add(domain)
+      await this.persist(next)
+      this.hosts = next
+      return this.list()
+    })
   }
 
   async remove(input: string): Promise<string[]> {
     const domain = normalizeDomain(input)
-    if (!domain || !this.hosts.delete(domain)) throw new Error('That domain is not allowlisted.')
-    await this.persist()
-    return this.list()
+    if (!domain) throw new Error('That domain is not allowlisted.')
+    return this.mutate(async () => {
+      const next = new Set(this.hosts)
+      if (!next.delete(domain)) throw new Error('That domain is not allowlisted.')
+      await this.persist(next)
+      this.hosts = next
+      return this.list()
+    })
   }
 
-  private async persist(): Promise<void> {
-    const payload: AllowlistFile = { version: 1, hosts: this.list() }
-    const temporary = `${this.file}.tmp`
-    await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.file)
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(hosts: Set<string>): Promise<void> {
+    const payload: AllowlistFile = { version: 1, hosts: [...hosts].sort((a, b) => a.localeCompare(b)) }
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
   }
 }
 

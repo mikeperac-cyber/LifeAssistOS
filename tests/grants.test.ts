@@ -47,6 +47,30 @@ describe('GrantStore', () => {
     expect(store.list()).toHaveLength(2)
   })
 
+  it('does not approve a folder in memory when saving its grant fails', async () => {
+    const folder = path.join(root, 'not-saved')
+    await mkdir(folder)
+    await rm(storeFile)
+    await mkdir(storeFile)
+
+    await expect(store.add({ folderPath: folder, access: 'read-write' })).rejects.toBeDefined()
+
+    expect(store.list()).toHaveLength(1)
+    expect(store.list().some((grant) => grant.root === folder)).toBe(false)
+  })
+
+  it('does not revoke a folder in memory when saving the removal fails', async () => {
+    const folder = path.join(root, 'kept-approved')
+    await mkdir(folder)
+    const grant = await store.add({ folderPath: folder, access: 'read' })
+    await rm(storeFile)
+    await mkdir(storeFile)
+
+    await expect(store.remove(grant.id)).rejects.toBeDefined()
+
+    expect(store.get(grant.id).root).toBe(folder)
+  })
+
   it('treats empty and aliased root names as the primary workspace', () => {
     expect(store.get('').id).toBe('workspace')
     expect(store.get('workspace').id).toBe('workspace')

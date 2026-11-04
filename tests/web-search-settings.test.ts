@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -51,6 +51,18 @@ describe('WebSearchSettingsStore', () => {
     const reloaded = new WebSearchSettingsStore(file)
     await reloaded.init()
     expect(reloaded.getApiKey()).toBeUndefined()
+  })
+
+  it('does not apply an API key update when persisting it fails', async () => {
+    const store = new WebSearchSettingsStore(file, codec)
+    await store.init()
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.updateApiKey('tavily-not-saved')).rejects.toBeDefined()
+
+    expect(store.getApiKey()).toBeUndefined()
+    expect(store.public()).toEqual({ hasApiKey: false, apiKeyStored: false })
   })
 
   it('preserves encrypted material while the keychain is temporarily unavailable', async () => {

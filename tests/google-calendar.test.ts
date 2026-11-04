@@ -1,5 +1,5 @@
 import { get as httpGet } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -80,6 +80,33 @@ describe('Google Calendar settings and OAuth', () => {
     const reloaded = new GoogleCalendarSettingsStore(file)
     await reloaded.init()
     expect(reloaded.getRefreshToken()).toBeUndefined()
+  })
+
+  it('does not report a refresh token connected when persisting it fails', async () => {
+    const store = new GoogleCalendarSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.saveRefreshToken('calendar-refresh-secret')).rejects.toBeDefined()
+
+    expect(store.public()).toMatchObject({ connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
+  it('keeps the current connection state when persisting a disconnect fails', async () => {
+    const store = new GoogleCalendarSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('calendar-refresh-secret')
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.clearConnection()).rejects.toBeDefined()
+
+    expect(store.public()).toMatchObject({ connected: true, tokenStored: true })
+    expect(store.getRefreshToken()).toBe('calendar-refresh-secret')
   })
 
   it('does not call an undecryptable saved token connected and can clear it locally', async () => {

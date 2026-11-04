@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { z } from 'zod'
 import type { AppSettings, ProviderSettings } from '../shared/types'
@@ -31,6 +32,14 @@ interface SettingsFile {
   apiKeyEnc?: string
 }
 
+interface SettingsStoreState {
+  provider: Omit<ProviderSettings, 'apiKey'>
+  apiKey: string
+  apiKeyStored: boolean
+  onboardingComplete: boolean
+  storedApiKeyEnc?: string
+}
+
 export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
   preset: 'ollama',
   baseUrl: 'http://127.0.0.1:11434/v1',
@@ -51,6 +60,7 @@ export class SettingsStore {
   private apiKeyStored = false
   private onboardingComplete = false
   private storedApiKeyEnc?: string
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly file: string,
@@ -58,52 +68,52 @@ export class SettingsStore {
   ) {}
 
   async init(): Promise<void> {
-    this.provider = { ...DEFAULT_PROVIDER_SETTINGS }
-    this.apiKey = ''
-    this.apiKeyStored = false
-    this.onboardingComplete = false
-    this.storedApiKeyEnc = undefined
-    await mkdir(path.dirname(this.file), { recursive: true })
-
-    let loaded: SettingsFile | null = null
-    try {
-      loaded = JSON.parse(await readFile(this.file, 'utf8')) as SettingsFile
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[settings] could not read settings file, using defaults', error)
-      }
-    }
-
-    if (loaded?.provider) {
-      const parsed = providerSchema.safeParse(loaded.provider)
-      if (parsed.success) {
-        const safeBaseUrl = safeProviderEndpointForDisplay(parsed.data.baseUrl)
-        if (safeBaseUrl !== parsed.data.baseUrl) {
-          console.warn('[settings] removed credentials or query data from the provider URL')
-        }
-        this.provider = { ...parsed.data, baseUrl: safeBaseUrl }
-      } else {
-        console.warn('[settings] ignoring invalid settings file')
-      }
-    }
-
-    this.onboardingComplete = loaded?.onboardingComplete === true
-
-    if (loaded?.apiKeyEnc) {
-      this.storedApiKeyEnc = loaded.apiKeyEnc
-      this.apiKeyStored = true
-      if (this.codec?.available) {
-        try {
-          const decrypted = await this.codec.decrypt(loaded.apiKeyEnc)
-          this.apiKey = decrypted.value
-        } catch (error) {
-          console.warn('[settings] could not decrypt the stored API key; preserving its ciphertext', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let loaded: SettingsFile | null = null
+      try {
+        loaded = JSON.parse(await readFile(this.file, 'utf8')) as SettingsFile
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[settings] could not read settings file, using defaults', error)
         }
       }
-    }
 
-    // Persist also refreshes ciphertext when the OS key signals rotation.
-    await this.persist()
+      const next: SettingsStoreState = {
+        provider: { ...DEFAULT_PROVIDER_SETTINGS },
+        apiKey: '',
+        apiKeyStored: false,
+        onboardingComplete: loaded?.onboardingComplete === true
+      }
+      if (loaded?.provider) {
+        const parsed = providerSchema.safeParse(loaded.provider)
+        if (parsed.success) {
+          const safeBaseUrl = safeProviderEndpointForDisplay(parsed.data.baseUrl)
+          if (safeBaseUrl !== parsed.data.baseUrl) {
+            console.warn('[settings] removed credentials or query data from the provider URL')
+          }
+          next.provider = { ...parsed.data, baseUrl: safeBaseUrl }
+        } else {
+          console.warn('[settings] ignoring invalid settings file')
+        }
+      }
+
+      if (loaded?.apiKeyEnc) {
+        next.storedApiKeyEnc = loaded.apiKeyEnc
+        next.apiKeyStored = true
+        if (this.codec?.available) {
+          try {
+            const decrypted = await this.codec.decrypt(loaded.apiKeyEnc)
+            next.apiKey = decrypted.value
+          } catch (error) {
+            console.warn('[settings] could not decrypt the stored API key; preserving its ciphertext', error)
+          }
+        }
+      }
+
+      // Persist also refreshes ciphertext when the OS key signals rotation.
+      this.apply(await this.persist(next))
+    })
   }
 
   /** Full settings including the secret, for main-process use only. */
@@ -136,63 +146,98 @@ export class SettingsStore {
   }
 
   async completeOnboarding(): Promise<void> {
-    this.onboardingComplete = true
-    await this.persist()
+    await this.mutate(async () => {
+      this.apply(await this.persist({ ...this.snapshot(), onboardingComplete: true }))
+    })
   }
 
   async update(
     patch: Partial<Omit<ProviderSettings, 'apiKey'>> & { apiKey?: string | null }
   ): Promise<AppSettings> {
-    const { apiKey, ...rest } = patch
-    const candidate = { ...this.provider, ...stripUndefined(rest) }
-    const parsed = providerSchema.safeParse(candidate)
+    return this.mutate(async () => {
+      const { apiKey, ...rest } = patch
+      const current = this.snapshot()
+      const candidate = { ...current.provider, ...stripUndefined(rest) }
+      const parsed = providerSchema.safeParse(candidate)
 
-    if (!parsed.success) {
-      const detail = parsed.error.issues
-        .map((issue) => `${issue.path.join('.') || 'settings'}: ${issue.message}`)
-        .join('; ')
-      throw new Error(`Invalid settings — ${detail}`)
-    }
-
-    try {
-      normalizeProviderEndpoint(parsed.data.baseUrl)
-    } catch (error) {
-      throw new Error(`Invalid settings — baseUrl: ${error instanceof Error ? error.message : String(error)}`)
-    }
-
-    this.provider = parsed.data
-
-    if (apiKey !== undefined) {
-      if (apiKey === null || apiKey.trim() === '') {
-        this.apiKey = ''
-        this.apiKeyStored = false
-        this.storedApiKeyEnc = undefined
-      } else {
-        this.apiKey = apiKey.trim()
-        this.apiKeyStored = Boolean(this.codec?.available)
-        this.storedApiKeyEnc = undefined
+      if (!parsed.success) {
+        const detail = parsed.error.issues
+          .map((issue) => `${issue.path.join('.') || 'settings'}: ${issue.message}`)
+          .join('; ')
+        throw new Error(`Invalid settings — ${detail}`)
       }
-    }
 
-    await this.persist()
-    return this.get()
+      try {
+        normalizeProviderEndpoint(parsed.data.baseUrl)
+      } catch (error) {
+        throw new Error(`Invalid settings — baseUrl: ${error instanceof Error ? error.message : String(error)}`)
+      }
+
+      const next: SettingsStoreState = { ...current, provider: parsed.data }
+      if (apiKey !== undefined) {
+        if (apiKey === null || apiKey.trim() === '') {
+          next.apiKey = ''
+          next.apiKeyStored = false
+          next.storedApiKeyEnc = undefined
+        } else {
+          next.apiKey = apiKey.trim()
+          next.apiKeyStored = Boolean(this.codec?.available)
+          next.storedApiKeyEnc = undefined
+        }
+      }
+
+      this.apply(await this.persist(next))
+      return this.get()
+    })
   }
 
-  private async persist(): Promise<void> {
+  private snapshot(): SettingsStoreState {
+    return {
+      provider: this.provider,
+      apiKey: this.apiKey,
+      apiKeyStored: this.apiKeyStored,
+      onboardingComplete: this.onboardingComplete,
+      storedApiKeyEnc: this.storedApiKeyEnc
+    }
+  }
+
+  private apply(state: SettingsStoreState): void {
+    this.provider = state.provider
+    this.apiKey = state.apiKey
+    this.apiKeyStored = state.apiKeyStored
+    this.onboardingComplete = state.onboardingComplete
+    this.storedApiKeyEnc = state.storedApiKeyEnc
+  }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(state: SettingsStoreState): Promise<SettingsStoreState> {
     const payload: SettingsFile = {
       version: 1,
-      provider: this.provider,
-      onboardingComplete: this.onboardingComplete
+      provider: state.provider,
+      onboardingComplete: state.onboardingComplete
     }
 
-    if (this.apiKey && this.apiKeyStored && this.codec?.available) {
-      this.storedApiKeyEnc = await this.codec.encrypt(this.apiKey)
+    const storedApiKeyEnc = state.apiKey && state.apiKeyStored && this.codec?.available
+      ? await this.codec.encrypt(state.apiKey)
+      : state.storedApiKeyEnc
+    if (storedApiKeyEnc) {
+      payload.apiKeyEnc = storedApiKeyEnc
     }
-    if (this.storedApiKeyEnc) payload.apiKeyEnc = this.storedApiKeyEnc
 
-    const temp = `${this.file}.tmp`
-    await writeFile(temp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temp, this.file)
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
+    return { ...state, storedApiKeyEnc }
   }
 }
 

@@ -1,5 +1,5 @@
 import { get as httpGet } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Buffer } from 'node:buffer'
@@ -72,6 +72,19 @@ describe('Google Drive settings and fixed API boundary', () => {
     await store.init()
 
     expect(store.public()).toMatchObject({ clientId: '', connected: false, tokenStored: false })
+    expect(store.getRefreshToken()).toBeUndefined()
+  })
+
+  it('does not report a refresh token connected when persisting it fails', async () => {
+    const store = new GoogleDriveSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await rm(file)
+    await mkdir(file)
+
+    await expect(store.saveRefreshToken('drive-refresh-secret')).rejects.toBeDefined()
+
+    expect(store.public()).toMatchObject({ connected: false, tokenStored: false })
     expect(store.getRefreshToken()).toBeUndefined()
   })
 

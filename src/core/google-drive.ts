@@ -1,4 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import type { SecretCodec } from './settings'
@@ -45,6 +47,12 @@ interface GoogleDriveSettingsFile {
   refreshTokenEnc?: string
 }
 
+interface GoogleDriveStoreState {
+  clientId: string
+  refreshToken: string
+  storedRefreshTokenEnc?: string
+}
+
 export interface PublicGoogleDriveSettings {
   clientId: string
   connected: boolean
@@ -84,37 +92,38 @@ export class GoogleDriveSettingsStore {
   private clientId = ''
   private refreshToken = ''
   private storedRefreshTokenEnc?: string
+  private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string, private readonly codec?: SecretCodec) {}
 
   async init(): Promise<void> {
-    this.clientId = ''
-    this.refreshToken = ''
-    this.storedRefreshTokenEnc = undefined
-    await mkdir(path.dirname(this.file), { recursive: true })
-    try {
-      const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GoogleDriveSettingsFile>
-      if (loaded.version === 1) {
-        if (typeof loaded.clientId === 'string') {
-          try { this.clientId = normalizeGoogleClientId(loaded.clientId, true) } catch { this.clientId = '' }
-        }
-        if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
-          this.storedRefreshTokenEnc = loaded.refreshTokenEnc
-          if (this.codec?.available) {
-            try {
-              this.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
-            } catch (error) {
-              console.warn('[google-drive] could not decrypt the stored token; preserving its ciphertext', error)
+    await this.mutate(async () => {
+      await mkdir(path.dirname(this.file), { recursive: true })
+      let next: GoogleDriveStoreState = { clientId: '', refreshToken: '' }
+      try {
+        const loaded = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GoogleDriveSettingsFile>
+        if (loaded.version === 1) {
+          if (typeof loaded.clientId === 'string') {
+            try { next.clientId = normalizeGoogleClientId(loaded.clientId, true) } catch { next.clientId = '' }
+          }
+          if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
+            next.storedRefreshTokenEnc = loaded.refreshTokenEnc
+            if (this.codec?.available) {
+              try {
+                next.refreshToken = (await this.codec.decrypt(loaded.refreshTokenEnc)).value
+              } catch (error) {
+                console.warn('[google-drive] could not decrypt the stored token; preserving its ciphertext', error)
+              }
             }
           }
         }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('[google-drive] could not read settings file', error)
+        }
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[google-drive] could not read settings file', error)
-      }
-    }
-    await this.persist()
+      this.apply(await this.persist(next))
+    })
   }
 
   public(): PublicGoogleDriveSettings {
@@ -130,42 +139,65 @@ export class GoogleDriveSettingsStore {
   hasStoredRefreshToken(): boolean { return Boolean(this.refreshToken || this.storedRefreshTokenEnc) }
 
   async updateClientId(input: string): Promise<PublicGoogleDriveSettings> {
-    const value = normalizeGoogleClientId(input, true)
-    if (this.hasStoredRefreshToken() && value !== this.clientId) {
-      throw new Error('Disconnect Google Drive before changing its OAuth Client ID.')
-    }
-    this.clientId = value
-    await this.persist()
-    return this.public()
+    return this.mutate(async () => {
+      const value = normalizeGoogleClientId(input, true)
+      if (this.hasStoredRefreshToken() && value !== this.clientId) {
+        throw new Error('Disconnect Google Drive before changing its OAuth Client ID.')
+      }
+      this.apply(await this.persist({ ...this.snapshot(), clientId: value }))
+      return this.public()
+    })
   }
 
   async saveRefreshToken(refreshToken: string): Promise<void> {
     if (!refreshToken || refreshToken.length > 8_192 || /[\u0000-\u001f\u007f]/.test(refreshToken)) {
       throw new Error('Google returned an invalid refresh token.')
     }
-    this.refreshToken = refreshToken
-    this.storedRefreshTokenEnc = undefined
-    await this.persist()
+    await this.mutate(async () => {
+      this.apply(await this.persist({ ...this.snapshot(), refreshToken, storedRefreshTokenEnc: undefined }))
+    })
   }
 
   async clearConnection(): Promise<void> {
-    this.refreshToken = ''
-    this.storedRefreshTokenEnc = undefined
-    await this.persist()
+    await this.mutate(async () => {
+      this.apply(await this.persist({ ...this.snapshot(), refreshToken: '', storedRefreshTokenEnc: undefined }))
+    })
   }
 
-  private async persist(): Promise<void> {
-    if (this.refreshToken && this.codec?.available) {
-      this.storedRefreshTokenEnc = await this.codec.encrypt(this.refreshToken)
-    }
+  private snapshot(): GoogleDriveStoreState {
+    return { clientId: this.clientId, refreshToken: this.refreshToken, storedRefreshTokenEnc: this.storedRefreshTokenEnc }
+  }
+
+  private apply(state: GoogleDriveStoreState): void {
+    this.clientId = state.clientId
+    this.refreshToken = state.refreshToken
+    this.storedRefreshTokenEnc = state.storedRefreshTokenEnc
+  }
+
+  private mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation)
+    this.mutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
+
+  private async persist(state: GoogleDriveStoreState): Promise<GoogleDriveStoreState> {
+    const storedRefreshTokenEnc = state.refreshToken && this.codec?.available
+      ? await this.codec.encrypt(state.refreshToken)
+      : state.storedRefreshTokenEnc
     const payload: GoogleDriveSettingsFile = {
       version: 1,
-      clientId: this.clientId,
-      ...(this.storedRefreshTokenEnc ? { refreshTokenEnc: this.storedRefreshTokenEnc } : {})
+      clientId: state.clientId,
+      ...(storedRefreshTokenEnc ? { refreshTokenEnc: storedRefreshTokenEnc } : {})
     }
-    const temporary = `${this.file}.tmp`
-    await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-    await rename(temporary, this.file)
+    const temporary = `${this.file}.${randomUUID()}.tmp`
+    try {
+      await writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
+      await rename(temporary, this.file)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
+    return { ...state, storedRefreshTokenEnc }
   }
 }
 
@@ -417,9 +449,9 @@ export class GoogleDriveService {
     ensureSuccess(response, 'refresh Google Drive access')
     const parsed = GOOGLE_DRIVE_TOKEN_SCHEMA.safeParse(parseJson(response.text, 'Google token response'))
     if (!parsed.success) throw new Error('Google returned an unexpected token response.')
+    if (parsed.data.refresh_token) await this.store.saveRefreshToken(parsed.data.refresh_token)
     this.accessToken = parsed.data.access_token
     this.accessTokenExpiresAt = Date.now() + parsed.data.expires_in * 1000
-    if (parsed.data.refresh_token) await this.store.saveRefreshToken(parsed.data.refresh_token)
     return this.accessToken
   }
 }
