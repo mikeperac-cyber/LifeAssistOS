@@ -2,7 +2,7 @@ import { get as httpGet } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultPolicy } from '../src/core/gateway/policy'
 import {
   GOOGLE_GMAIL_SCOPES,
@@ -37,6 +37,19 @@ afterEach(async () => {
 })
 
 describe('Google Gmail settings and OAuth', () => {
+  it('disconnects only the local token so other Google scopes in the project keep working', async () => {
+    const store = new GoogleGmailSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('gmail-refresh-secret')
+    const request = vi.fn<GmailRequest>()
+    const service = new GoogleGmailService(store, { request, openExternal: async () => undefined })
+    const disconnected = await service.disconnect()
+    expect(disconnected.settings).toMatchObject({ connected: false, tokenStored: false })
+    expect(disconnected).toMatchObject({ revoked: false, revocationAttempted: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('encrypts refresh tokens and does not call an undecryptable saved token connected', async () => {
     const store = new GoogleGmailSettingsStore(file, codec)
     await store.init()

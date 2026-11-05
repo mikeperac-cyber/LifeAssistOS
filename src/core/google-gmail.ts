@@ -14,7 +14,6 @@ export const GOOGLE_GMAIL_SCOPES = [
 ] as const
 
 const GOOGLE_TOKEN_URL = new URL('https://oauth2.googleapis.com/token')
-const GOOGLE_REVOKE_URL = new URL('https://oauth2.googleapis.com/revoke')
 const GMAIL_HOST = 'gmail.googleapis.com'
 const GMAIL_API_ROOT = '/gmail/v1/users/me'
 const GMAIL_TOKEN_SCHEMA = z.object({
@@ -205,33 +204,16 @@ export class GoogleGmailService {
     return this.store.public()
   }
 
-  async disconnect(signal?: AbortSignal): Promise<{
+  async disconnect(): Promise<{
     revoked: boolean
     revocationAttempted: boolean
     settings: PublicGoogleGmailSettings
   }> {
-    const refreshToken = this.store.getRefreshToken()
-    const hadStoredToken = this.store.hasStoredRefreshToken()
-    let revoked = !hadStoredToken
-    const revocationAttempted = Boolean(refreshToken)
-    if (refreshToken) {
-      try {
-        const response = await this.request(GOOGLE_REVOKE_URL, signal ?? new AbortController().signal, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-          body: new URLSearchParams({ token: refreshToken }).toString(),
-          maxResponseBytes: 64_000,
-          timeoutMs: 10_000
-        })
-        revoked = response.status >= 200 && response.status < 300
-      } catch {
-        revoked = false
-      }
-    }
+    // Google revocation removes every scope/token for the project; disconnect only this local connector.
     await this.store.clearConnection()
     this.accessToken = ''
     this.accessTokenExpiresAt = 0
-    return { revoked, revocationAttempted, settings: this.store.public() }
+    return { revoked: false, revocationAttempted: false, settings: this.store.public() }
   }
 
   async requestGmailApi(

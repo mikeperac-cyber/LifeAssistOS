@@ -1,7 +1,13 @@
-import { useEffect, useState } from 'react'
-import type { PlanTask, TodaySnapshot } from '../../../shared/types'
+import { useEffect, useRef, useState } from 'react'
+import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
+import type { PublicGoogleTasksSettings } from '../../../shared/ipc'
 
-export function TodayView(): React.JSX.Element {
+export function TodayView({ googleTasksSettings, disabled, onOpenSettings, onSettingsRefresh }: {
+  googleTasksSettings: PublicGoogleTasksSettings | null
+  disabled: boolean
+  onOpenSettings: () => void
+  onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
+}): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<TodaySnapshot>({ date: '', tasks: [], inbox: [] })
   const [capture, setCapture] = useState('')
   const [task, setTask] = useState('')
@@ -12,6 +18,16 @@ export function TodayView(): React.JSX.Element {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  const [googleTaskLists, setGoogleTaskLists] = useState<GoogleTaskList[]>([])
+  const [googleTaskListsLoaded, setGoogleTaskListsLoaded] = useState(false)
+  const [googleTaskListsPageToken, setGoogleTaskListsPageToken] = useState<string | undefined>()
+  const [selectedGoogleTaskListId, setSelectedGoogleTaskListId] = useState('')
+  const [googleTasks, setGoogleTasks] = useState<GoogleTask[]>([])
+  const [googleTasksLoaded, setGoogleTasksLoaded] = useState(false)
+  const [googleTasksPageToken, setGoogleTasksPageToken] = useState<string | undefined>()
+  const [googleTasksReadBusy, setGoogleTasksReadBusy] = useState(false)
+  const [googleTasksError, setGoogleTasksError] = useState('')
+  const googleTasksReadBusyRef = useRef(false)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -116,6 +132,54 @@ export function TodayView(): React.JSX.Element {
     }
   }
 
+  const loadGoogleTaskLists = async (pageToken?: string): Promise<void> => {
+    if (googleTasksReadBusyRef.current) return
+    googleTasksReadBusyRef.current = true
+    setGoogleTasksReadBusy(true)
+    setGoogleTasksError('')
+    try {
+      const result = await window.assist.listGoogleTaskLists(pageToken)
+      if (result.settings) onSettingsRefresh(result.settings)
+      if (!result.ok || !result.lists) throw new Error(result.error ?? 'Could not load Google Tasks lists.')
+      setGoogleTaskLists((current) => pageToken ? [...current, ...result.lists!] : result.lists!)
+      setGoogleTaskListsLoaded(true)
+      setGoogleTaskListsPageToken(result.nextPageToken)
+      if (!pageToken) {
+        setSelectedGoogleTaskListId((current) =>
+          current && result.lists!.some((list) => list.id === current) ? current : result.lists![0]?.id ?? ''
+        )
+        setGoogleTasks([])
+        setGoogleTasksLoaded(false)
+        setGoogleTasksPageToken(undefined)
+      }
+    } catch (cause) {
+      setGoogleTasksError(errorText(cause, 'Could not load Google Tasks lists.'))
+    } finally {
+      googleTasksReadBusyRef.current = false
+      setGoogleTasksReadBusy(false)
+    }
+  }
+
+  const loadGoogleTasks = async (pageToken?: string): Promise<void> => {
+    if (!selectedGoogleTaskListId || googleTasksReadBusyRef.current) return
+    googleTasksReadBusyRef.current = true
+    setGoogleTasksReadBusy(true)
+    setGoogleTasksError('')
+    try {
+      const result = await window.assist.listGoogleTasks(selectedGoogleTaskListId, pageToken)
+      if (result.settings) onSettingsRefresh(result.settings)
+      if (!result.ok || !result.tasks) throw new Error(result.error ?? 'Could not load Google Tasks.')
+      setGoogleTasks((current) => pageToken ? [...current, ...result.tasks!] : result.tasks!)
+      setGoogleTasksLoaded(true)
+      setGoogleTasksPageToken(result.nextPageToken)
+    } catch (cause) {
+      setGoogleTasksError(errorText(cause, 'Could not load Google Tasks.'))
+    } finally {
+      googleTasksReadBusyRef.current = false
+      setGoogleTasksReadBusy(false)
+    }
+  }
+
   return (
     <div className="today-view">
       <div className="today-header">
@@ -194,6 +258,78 @@ export function TodayView(): React.JSX.Element {
           </div>
         </section>
       </div>
+      <section className="today-card today-google-tasks" aria-labelledby="google-tasks-title">
+        <div className="today-card-head">
+          <h3 id="google-tasks-title">Google Tasks</h3>
+          {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
+        </div>
+        <p className="today-google-tasks-note">Read-only connection. Loading lists and tasks asks for approval each time. Chat may send approved results to your configured model provider.</p>
+        {googleTasksSettings === null ? (
+          <p className="muted" role="status">Checking Google Tasks connection…</p>
+        ) : !googleTasksSettings.connected ? (
+          <div className="today-google-tasks-empty">
+            <p>Connect Google Tasks to view a list alongside your local tasks.</p>
+            <button className="ghost-button" type="button" onClick={onOpenSettings} disabled={disabled}>Open Settings</button>
+          </div>
+        ) : (
+          <>
+            <div className="today-google-tasks-controls">
+              <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists()} disabled={disabled || googleTasksReadBusy}>
+                {googleTasksReadBusy ? 'Waiting…' : googleTaskListsLoaded ? 'Refresh lists' : 'Load task lists'}
+              </button>
+              {googleTaskLists.length > 0 && (
+                <>
+                  <label className="today-google-task-list-select">
+                    <span className="sr-only">Google Tasks list</span>
+                    <select
+                      value={selectedGoogleTaskListId}
+                      disabled={disabled || googleTasksReadBusy}
+                      onChange={(event) => {
+                        setSelectedGoogleTaskListId(event.target.value)
+                        setGoogleTasks([])
+                        setGoogleTasksLoaded(false)
+                        setGoogleTasksPageToken(undefined)
+                        setGoogleTasksError('')
+                      }}
+                    >
+                      {googleTaskLists.map((list) => <option key={list.id} value={list.id}>{list.title}</option>)}
+                    </select>
+                  </label>
+                  <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks()} disabled={disabled || googleTasksReadBusy || !selectedGoogleTaskListId}>
+                    {googleTasksReadBusy ? 'Waiting…' : 'Load open tasks'}
+                  </button>
+                </>
+              )}
+              {googleTaskListsPageToken && (
+                <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists(googleTaskListsPageToken)} disabled={disabled || googleTasksReadBusy}>Load more lists</button>
+              )}
+            </div>
+            {googleTaskListsLoaded && googleTaskLists.length === 0 && <p className="muted">No Google Tasks lists were found.</p>}
+            {googleTasks.length > 0 ? (
+              <div className="today-google-task-list">
+                {googleTasks.map((item) => (
+                  <article className="today-google-task" key={`${selectedGoogleTaskListId}:${item.id}`}>
+                    <div className="today-google-task-copy">
+                      <strong>{item.title}</strong>
+                      {item.due && <span>Due {formatTaskDue(item.due)}</span>}
+                      {item.notes && <p>{item.notes}{item.notesTruncated && <span> Note shortened to 4,000 characters.</span>}</p>}
+                    </div>
+                    <span className="today-google-task-status">{item.status === 'completed' ? 'Completed' : 'Open'}</span>
+                  </article>
+                ))}
+                {googleTasksPageToken && (
+                  <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks(googleTasksPageToken)} disabled={disabled || googleTasksReadBusy}>Load more tasks</button>
+                )}
+              </div>
+            ) : googleTasksLoaded ? (
+              <p className="muted">There are no open tasks in this Google Tasks list.</p>
+            ) : googleTaskListsLoaded && googleTaskLists.length > 0 ? (
+              <p className="muted">Choose a list, then load its open tasks.</p>
+            ) : null}
+            {googleTasksError && <p className="status-error" role="alert">{googleTasksError}</p>}
+          </>
+        )}
+      </section>
       {error && <p className="status-error today-error" role="alert">{error}</p>}
       </>}
     </div>
@@ -223,4 +359,10 @@ function formatReminder(value: string): string {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return value
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+function formatTaskDue(value: string): string {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
 }

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Buffer } from 'node:buffer'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GoogleDriveService, GoogleDriveSettingsStore, GOOGLE_DRIVE_SCOPE, isAllowedGoogleDriveApiRequest, type GoogleDriveRequest } from '../src/core/google-drive'
 import type { GoogleOAuthClient } from '../src/core/google-oauth'
 import { defaultPolicy } from '../src/core/gateway/policy'
@@ -44,6 +44,16 @@ function response(text: string, contentType = 'application/json') {
 const tokenResponse = () => response(JSON.stringify({ access_token: 'drive-access', expires_in: 3600 }))
 
 describe('Google Drive settings and fixed API boundary', () => {
+  it('disconnects only the local token so other Google scopes in the project keep working', async () => {
+    const store = await connectedStore()
+    const request = vi.fn<GoogleDriveRequest>()
+    const service = new GoogleDriveService(store, { request, openExternal: async () => undefined })
+    const disconnected = await service.disconnect()
+    expect(disconnected.settings).toMatchObject({ connected: false, tokenStored: false })
+    expect(disconnected).toMatchObject({ revoked: false, revocationAttempted: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('encrypts refresh tokens and preserves locked ciphertext without treating it as connected', async () => {
     const store = new GoogleDriveSettingsStore(file, codec)
     await store.init()

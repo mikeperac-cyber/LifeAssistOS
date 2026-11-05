@@ -36,7 +36,9 @@ import type {
   AssistantSkillInput,
   ProviderSettings,
   ProviderStatus,
-  ToolResult
+  ToolResult,
+  GoogleTask,
+  GoogleTaskList
 } from './types'
 
 export interface PublicWebSearchSettings {
@@ -57,6 +59,12 @@ export interface PublicGoogleGmailSettings {
 }
 
 export interface PublicGoogleDriveSettings {
+  clientId: string
+  connected: boolean
+  tokenStored: boolean
+}
+
+export interface PublicGoogleTasksSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
@@ -138,6 +146,29 @@ export interface GoogleDriveSettingsResult {
   error?: string
   message?: string
   settings?: PublicGoogleDriveSettings
+}
+
+export interface GoogleTasksSettingsResult {
+  ok: boolean
+  error?: string
+  message?: string
+  settings?: PublicGoogleTasksSettings
+}
+
+export interface GoogleTaskListsReadResult {
+  ok: boolean
+  error?: string
+  lists?: GoogleTaskList[]
+  nextPageToken?: string
+  settings?: PublicGoogleTasksSettings
+}
+
+export interface GoogleTasksReadResult {
+  ok: boolean
+  error?: string
+  tasks?: GoogleTask[]
+  nextPageToken?: string
+  settings?: PublicGoogleTasksSettings
 }
 
 export interface ChatState {
@@ -384,6 +415,12 @@ export interface AssistApi {
   updateGoogleDriveClientId(clientId: string): Promise<GoogleDriveSettingsResult>
   connectGoogleDrive(): Promise<GoogleDriveSettingsResult>
   disconnectGoogleDrive(): Promise<GoogleDriveSettingsResult>
+  getGoogleTasksSettings(): Promise<PublicGoogleTasksSettings>
+  updateGoogleTasksClientId(clientId: string): Promise<GoogleTasksSettingsResult>
+  connectGoogleTasks(): Promise<GoogleTasksSettingsResult>
+  disconnectGoogleTasks(): Promise<GoogleTasksSettingsResult>
+  listGoogleTaskLists(pageToken?: string): Promise<GoogleTaskListsReadResult>
+  listGoogleTasks(taskListId: string, pageToken?: string): Promise<GoogleTasksReadResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

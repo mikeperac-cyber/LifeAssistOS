@@ -188,6 +188,9 @@ export type AuditType =
   | 'google_drive.settings_changed'
   | 'google_drive.connected'
   | 'google_drive.disconnected'
+  | 'google_tasks.settings_changed'
+  | 'google_tasks.connected'
+  | 'google_tasks.disconnected'
   | 'domain.added'
   | 'domain.removed'
   | 'backup.created'
@@ -246,6 +249,22 @@ export interface AuditEvent {
   /** Present on M2 records; earlier legacy entries remain readable. */
   prevHash?: string
   hash?: string
+}
+
+export interface GoogleTaskList {
+  id: string
+  title: string
+  updated?: string
+}
+
+export interface GoogleTask {
+  id: string
+  title: string
+  notes?: string
+  notesTruncated?: boolean
+  due?: string
+  status: 'needsAction' | 'completed'
+  updated?: string
 }
 
 export interface AuditIntegrity {

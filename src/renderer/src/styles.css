@@ -3269,6 +3269,21 @@ summary:focus-visible {
 .today-header { margin-bottom: 17px; }
 .reminder-help { margin-top: 5px !important; color: var(--faint) !important; font-size: 10px !important; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
+.today-google-tasks { margin-top: 14px; }
+.today-google-tasks-note { max-width: 780px; margin: -3px 0 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.today-google-tasks-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.today-google-tasks-controls button, .today-google-task-list > button { padding: 7px 9px; font-size: 10px; }
+.today-google-task-list-select { min-width: min(260px, 100%); max-width: 100%; }
+.today-google-task-list-select select { max-width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10px; }
+.today-google-task-list { display: flex; flex-direction: column; gap: 6px; margin-top: 11px; }
+.today-google-task { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); }
+.today-google-task-copy { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.today-google-task-copy strong { color: var(--text); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.today-google-task-copy span, .today-google-task-status { color: var(--faint); font-size: 10px; }
+.today-google-task-copy p { margin: 2px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.today-google-task-status { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--line-soft); border-radius: 999px; }
+.today-google-tasks-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 11px; }
+.today-google-tasks-empty p { margin: 0; }
 .today-card { padding: 17px; border: 1px solid var(--line-soft); border-radius: 13px; background: var(--panel); }
 .today-card-head { align-items: center; margin-bottom: 13px; }
 .today-card-head h3 { margin: 0; font-size: 13px; }

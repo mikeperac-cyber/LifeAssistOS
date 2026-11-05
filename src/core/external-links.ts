@@ -21,6 +21,10 @@ export function resolveExternalPopupUrl(
           external.pathname === '/identity/protocols/oauth2/native-app') ||
         (external.hostname === 'developers.google.com' &&
           external.pathname === '/workspace/gmail/api/auth/scopes') ||
+        (external.hostname === 'developers.google.com' &&
+          external.pathname === '/workspace/tasks/auth') ||
+        (external.hostname === 'developers.google.com' &&
+          external.pathname === '/workspace/tasks/reference/rest/v1/tasklists/list') ||
         (external.hostname === 'console.cloud.google.com' &&
           external.pathname === '/auth/clients'))
 

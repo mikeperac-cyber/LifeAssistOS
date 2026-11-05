@@ -39,12 +39,14 @@ import type {
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
+  PublicGoogleTasksSettings,
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
-  GoogleDriveSettingsResult
+  GoogleDriveSettingsResult,
+  GoogleTasksSettingsResult
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
@@ -81,6 +83,7 @@ type StartupLoadKey =
   | 'calendar'
   | 'gmail'
   | 'drive'
+  | 'tasks'
   | 'speech'
   | 'workflows'
   | 'scheduledTasks'
@@ -100,6 +103,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   calendar: 'Google Calendar settings',
   gmail: 'Gmail settings',
   drive: 'Google Drive settings',
+  tasks: 'Google Tasks settings',
   speech: 'Speech settings',
   workflows: 'Workflows',
   scheduledTasks: 'Scheduled tasks',
@@ -107,7 +111,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -115,7 +119,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks']
 
 let localSequence = 0
 
@@ -227,6 +231,7 @@ export default function App(): React.JSX.Element {
   const [googleCalendarSettings, setGoogleCalendarSettings] = useState<PublicGoogleCalendarSettings | null>(null)
   const [googleGmailSettings, setGoogleGmailSettings] = useState<PublicGoogleGmailSettings | null>(null)
   const [googleDriveSettings, setGoogleDriveSettings] = useState<PublicGoogleDriveSettings | null>(null)
+  const [googleTasksSettings, setGoogleTasksSettings] = useState<PublicGoogleTasksSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
@@ -360,6 +365,7 @@ export default function App(): React.JSX.Element {
     loadInitial('calendar', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
     loadInitial('gmail', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
     loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
+    loadInitial('tasks', () => window.assist.getGoogleTasksSettings(), setGoogleTasksSettings)
     loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
     loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
     loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
@@ -980,6 +986,24 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateGoogleTasksClientId = useCallback(async (clientId: string): Promise<GoogleTasksSettingsResult> => {
+    const result = await window.assist.updateGoogleTasksClientId(clientId)
+    if (result.ok && result.settings) setGoogleTasksSettings(result.settings)
+    return result
+  }, [])
+
+  const connectGoogleTasks = useCallback(async (): Promise<GoogleTasksSettingsResult> => {
+    const result = await window.assist.connectGoogleTasks()
+    if (result.ok && result.settings) setGoogleTasksSettings(result.settings)
+    return result
+  }, [])
+
+  const disconnectGoogleTasks = useCallback(async (): Promise<GoogleTasksSettingsResult> => {
+    const result = await window.assist.disconnectGoogleTasks()
+    if (result.ok && result.settings) setGoogleTasksSettings(result.settings)
+    return result
+  }, [])
+
   const testProvider = useCallback((): Promise<ProviderStatus> => {
     return window.assist.testProvider()
   }, [])
@@ -1005,11 +1029,16 @@ export default function App(): React.JSX.Element {
       setMemoryVersion((v) => v + 1)
       void Promise.all([
         window.assist.getSettings().then(setSettings),
+        window.assist.getWebSearchSettings().then(setWebSearchSettings),
+        window.assist.getGoogleCalendarSettings().then(setGoogleCalendarSettings),
+        window.assist.getGoogleGmailSettings().then(setGoogleGmailSettings),
+        window.assist.getGoogleDriveSettings().then(setGoogleDriveSettings),
         window.assist.getAllowedDomains().then(setAllowedDomains),
         window.assist.getSpeechEndpoint().then(setSpeechEndpoint),
         window.assist.getWorkflows().then(setWorkflows),
         window.assist.getScheduledTasks().then(setScheduledTasks),
         window.assist.getSkills().then(setSkills),
+        window.assist.getGoogleTasksSettings().then(setGoogleTasksSettings),
         window.assist.getAudit().then(setAudit),
         window.assist.getAuditIntegrity().then(setAuditIntegrity)
       ]).catch((error: unknown) => {
@@ -1356,7 +1385,12 @@ export default function App(): React.JSX.Element {
             />
           ))}
 
-          {view === 'today' && <TodayView />}
+          {view === 'today' && <TodayView
+            googleTasksSettings={googleTasksSettings}
+            disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
+            onOpenSettings={() => setView('settings')}
+            onSettingsRefresh={setGoogleTasksSettings}
+          />}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
               tasks={scheduledTasks}
@@ -1369,7 +1403,7 @@ export default function App(): React.JSX.Element {
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView />}
@@ -1437,6 +1471,7 @@ export default function App(): React.JSX.Element {
               googleCalendarSettings={googleCalendarSettings}
               googleGmailSettings={googleGmailSettings}
               googleDriveSettings={googleDriveSettings}
+              googleTasksSettings={googleTasksSettings}
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
@@ -1449,6 +1484,9 @@ export default function App(): React.JSX.Element {
               onUpdateGoogleDriveClientId={updateGoogleDriveClientId}
               onConnectGoogleDrive={connectGoogleDrive}
               onDisconnectGoogleDrive={disconnectGoogleDrive}
+              onUpdateGoogleTasksClientId={updateGoogleTasksClientId}
+              onConnectGoogleTasks={connectGoogleTasks}
+              onDisconnectGoogleTasks={disconnectGoogleTasks}
               onTest={testProvider}
               onAddGrant={addGrant}
               onRemoveGrant={removeGrant}

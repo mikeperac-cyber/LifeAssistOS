@@ -2,7 +2,7 @@ import { get as httpGet } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultPolicy } from '../src/core/gateway/policy'
 import {
   GOOGLE_CALENDAR_SCOPE,
@@ -124,6 +124,19 @@ describe('Google Calendar settings and OAuth', () => {
     const disconnected = await service.disconnect()
     expect(disconnected).toMatchObject({ revoked: false, revocationAttempted: false })
     expect(disconnected.settings).toMatchObject({ connected: false, tokenStored: false })
+  })
+
+  it('disconnects only the local token so other Google scopes in the project keep working', async () => {
+    const store = new GoogleCalendarSettingsStore(file, codec)
+    await store.init()
+    await store.updateClientId(clientId)
+    await store.saveRefreshToken('calendar-refresh-secret')
+    const request = vi.fn<GoogleCalendarRequest>()
+    const service = new GoogleCalendarService(store, { request, openExternal: async () => undefined })
+    const disconnected = await service.disconnect()
+    expect(disconnected.settings).toMatchObject({ connected: false, tokenStored: false })
+    expect(disconnected).toMatchObject({ revoked: false, revocationAttempted: false })
+    expect(request).not.toHaveBeenCalled()
   })
 
   it('checks loopback state before accepting an authorization code', async () => {

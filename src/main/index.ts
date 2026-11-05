@@ -29,6 +29,7 @@ import { appendMutationAudit as appendMutationAuditSafely } from './ipc/mutation
 import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/google-calendar'
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
+import { GoogleTasksService, GoogleTasksSettingsStore } from '../core/google-tasks'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
@@ -64,6 +65,7 @@ import { createWebSearchTool } from '../tools/web-search'
 import { createGoogleCalendarTools } from '../tools/google-calendar'
 import { createGoogleGmailTools } from '../tools/google-gmail'
 import { createGoogleDriveTools } from '../tools/google-drive'
+import { createGoogleTasksTools } from '../tools/google-tasks'
 import { createFinanceTools } from '../tools/finance'
 import { createMemoryTools } from '../tools/memory'
 import { createCommandCenterTools } from '../tools/command-center'
@@ -103,6 +105,8 @@ let googleGmailSettings: GoogleGmailSettingsStore | null = null
 let googleGmail: GoogleGmailService | null = null
 let googleDriveSettings: GoogleDriveSettingsStore | null = null
 let googleDrive: GoogleDriveService | null = null
+let googleTasksSettings: GoogleTasksSettingsStore | null = null
+let googleTasks: GoogleTasksService | null = null
 let conversations: ConversationStore | null = null
 let domainAllowlist: DomainAllowlistStore | null = null
 let browserAutomation: ElectronBrowserAutomation | null = null
@@ -198,7 +202,8 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (host.toLowerCase() === 'api.tavily.com' && Boolean(webSearchSettings?.getApiKey())) ||
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleCalendar?.isReady())) ||
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
-      (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady()))
+      (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
+      (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady()))
   })
 }
 
@@ -455,6 +460,11 @@ async function initialize(): Promise<void> {
   googleDrive = new GoogleDriveService(googleDriveSettings, {
     openExternal: (url) => shell.openExternal(url)
   })
+  googleTasksSettings = new GoogleTasksSettingsStore(path.join(userData, 'google-tasks.json'), codec)
+  await googleTasksSettings.init()
+  googleTasks = new GoogleTasksService(googleTasksSettings, {
+    openExternal: (url) => shell.openExternal(url)
+  })
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
@@ -501,6 +511,9 @@ async function initialize(): Promise<void> {
     registry.register(tool)
   }
   for (const tool of createGoogleDriveTools(googleDrive)) {
+    registry.register(tool)
+  }
+  for (const tool of createGoogleTasksTools(googleTasks)) {
     registry.register(tool)
   }
   for (const tool of createCommandCenterTools(vault, planning)) {
@@ -1269,6 +1282,8 @@ function registerIpc(): void {
           googleGmail?.clearCachedAccessToken()
           await googleDriveSettings?.init()
           googleDrive?.clearCachedAccessToken()
+          await googleTasksSettings?.init()
+          googleTasks?.clearCachedAccessToken()
           await audit?.init()
           if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
           else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
@@ -1664,15 +1679,11 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleCalendar.disconnect()
-      await appendAuditAfterMutation({ type: 'google_calendar.disconnected', data: { revoked: result.revoked } })
+      await appendAuditAfterMutation({ type: 'google_calendar.disconnected', data: { clearedLocally: true } })
       return {
         ok: true,
         settings: result.settings,
-        message: result.revoked
-          ? 'Google Calendar disconnected and access revoked.'
-          : result.revocationAttempted
-            ? 'Disconnected locally. Google could not be reached to revoke access, so revoke it from your Google Account settings.'
-            : 'The saved token was removed locally, but it could not be read for revocation. It may remain authorized at Google; revoke it from your Google Account settings.'
+        message: 'Google Calendar was disconnected in Mike Assist. Its Google authorization remains active; remove it in your Google Account to revoke access across this Google project.'
       }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1719,15 +1730,11 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleGmail.disconnect()
-      await appendAuditAfterMutation({ type: 'google_gmail.disconnected', data: { revoked: result.revoked } })
+      await appendAuditAfterMutation({ type: 'google_gmail.disconnected', data: { clearedLocally: true } })
       return {
         ok: true,
         settings: result.settings,
-        message: result.revoked
-          ? 'Gmail disconnected and access revoked.'
-          : result.revocationAttempted
-            ? 'Disconnected locally. Google could not be reached to revoke access, so revoke it from your Google Account settings.'
-            : 'The saved token was removed locally, but it could not be read for revocation. It may remain authorized at Google; revoke it from your Google Account settings.'
+        message: 'Gmail was disconnected in Mike Assist. Its Google authorization remains active; remove it in your Google Account to revoke access across this Google project.'
       }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
@@ -1774,20 +1781,142 @@ function registerIpc(): void {
     directToolBusy = true
     try {
       const result = await googleDrive.disconnect()
-      await appendAuditAfterMutation({ type: 'google_drive.disconnected', data: { revoked: result.revoked } })
+      await appendAuditAfterMutation({ type: 'google_drive.disconnected', data: { clearedLocally: true } })
       return {
         ok: true,
         settings: result.settings,
-        message: result.revoked
-          ? 'Google Drive disconnected and access revoked.'
-          : result.revocationAttempted
-            ? 'Disconnected locally. Google could not be reached to revoke access, so revoke it from your Google Account settings.'
-            : 'The saved token was removed locally, but it could not be read for revocation. It may remain authorized at Google; revoke it from your Google Account settings.'
+        message: 'Google Drive was disconnected in Mike Assist. Its Google authorization remains active; remove it in your Google Account to revoke access across this Google project.'
       }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
     } finally {
       directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:google-tasks-settings', () =>
+    googleTasksSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+  )
+
+  ipcMain.handle('assist:google-tasks-client-id-update', async (_event, input: unknown) => {
+    if (!googleTasksSettings) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (typeof input !== 'string') return { ok: false, error: 'Enter a Google OAuth Desktop Client ID.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
+    try {
+      const updated = await googleTasksSettings.updateClientId(input)
+      await appendAuditAfterMutation({ type: 'google_tasks.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:google-tasks-connect', async () => {
+    if (!googleTasks) return { ok: false, error: 'Google Tasks services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before connecting an account.' }
+    directToolBusy = true
+    try {
+      const updated = await googleTasks.connect()
+      await appendAuditAfterMutation({ type: 'google_tasks.connected', data: { tokenStored: updated.tokenStored } })
+      return { ok: true, settings: updated, message: 'Google Tasks connected. Loading lists and tasks still asks each time.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:google-tasks-disconnect', async () => {
+    if (!googleTasks) return { ok: false, error: 'Google Tasks services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before disconnecting.' }
+    directToolBusy = true
+    try {
+      const updated = await googleTasks.disconnect()
+      await appendAuditAfterMutation({ type: 'google_tasks.disconnected', data: { clearedLocally: true } })
+      return {
+        ok: true,
+        settings: updated,
+        message: 'Google Tasks was disconnected in Mike Assist. Its Google authorization remains active; remove it in your Google Account if you want to revoke it.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  const readGoogleTasksWithApproval = async (
+    name: 'google_tasks_list_task_lists' | 'google_tasks_list_tasks',
+    args: unknown,
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !googleTasks?.isReady()) return { ok: false, error: 'Connect Google Tasks in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Google Tasks could not be loaded.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[google-tasks] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:google-tasks-list-lists', async (_event, pageToken: unknown) => {
+    if (pageToken !== undefined && typeof pageToken !== 'string') return { ok: false, error: 'Invalid Google Tasks page token.' }
+    const result = await readGoogleTasksWithApproval(
+      'google_tasks_list_task_lists',
+      { ...(typeof pageToken === 'string' ? { pageToken } : {}) },
+      'Load Google Tasks lists in Today'
+    )
+    if (!result.ok) return {
+      ok: false,
+      error: result.error,
+      ...(googleTasksSettings ? { settings: googleTasksSettings.public() } : {})
+    }
+    const output = result.output as { lists?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.lists)) return {
+      ok: false,
+      error: 'Google Tasks returned an unexpected list response.',
+      ...(googleTasksSettings ? { settings: googleTasksSettings.public() } : {})
+    }
+    return {
+      ok: true,
+      lists: output.lists,
+      ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
+    }
+  })
+
+  ipcMain.handle('assist:google-tasks-list-tasks', async (_event, taskListId: unknown, pageToken: unknown) => {
+    if (typeof taskListId !== 'string' || (pageToken !== undefined && typeof pageToken !== 'string')) {
+      return { ok: false, error: 'Invalid Google Tasks list or page token.' }
+    }
+    const result = await readGoogleTasksWithApproval(
+      'google_tasks_list_tasks',
+      { taskListId, ...(typeof pageToken === 'string' ? { pageToken } : {}) },
+      'Load open tasks from the selected Google Tasks list in Today'
+    )
+    if (!result.ok) return {
+      ok: false,
+      error: result.error,
+      ...(googleTasksSettings ? { settings: googleTasksSettings.public() } : {})
+    }
+    const output = result.output as { tasks?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.tasks)) return {
+      ok: false,
+      error: 'Google Tasks returned an unexpected task response.',
+      ...(googleTasksSettings ? { settings: googleTasksSettings.public() } : {})
+    }
+    return {
+      ok: true,
+      tasks: output.tasks,
+      ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
     }
   })
 

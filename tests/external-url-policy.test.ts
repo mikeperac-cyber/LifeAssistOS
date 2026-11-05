@@ -10,6 +10,14 @@ describe('resolveExternalPopupUrl', () => {
     expect(
       resolveExternalPopupUrl('https://console.cloud.google.com/auth/clients')
     ).toBe('https://console.cloud.google.com/auth/clients')
+
+    expect(
+      resolveExternalPopupUrl('https://developers.google.com/workspace/tasks/auth')
+    ).toBe('https://developers.google.com/workspace/tasks/auth')
+
+    expect(
+      resolveExternalPopupUrl('https://developers.google.com/workspace/tasks/reference/rest/v1/tasklists/list')
+    ).toBe('https://developers.google.com/workspace/tasks/reference/rest/v1/tasklists/list')
   })
 
   it('allows HTTPS URLs on user-allowlisted domains or saved research sources', () => {

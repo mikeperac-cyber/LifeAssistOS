@@ -14,7 +14,7 @@ export function createToolDiscoveryTool(registry: ToolRegistry): ToolDef<{ query
   return {
     name: 'find_tools',
     description:
-      'Search additional Mike Assist capabilities when the requested tool is not in the current tool list. Useful for Gmail/email, Google Calendar and Drive, finance, saved memory, coaching and Today planning, scheduled tasks, the Knowledge Vault, and connected MCP integrations. Returns matching tool names and descriptions; their schemas become available on the next step.',
+      'Search additional Mike Assist capabilities when the requested tool is not in the current tool list. Useful for Gmail/email, Google Calendar, Drive and Tasks, finance, saved memory, coaching and Today planning, scheduled tasks, the Knowledge Vault, and connected MCP integrations. Returns matching tool names and descriptions; their schemas become available on the next step.',
     risk: 'read',
     input: z.object({ query: z.string().trim().min(2).max(160), limit: z.number().int().min(1).max(4).optional() }),
     scope: () => ({ kind: 'none' }),
@@ -71,6 +71,9 @@ function aliasesForTool(name: string): string {
   }
   if (name.startsWith('google_drive_')) {
     return 'drive dokuman belge dosya klasor sunum tablo rapor teklif sozlesme'
+  }
+  if (name.startsWith('google_tasks_')) {
+    return 'google tasks gorev task list yapilacak bugun yarin plan oncelik'
   }
   if (name.startsWith('finance_') || name === 'record_transaction') {
     return 'finans para harcama masraf gider gelir butce maliyet kazanc ciro fatura odeme'

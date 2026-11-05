@@ -9,6 +9,7 @@ import type {
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
+  PublicGoogleTasksSettings,
   LocalApiResult,
   LocalApiStatus,
   SettingsPatch,
@@ -16,7 +17,8 @@ import type {
   WebSearchSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
-  GoogleDriveSettingsResult
+  GoogleDriveSettingsResult,
+  GoogleTasksSettingsResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
@@ -45,6 +47,7 @@ export interface SettingsViewProps {
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleDriveSettings: PublicGoogleDriveSettings | null
+  googleTasksSettings: PublicGoogleTasksSettings | null
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
@@ -57,6 +60,9 @@ export interface SettingsViewProps {
   onUpdateGoogleDriveClientId: (clientId: string) => Promise<GoogleDriveSettingsResult>
   onConnectGoogleDrive: () => Promise<GoogleDriveSettingsResult>
   onDisconnectGoogleDrive: () => Promise<GoogleDriveSettingsResult>
+  onUpdateGoogleTasksClientId: (clientId: string) => Promise<GoogleTasksSettingsResult>
+  onConnectGoogleTasks: () => Promise<GoogleTasksSettingsResult>
+  onDisconnectGoogleTasks: () => Promise<GoogleTasksSettingsResult>
   onTest: () => Promise<ProviderStatus>
   onAddGrant: (access: Access) => Promise<GrantMutationResult>
   onRemoveGrant: (id: string) => Promise<GrantMutationResult>
@@ -80,6 +86,7 @@ export function SettingsView({
   googleCalendarSettings,
   googleGmailSettings,
   googleDriveSettings,
+  googleTasksSettings,
   grants,
   onSave,
   onUpdateWebSearchApiKey,
@@ -92,6 +99,9 @@ export function SettingsView({
   onUpdateGoogleDriveClientId,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
+  onUpdateGoogleTasksClientId,
+  onConnectGoogleTasks,
+  onDisconnectGoogleTasks,
   onTest,
   onAddGrant,
   onRemoveGrant,
@@ -138,6 +148,11 @@ export function SettingsView({
   const [googleDriveBusy, setGoogleDriveBusy] = useState(false)
   const [googleDriveMessage, setGoogleDriveMessage] = useState('')
   const [googleDriveConsentOpen, setGoogleDriveConsentOpen] = useState(false)
+  const [googleTasksClientId, setGoogleTasksClientId] = useState(
+    googleTasksSettings?.clientId || googleCalendarSettings?.clientId || googleGmailSettings?.clientId || googleDriveSettings?.clientId || ''
+  )
+  const [googleTasksBusy, setGoogleTasksBusy] = useState(false)
+  const [googleTasksMessage, setGoogleTasksMessage] = useState('')
   const [localApiBusy, setLocalApiBusy] = useState(false)
   const [localApiMessage, setLocalApiMessage] = useState('')
 
@@ -160,6 +175,12 @@ export function SettingsView({
   useEffect(() => {
     if (googleDriveSettings) setGoogleDriveClientId(googleDriveSettings.clientId)
   }, [googleDriveSettings])
+
+  useEffect(() => {
+    if (googleTasksSettings) {
+      setGoogleTasksClientId(googleTasksSettings.clientId || googleCalendarSettings?.clientId || googleGmailSettings?.clientId || googleDriveSettings?.clientId || '')
+    }
+  }, [googleTasksSettings, googleCalendarSettings, googleGmailSettings, googleDriveSettings])
 
   const preset = presetFor(form.preset)
 
@@ -572,6 +593,46 @@ export function SettingsView({
     }
   }
 
+  async function connectGoogleTasks(): Promise<void> {
+    const clientId = googleTasksClientId.trim()
+    if (!clientId) {
+      setGoogleTasksMessage('Enter a Google OAuth Desktop Client ID first.')
+      return
+    }
+    setGoogleTasksBusy(true)
+    setGoogleTasksMessage('Opening Google sign-in…')
+    try {
+      const saved = await onUpdateGoogleTasksClientId(clientId)
+      if (!saved.ok) {
+        setGoogleTasksMessage(saved.error ?? 'Could not save the Google OAuth Client ID.')
+        return
+      }
+      const connected = await onConnectGoogleTasks()
+      setGoogleTasksMessage(connected.ok
+        ? connected.message ?? 'Google Tasks connected.'
+        : connected.error ?? 'Google sign-in did not complete.')
+    } catch (error) {
+      setGoogleTasksMessage(errorText(error))
+    } finally {
+      setGoogleTasksBusy(false)
+    }
+  }
+
+  async function disconnectGoogleTasks(): Promise<void> {
+    setGoogleTasksBusy(true)
+    setGoogleTasksMessage('')
+    try {
+      const result = await onDisconnectGoogleTasks()
+      setGoogleTasksMessage(result.ok
+        ? result.message ?? 'Google Tasks disconnected in Mike Assist.'
+        : result.error ?? 'Could not disconnect Google Tasks.')
+    } catch (error) {
+      setGoogleTasksMessage(errorText(error))
+    } finally {
+      setGoogleTasksBusy(false)
+    }
+  }
+
   return (
     <div className="settings">
       <section className="settings-section appearance-section">
@@ -975,7 +1036,7 @@ export function SettingsView({
           <h2>Google Calendar</h2>
           <p>
             Connect your primary calendar with a Google OAuth Desktop Client ID. Google will ask you to sign in in your system browser.
-            Mike Assist requests the <code>calendar.events.owned</code> scope; Google describes this as access to view, create, change, and delete events on calendars you own. Mike Assist exposes read, create, and update actions only; each action requires approval, and it never adds guests or sends guest notifications. The refresh token is encrypted with OS storage when available.
+            Mike Assist requests the <code>calendar.events.owned</code> scope; Google describes this as access to view, create, change, and delete events on calendars you own. Mike Assist exposes read, create, and update actions only; each action requires approval, and it never adds guests or sends guest notifications. The refresh token is encrypted with OS storage when available. Disconnecting clears it locally; remove Mike Assist in your Google Account to revoke the project grant, which can also disconnect Gmail, Drive, or Tasks.
           </p>
         </div>
 
@@ -1008,7 +1069,7 @@ export function SettingsView({
             <div className="settings-actions">
               {googleCalendarSettings.connected ? (
                 <button className="danger-button" type="button" onClick={() => void disconnectGoogleCalendar()} disabled={googleCalendarBusy}>
-                  {googleCalendarBusy ? 'Disconnecting…' : 'Disconnect and revoke'}
+                  {googleCalendarBusy ? 'Disconnecting…' : 'Disconnect locally'}
                 </button>
               ) : googleCalendarSettings.tokenStored ? (
                 <>
@@ -1035,7 +1096,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Gmail</h2>
           <p>
-            Connect one Gmail account using a Google OAuth Desktop Client ID with the Gmail API enabled. Mike Assist requests read-only and compose access; every search, read, and draft asks first, and sending also requires typing <strong>SEND</strong>. The app cannot delete, archive, or label mail and does not open attachments. When you approve a Gmail action, its relevant content is sent to your configured model provider, which may be remote. Gmail results and the assistant reply stay in memory for the current session and are not saved to chat history. Use of Google Workspace data is limited to these visible Gmail features and follows Google’s Limited Use requirements. Refresh tokens are encrypted with OS storage when available.
+            Connect one Gmail account using a Google OAuth Desktop Client ID with the Gmail API enabled. Mike Assist requests read-only and compose access; every search, read, and draft asks first, and sending also requires typing <strong>SEND</strong>. The app cannot delete, archive, or label mail and does not open attachments. When you approve a Gmail action, its relevant content is sent to your configured model provider, which may be remote. Gmail results and the assistant reply stay in memory for the current session and are not saved to chat history. Use of Google Workspace data is limited to these visible Gmail features and follows Google’s Limited Use requirements. Refresh tokens are encrypted with OS storage when available. Disconnecting clears the token locally; remove Mike Assist in your Google Account to revoke the project grant, which can also disconnect Calendar, Drive, or Tasks.
           </p>
         </div>
 
@@ -1068,7 +1129,7 @@ export function SettingsView({
             <div className="settings-actions">
               {googleGmailSettings.connected ? (
                 <button className="danger-button" type="button" onClick={() => void disconnectGoogleGmail()} disabled={googleGmailBusy}>
-                  {googleGmailBusy ? 'Disconnecting…' : 'Disconnect and revoke'}
+                  {googleGmailBusy ? 'Disconnecting…' : 'Disconnect locally'}
                 </button>
               ) : googleGmailSettings.tokenStored ? (
                 <>
@@ -1095,7 +1156,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Google Drive</h2>
           <p>
-            Connect one Google Drive account with the read-only <code>drive.readonly</code> permission. Google grants access to Drive files broadly; Mike Assist still asks before each search or file read. Approved file extracts and assistant replies may be sent to your configured model provider and saved in chat history. The app reads Docs, Sheets, Slides, PDF, DOCX, XLSX, and supported text files; it does not edit or delete Drive files. Refresh tokens are encrypted with OS storage when available. Public OAuth apps using this restricted scope need Google verification; Google requires a security assessment if restricted Drive data is stored or sent through servers.
+            Connect one Google Drive account with the read-only <code>drive.readonly</code> permission. Google grants access to Drive files broadly; Mike Assist still asks before each search or file read. Approved file extracts and assistant replies may be sent to your configured model provider and saved in chat history. The app reads Docs, Sheets, Slides, PDF, DOCX, XLSX, and supported text files; it does not edit or delete Drive files. Refresh tokens are encrypted with OS storage when available. Disconnecting clears the token locally; remove Mike Assist in your Google Account to revoke the project grant, which can also disconnect Calendar, Gmail, or Tasks. Public OAuth apps using this restricted scope need Google verification; Google requires a security assessment if restricted Drive data is stored or sent through servers.
           </p>
         </div>
         {googleDriveSettings ? (
@@ -1127,7 +1188,7 @@ export function SettingsView({
             <div className="settings-actions">
               {googleDriveSettings.connected ? (
                 <button className="danger-button" type="button" onClick={() => void disconnectGoogleDrive()} disabled={googleDriveBusy}>
-                  {googleDriveBusy ? 'Disconnecting…' : 'Disconnect and revoke'}
+                  {googleDriveBusy ? 'Disconnecting…' : 'Disconnect locally'}
                 </button>
               ) : googleDriveSettings.tokenStored ? (
                 <>
@@ -1150,6 +1211,65 @@ export function SettingsView({
           <p className="muted">Loading Google Drive settings…</p>
         )}
       </section>
+      <section className="settings-section">
+        <div className="section-head">
+          <h2>Google Tasks</h2>
+          <p>
+            Connect one Google account with the read-only <code>tasks.readonly</code> permission. Mike Assist only lists your task lists and open tasks; it cannot create, edit, or complete them. Loading a list or task page asks for approval each time. The Today panel displays results locally; if you use these tools in Chat, approved task details may be sent to your configured model provider and saved in chat history. The refresh token is encrypted with OS storage when available. Disconnecting here clears Mike Assist’s saved token; Google keeps the authorization active until you remove it in your Google Account, because revoking a shared Google project can affect other connected services.
+          </p>
+        </div>
+        {googleTasksSettings ? (
+          <div className="web-search-settings">
+            <label className="field field-wide">
+              <span className="field-label">
+                OAuth Desktop Client ID
+                {googleTasksSettings.connected
+                  ? <span className="field-tag">{googleTasksSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}</span>
+                  : googleTasksSettings.tokenStored
+                    ? <span className="field-tag">saved token unavailable</span>
+                    : null}
+              </span>
+              <input
+                value={googleTasksClientId}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={googleTasksSettings.connected || googleTasksSettings.tokenStored || googleTasksBusy}
+                onChange={(event) => setGoogleTasksClientId(event.target.value)}
+                placeholder="1234567890-abc.apps.googleusercontent.com"
+              />
+              <span className="field-hint">
+                Enable the Google Tasks API in the same Cloud project as this Desktop Client ID. See the <a href="https://developers.google.com/identity/protocols/oauth2/native-app" target="_blank" rel="noreferrer">desktop OAuth guide</a>, <a href="https://developers.google.com/workspace/tasks/auth" target="_blank" rel="noreferrer">Tasks permissions</a>, and <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noreferrer">Google Cloud OAuth clients</a>. The Client ID is public; do not paste a client secret.
+              </span>
+              {googleTasksSettings.tokenStored && !googleTasksSettings.connected && (
+                <span className="field-hint">Mike Assist could not unlock this saved token. Reconnect with this Client ID, or clear the saved connection and connect again.</span>
+              )}
+            </label>
+            <div className="settings-actions">
+              {googleTasksSettings.connected ? (
+                <button className="danger-button" type="button" onClick={() => void disconnectGoogleTasks()} disabled={googleTasksBusy}>
+                  {googleTasksBusy ? 'Disconnecting…' : 'Disconnect in Mike Assist'}
+                </button>
+              ) : googleTasksSettings.tokenStored ? (
+                <>
+                  <button className="primary-button" type="button" onClick={() => void connectGoogleTasks()} disabled={googleTasksBusy || !googleTasksClientId.trim()}>
+                    {googleTasksBusy ? 'Waiting for sign-in…' : 'Reconnect Google Tasks'}
+                  </button>
+                  <button className="danger-button" type="button" onClick={() => void disconnectGoogleTasks()} disabled={googleTasksBusy}>
+                    {googleTasksBusy ? 'Clearing…' : 'Clear saved connection'}
+                  </button>
+                </>
+              ) : (
+                <button className="primary-button" type="button" onClick={() => void connectGoogleTasks()} disabled={googleTasksBusy || !googleTasksClientId.trim()}>
+                  {googleTasksBusy ? 'Waiting for sign-in…' : 'Connect Google Tasks'}
+                </button>
+              )}
+              {googleTasksMessage && <span className="settings-status" role="status">{googleTasksMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading Google Tasks settings…</p>
+        )}
+      </section>
       <McpPanel />
 
       <section className="settings-section">
@@ -1158,7 +1278,7 @@ export function SettingsView({
           <p>
             Create or restore a consistent snapshot of chats, finance records, memory facts, research, vault documents, Today plans,
             saved workflows and Skills, coaching profile and journal, voice settings, provider settings, folder grants, allowed domains,
-            MCP connections, Google Calendar, Gmail, and Google Drive connection settings, and the audit log. Optionally provide a
+            MCP connections, Google Calendar, Gmail, Google Drive, and Google Tasks connection settings, and the audit log. Optionally provide a
             passphrase to encrypt the snapshot with AES-256-GCM.
           </p>
         </div>
@@ -1220,7 +1340,7 @@ export function SettingsView({
             </div>
             <h2 id="gmail-consent-title">Before connecting Gmail</h2>
             <p id="gmail-consent-copy" className="modal-summary">
-              Mike Assist will request permission to read your messages and create or send mail. When you approve a Gmail action, the relevant email content is sent to your configured model provider, which may be a remote service. Gmail results and the assistant’s reply stay in memory for this session and are not saved to local chat history. Search, read, and draft actions each need approval; sending also requires you to type SEND. You can disconnect Gmail at any time in Settings.
+              Mike Assist will request permission to read your messages and create or send mail. When you approve a Gmail action, the relevant email content is sent to your configured model provider, which may be a remote service. Gmail results and the assistant’s reply stay in memory for this session and are not saved to local chat history. Search, read, and draft actions each need approval; sending also requires you to type SEND. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
             </p>
             <p className="field-hint">
               Google Workspace data is used only for the Gmail features shown in Mike Assist and is handled under Google’s Limited Use requirements. Read the <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy" target="_blank" rel="noreferrer">Google Workspace User Data Policy</a>.
@@ -1244,7 +1364,7 @@ export function SettingsView({
             </div>
             <h2 id="drive-consent-title">Before connecting Google Drive</h2>
             <p id="drive-consent-copy" className="modal-summary">
-              Google will grant Mike Assist read-only access to Drive files broadly. Search and file reads each ask for approval. If approved, file names and selected text extracts are sent to your configured model provider, which may be remote, and can be stored in chat history. Mike Assist cannot edit or delete Drive files. You can disconnect and revoke access at any time in Settings.
+              Google will grant Mike Assist read-only access to Drive files broadly. Search and file reads each ask for approval. If approved, file names and selected text extracts are sent to your configured model provider, which may be remote, and can be stored in chat history. Mike Assist cannot edit or delete Drive files. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
             </p>
             <p className="field-hint">
               Google classifies this as a restricted Drive scope. Public OAuth apps using it need verification; sending or storing restricted Drive data through servers requires a security assessment. See the <a href="https://developers.google.com/workspace/drive/api/guides/api-specific-auth" target="_blank" rel="noreferrer">scope guidance</a>.

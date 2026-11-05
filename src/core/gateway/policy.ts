@@ -52,6 +52,8 @@ export const defaultPolicy: PolicyConfig = {
     gmail_send_message: 'ask',
     google_drive_search_files: 'ask',
     google_drive_read_file: 'ask',
+    google_tasks_list_task_lists: 'ask',
+    google_tasks_list_tasks: 'ask',
     search_vault: 'allow',
     list_today: 'allow',
     save_vault_document: 'ask',

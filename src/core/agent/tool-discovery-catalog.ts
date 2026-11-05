@@ -46,6 +46,7 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('gmail_') || name === 'create_email_draft') return 'email'
   if (name.startsWith('google_calendar_') || name === 'create_calendar_event') return 'calendar'
   if (name.startsWith('google_drive_')) return 'drive'
+  if (name.startsWith('google_tasks_')) return 'planning'
   if (name.startsWith('finance_') || name === 'record_transaction') return 'finance'
   if (name.includes('memory') || name === 'recall_memory') return 'memory'
   if (name.includes('coaching') || name === 'get_coaching_context') return 'coaching'

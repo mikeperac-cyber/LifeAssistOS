@@ -119,6 +119,12 @@ const api: AssistApi = {
   updateGoogleDriveClientId: (clientId: string) => ipcRenderer.invoke('assist:google-drive-client-id-update', clientId),
   connectGoogleDrive: () => ipcRenderer.invoke('assist:google-drive-connect'),
   disconnectGoogleDrive: () => ipcRenderer.invoke('assist:google-drive-disconnect'),
+  getGoogleTasksSettings: () => ipcRenderer.invoke('assist:google-tasks-settings'),
+  updateGoogleTasksClientId: (clientId: string) => ipcRenderer.invoke('assist:google-tasks-client-id-update', clientId),
+  connectGoogleTasks: () => ipcRenderer.invoke('assist:google-tasks-connect'),
+  disconnectGoogleTasks: () => ipcRenderer.invoke('assist:google-tasks-disconnect'),
+  listGoogleTaskLists: (pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-lists', pageToken),
+  listGoogleTasks: (taskListId: string, pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-tasks', taskListId, pageToken),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)

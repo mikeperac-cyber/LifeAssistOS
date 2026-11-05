@@ -28,6 +28,7 @@ const OPTIONAL_DATA_FILES = [
   'google-calendar.json',
   'google-gmail.json',
   'google-drive.json',
+  'google-tasks.json',
   'scheduled-tasks.json'
 ]
 const OPTIONAL_DATABASE_FILES = [

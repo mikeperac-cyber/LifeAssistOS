@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings } from '../../../shared/ipc'
 import type { McpServerInfo } from '../../../shared/types'
 export { resolveIntegrationTargetView } from '../navigation'
 
@@ -15,7 +15,7 @@ interface IntegrationCard {
 
 const INTEGRATIONS: IntegrationCard[] = [
   { id: 'helper', title: 'Isolated Helper', category: 'Assistant', description: 'Focused research and review through the configured model, with approval before sharing the task and a read-only tool ceiling.', access: 'Per-task approval · scoped read-only access', status: 'ready', tone: 'purple' },
-  { id: 'today', title: 'Today & Plans', category: 'Planning', description: 'Tasks, due dates, priorities, and inbox capture stay in local SQLite.', access: 'Read + approved writes', status: 'local', tone: 'teal' },
+  { id: 'today', title: 'Today & Plans', category: 'Planning', description: 'Local tasks, due dates, priorities, and inbox capture, with an optional read-only Google Tasks panel.', access: 'Local approved writes · Google reads ask each time', status: 'local', tone: 'teal' },
   { id: 'vault', title: 'Knowledge Vault', category: 'Knowledge', description: 'Searchable FTS5 notes, research captures, and teaching material.', access: 'Read + approved writes', status: 'local', tone: 'blue' },
   { id: 'research', title: 'Research Desk', category: 'Knowledge', description: 'Allowlisted web sources captured as untrusted local research.', access: 'HTTPS allowlist + approval', status: 'ready', tone: 'purple' },
   { id: 'files', title: 'Approved files', category: 'Workspace', description: 'Analyze text, PDFs, Word documents, and Excel workbooks inside folders you have approved.', access: 'Grant-scoped reads · model receives extracted text', status: 'local', tone: 'teal' },
@@ -24,6 +24,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'google_calendar', title: 'Google Calendar', category: 'Planning', description: 'Optional calendar lookup and event editing through browser OAuth and one-time approval.', access: 'Owned event scope + approval', status: 'available', tone: 'teal' },
   { id: 'google_gmail', title: 'Gmail', category: 'Communication', description: 'Optional message search, reading, drafts, and explicitly confirmed email sending.', access: 'Read + draft approval · typed SEND', status: 'available', tone: 'blue' },
   { id: 'google_drive', title: 'Google Drive', category: 'Work', description: 'Search and analyze selected Docs, Sheets, Slides, PDFs, DOCX, XLSX, and text files with approval for each action.', access: 'Broad read-only scope · per-action approval', status: 'available', tone: 'teal' },
+  { id: 'google_tasks', title: 'Google Tasks', category: 'Planning', description: 'View open tasks from a selected Google Tasks list alongside local Today tasks.', access: 'Read-only scope · approval for each list or task page', status: 'available', tone: 'blue' },
   { id: 'memory', title: 'Personal Memory', category: 'Context', description: 'Approved facts are automatically recalled when relevant, with citations.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
   { id: 'skills', title: 'User Skills', category: 'Context', description: 'Reusable plain-text guidance loaded only when relevant to a task.', access: 'Local library · no added permissions', status: 'local', tone: 'purple' },
   { id: 'finances', title: 'Finance Ledger', category: 'Life admin', description: 'Categorized local income and expenses; no bank access or transfers.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
@@ -31,11 +32,12 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'drafts', title: 'Draft workspace', category: 'Communication', description: 'Local unsent email and calendar drafts only.', access: 'Approved local writes', status: 'local', tone: 'blue' }
 ]
 
-export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings }: {
+export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings }: {
   onOpen: (id: string) => void
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleDriveSettings: PublicGoogleDriveSettings | null
+  googleTasksSettings: PublicGoogleTasksSettings | null
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -81,15 +83,17 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const gmailNeedsReconnect = item.id === 'google_gmail' && !googleGmailSettings?.connected && googleGmailSettings?.tokenStored === true
           const driveConnected = item.id === 'google_drive' && googleDriveSettings?.connected === true
           const driveNeedsReconnect = item.id === 'google_drive' && !googleDriveSettings?.connected && googleDriveSettings?.tokenStored === true
-          const connectedStatus = calendarConnected || gmailConnected || driveConnected
-          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect
+          const tasksConnected = item.id === 'google_tasks' && googleTasksSettings?.connected === true
+          const tasksNeedsReconnect = item.id === 'google_tasks' && !googleTasksSettings?.connected && googleTasksSettings?.tokenStored === true
+          const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected
+          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect
           const status = connectedStatus ? 'ready' : item.status
           const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
           const actionLabel = item.id === 'helper'
             ? 'Use in Chat'
             : item.id === 'files'
               ? 'Manage folders'
-              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive'].includes(item.id)
+              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks'].includes(item.id)
                 ? 'Open settings'
                 : 'Open'
 

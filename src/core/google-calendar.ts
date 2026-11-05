@@ -12,7 +12,6 @@ import { readJsonStore } from './json-store'
 
 export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned'
 const GOOGLE_TOKEN_URL = new URL('https://oauth2.googleapis.com/token')
-const GOOGLE_REVOKE_URL = new URL('https://oauth2.googleapis.com/revoke')
 const GOOGLE_CALENDAR_HOST = 'www.googleapis.com'
 const GOOGLE_API_PREFIX = '/calendar/v3/calendars/primary/events'
 const GOOGLE_TOKEN_SCHEMA = z.object({
@@ -217,33 +216,16 @@ export class GoogleCalendarService {
       return this.store.public()
   }
 
-  async disconnect(signal?: AbortSignal): Promise<{
+  async disconnect(): Promise<{
     revoked: boolean
     revocationAttempted: boolean
     settings: PublicGoogleCalendarSettings
   }> {
-    const refreshToken = this.store.getRefreshToken()
-    const hadStoredToken = this.store.hasStoredRefreshToken()
-    let revoked = !hadStoredToken
-    const revocationAttempted = Boolean(refreshToken)
-    if (refreshToken) {
-      try {
-        const response = await this.request(GOOGLE_REVOKE_URL, signal ?? new AbortController().signal, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
-          body: new URLSearchParams({ token: refreshToken }).toString(),
-          maxResponseBytes: 64_000,
-          timeoutMs: 10_000
-        })
-        revoked = response.status >= 200 && response.status < 300
-      } catch {
-        revoked = false
-      }
-    }
+    // Google revocation removes every scope/token for the project; disconnect only this local connector.
     await this.store.clearConnection()
     this.accessToken = ''
     this.accessTokenExpiresAt = 0
-    return { revoked, revocationAttempted, settings: this.store.public() }
+    return { revoked: false, revocationAttempted: false, settings: this.store.public() }
   }
 
   async requestCalendarApi(url: URL, method: 'GET' | 'POST' | 'PATCH', signal: AbortSignal, body?: string): Promise<ResponseBody> {

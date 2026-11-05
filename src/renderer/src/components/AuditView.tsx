@@ -62,6 +62,7 @@ export function AuditView({
           event.type.startsWith('google_calendar.') ||
           event.type.startsWith('google_gmail.') ||
           event.type.startsWith('google_drive.') ||
+          event.type.startsWith('google_tasks.') ||
           event.type === 'skill.changed' ||
           event.type === 'settings.changed'
       )
@@ -227,19 +228,25 @@ export function summarizeEvent(event: AuditEvent): string {
     case 'google_calendar.connected':
       return 'Google Calendar OAuth connected'
     case 'google_calendar.disconnected':
-      return 'Google Calendar disconnected'
+      return 'Google Calendar disconnected locally'
     case 'google_gmail.settings_changed':
       return 'Gmail settings updated'
     case 'google_gmail.connected':
       return 'Gmail OAuth connected'
     case 'google_gmail.disconnected':
-      return 'Gmail disconnected'
+      return 'Gmail disconnected locally'
     case 'google_drive.settings_changed':
       return 'Google Drive settings updated'
     case 'google_drive.connected':
       return 'Google Drive OAuth connected'
     case 'google_drive.disconnected':
-      return 'Google Drive disconnected'
+      return 'Google Drive disconnected locally'
+    case 'google_tasks.settings_changed':
+      return 'Google Tasks settings updated'
+    case 'google_tasks.connected':
+      return 'Google Tasks OAuth connected'
+    case 'google_tasks.disconnected':
+      return 'Google Tasks disconnected locally'
     case 'domain.added':
       return `${String(data.host ?? 'domain')} · allowed`
     case 'domain.removed':

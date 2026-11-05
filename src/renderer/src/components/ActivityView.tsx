@@ -154,19 +154,25 @@ export function describeEvent(event: AuditEvent): string {
     case 'google_calendar.connected':
       return 'Google Calendar connected'
     case 'google_calendar.disconnected':
-      return 'Google Calendar disconnected'
+      return 'Google Calendar disconnected locally'
     case 'google_gmail.settings_changed':
       return 'Gmail settings updated'
     case 'google_gmail.connected':
       return 'Gmail connected'
     case 'google_gmail.disconnected':
-      return 'Gmail disconnected'
+      return 'Gmail disconnected locally'
     case 'google_drive.settings_changed':
       return 'Google Drive settings updated'
     case 'google_drive.connected':
       return 'Google Drive connected'
     case 'google_drive.disconnected':
-      return 'Google Drive disconnected'
+      return 'Google Drive disconnected locally'
+    case 'google_tasks.settings_changed':
+      return 'Google Tasks settings updated'
+    case 'google_tasks.connected':
+      return 'Google Tasks connected'
+    case 'google_tasks.disconnected':
+      return 'Google Tasks disconnected'
     case 'domain.added':
       return 'Web domain allowed'
     case 'domain.removed':
