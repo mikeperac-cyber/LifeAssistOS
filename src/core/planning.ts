@@ -3,10 +3,10 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TaskExportSyncStatus, TodaySnapshot } from '../shared/types'
+import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, RemoteTaskProvider, RemoteTaskSource, TaskExportProvider, TaskExportRecord, TaskExportStatus, TaskExportSyncStatus, TodaySnapshot } from '../shared/types'
 import { assertDateOnly } from '../shared/date-only'
 
-interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null }
+interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null; source_task_provider: string | null; source_task_list_id: string | null; source_task_id: string | null }
 interface InboxRow { id: string; text: string; created_at: string; converted_task_id: string | null; dismissed_at: string | null }
 interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string; sync_status: TaskExportSyncStatus; synced_local_updated_at: string | null; synced_title: string | null; synced_notes: string | null; synced_due_date: string | null; synced_priority: PlanTaskPriority | null; remote_etag: string | null }
 
@@ -38,7 +38,10 @@ export class PlanningStore {
         source_email_provider TEXT CHECK (source_email_provider IS NULL OR source_email_provider IN ('gmail', 'outlook')),
         source_email_message_id TEXT,
         source_calendar_provider TEXT CHECK (source_calendar_provider IS NULL OR source_calendar_provider IN ('google_calendar', 'microsoft_calendar')),
-        source_calendar_event_id TEXT
+        source_calendar_event_id TEXT,
+        source_task_provider TEXT CHECK (source_task_provider IS NULL OR source_task_provider IN ('google_tasks', 'microsoft_todo')),
+        source_task_list_id TEXT,
+        source_task_id TEXT
       );
       CREATE TABLE IF NOT EXISTS inbox (
         id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -67,6 +70,10 @@ export class PlanningStore {
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tasks_calendar_source ON tasks(source_calendar_provider, source_calendar_event_id) WHERE source_calendar_event_id IS NOT NULL')
     if (!columns.some((column) => column.name === 'remind_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT')
     if (!columns.some((column) => column.name === 'reminder_notified_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN reminder_notified_at TEXT')
+    if (!columns.some((column) => column.name === 'source_task_provider')) this.db.exec("ALTER TABLE tasks ADD COLUMN source_task_provider TEXT CHECK (source_task_provider IS NULL OR source_task_provider IN ('google_tasks', 'microsoft_todo'))")
+    if (!columns.some((column) => column.name === 'source_task_list_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_task_list_id TEXT')
+    if (!columns.some((column) => column.name === 'source_task_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_task_id TEXT')
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tasks_remote_task_source ON tasks(source_task_provider, source_task_list_id, source_task_id) WHERE source_task_id IS NOT NULL')
     const exportColumns = this.db.prepare('PRAGMA table_info(task_exports)').all() as Array<{ name: string }>
     if (!exportColumns.some((column) => column.name === 'sync_status')) this.db.exec("ALTER TABLE task_exports ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'idle' CHECK (sync_status IN ('idle', 'sending', 'failed', 'uncertain'))")
     if (!exportColumns.some((column) => column.name === 'synced_local_updated_at')) this.db.exec('ALTER TABLE task_exports ADD COLUMN synced_local_updated_at TEXT')
@@ -91,7 +98,7 @@ export class PlanningStore {
     return this.attachTaskExports(rows.map(taskFromRow))
   }
 
-  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource; calendarSource?: CalendarTaskSource }): PlanTask {
+  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource; calendarSource?: CalendarTaskSource; remoteTaskSource?: RemoteTaskSource }): PlanTask {
     const title = input.title.trim().slice(0, 240)
     if (!title) throw new Error('A task needs a title.')
     const priority = input.priority ?? 'normal'
@@ -99,9 +106,31 @@ export class PlanningStore {
     const now = new Date().toISOString()
     const emailSource = input.emailSource ? normalizeEmailTaskSource(input.emailSource) : undefined
     const calendarSource = input.calendarSource ? normalizeCalendarTaskSource(input.calendarSource) : undefined
-    const task: PlanTask = { id: randomUUID(), title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource, calendarSource }
-    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id, source_calendar_provider, source_calendar_event_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null, task.calendarSource?.provider ?? null, task.calendarSource?.eventId ?? null)
+    const remoteTaskSource = input.remoteTaskSource ? normalizeRemoteTaskSource(input.remoteTaskSource) : undefined
+    const task: PlanTask = { id: randomUUID(), title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource, calendarSource, remoteTaskSource }
+    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id, source_calendar_provider, source_calendar_event_id, source_task_provider, source_task_list_id, source_task_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null, task.calendarSource?.provider ?? null, task.calendarSource?.eventId ?? null, task.remoteTaskSource?.provider ?? null, task.remoteTaskSource?.taskListId ?? null, task.remoteTaskSource?.taskId ?? null)
     return task
+  }
+
+  importRemoteTask(input: { source: RemoteTaskSource; title: string; notes?: string; dueDate?: string | null; priority?: PlanTaskPriority }): { task: PlanTask; created: boolean } {
+    const source = normalizeRemoteTaskSource(input.source)
+    const title = cleanExternalTaskTitle(input.title)
+    const notes = cleanExternalTaskNotes(input.notes ?? '')
+    if (!title) throw new Error('A task needs a title.')
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db.prepare('SELECT * FROM tasks WHERE source_task_provider = ? AND source_task_list_id = ? AND source_task_id = ?').get(source.provider, source.taskListId, source.taskId) as TaskRow | undefined
+      if (existing) {
+        this.db.exec('COMMIT')
+        return { task: this.attachTaskExports([taskFromRow(existing)])[0]!, created: false }
+      }
+      const task = this.addTask({ title, notes, dueDate: input.dueDate, priority: input.priority ?? 'normal', remoteTaskSource: source })
+      this.db.exec('COMMIT')
+      return { task, created: true }
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
   }
 
   addCalendarPrepTask(input: {
@@ -313,7 +342,7 @@ export class PlanningStore {
   }
 }
 
-function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined, calendarSource: isCalendarTaskProvider(row.source_calendar_provider) && row.source_calendar_event_id ? { provider: row.source_calendar_provider, eventId: row.source_calendar_event_id } : undefined } }
+function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined, calendarSource: isCalendarTaskProvider(row.source_calendar_provider) && row.source_calendar_event_id ? { provider: row.source_calendar_provider, eventId: row.source_calendar_event_id } : undefined, remoteTaskSource: isRemoteTaskProvider(row.source_task_provider) && row.source_task_list_id && row.source_task_id ? { provider: row.source_task_provider, taskListId: row.source_task_list_id, taskId: row.source_task_id } : undefined } }
 function inboxFromRow(row: InboxRow): InboxItem { return { id: row.id, text: row.text, createdAt: row.created_at, convertedTaskId: row.converted_task_id, dismissedAt: row.dismissed_at } }
 function normalizeEmailTaskSource(source: EmailTaskSource): EmailTaskSource {
   if (!isEmailTaskProvider(source.provider)) throw new Error('Choose Gmail or Outlook as the email source.')
@@ -327,8 +356,20 @@ function normalizeCalendarTaskSource(source: CalendarTaskSource): CalendarTaskSo
   if (!eventId || eventId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(eventId)) throw new Error('Provide a valid calendar event ID.')
   return { provider: source.provider, eventId }
 }
+function normalizeRemoteTaskSource(source: RemoteTaskSource): RemoteTaskSource {
+  if (!isRemoteTaskProvider(source.provider)) throw new Error('Choose Google Tasks or Microsoft To Do as the task source.')
+  const taskListId = source.taskListId.trim()
+  const taskId = source.taskId.trim()
+  if (!taskListId || taskListId.length > 512 || /[\u0000-\u001f\u007f]/.test(taskListId) || !taskId || taskId.length > 512 || /[\u0000-\u001f\u007f]/.test(taskId)) {
+    throw new Error('Provide valid task list and task IDs.')
+  }
+  return { provider: source.provider, taskListId, taskId }
+}
+function cleanExternalTaskTitle(value: string): string { return value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 240) }
+function cleanExternalTaskNotes(value: string): string { return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, 2000) }
 function isEmailTaskProvider(value: string | null): value is EmailTaskProvider { return value === 'gmail' || value === 'outlook' }
 function isCalendarTaskProvider(value: string | null): value is CalendarTaskProvider { return value === 'google_calendar' || value === 'microsoft_calendar' }
+function isRemoteTaskProvider(value: string | null): value is RemoteTaskProvider { return value === 'google_tasks' || value === 'microsoft_todo' }
 function taskExportFromRow(row: TaskExportRow): TaskExportRecord { return { provider: row.provider, taskListId: row.task_list_id, status: row.status, ...(row.remote_task_id ? { remoteTaskId: row.remote_task_id } : {}), updatedAt: row.updated_at, syncStatus: row.sync_status, ...(row.synced_local_updated_at ? { syncedLocalUpdatedAt: row.synced_local_updated_at } : {}), ...(row.synced_title !== null ? { syncedTitle: row.synced_title } : {}), ...(row.synced_notes !== null ? { syncedNotes: row.synced_notes } : {}), ...(row.synced_local_updated_at ? { syncedDueDate: row.synced_due_date } : {}), ...(row.synced_priority ? { syncedPriority: row.synced_priority } : {}), ...(row.remote_etag ? { remoteEtag: row.remote_etag } : {}) } }
 function taskDiffersFromExportBaseline(task: PlanTask, provider: TaskExportProvider, baseline: TaskExportRecord): boolean {
   if (!baseline.syncedLocalUpdatedAt || baseline.syncedTitle === undefined || baseline.syncedNotes === undefined) return false

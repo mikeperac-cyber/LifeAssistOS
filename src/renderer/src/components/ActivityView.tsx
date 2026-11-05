@@ -201,6 +201,8 @@ export function describeEvent(event: AuditEvent): string {
       return 'Backup restored'
     case 'plan.task_created':
       return 'Today task created'
+    case 'plan.task_imported':
+      return `Task copied from ${event.data.provider === 'microsoft_todo' ? 'Microsoft To Do' : 'Google Tasks'}`
     case 'plan.task_updated':
       return 'Today task updated'
     case 'plan.task_completed':

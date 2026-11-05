@@ -344,6 +344,8 @@ export function summarizeEvent(event: AuditEvent): string {
       return 'vault document deleted'
     case 'plan.task_created':
       return `task created${data.priority ? ` · ${String(data.priority)}` : ''}`
+    case 'plan.task_imported':
+      return `task copied from ${data.provider === 'microsoft_todo' ? 'Microsoft To Do' : 'Google Tasks'}`
     case 'plan.task_updated':
       return 'task updated'
     case 'plan.task_completed':

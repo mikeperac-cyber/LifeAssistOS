@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MicrosoftTodoTask, MicrosoftTodoTaskList, PlanTask } from '../../../shared/types'
+import type { MicrosoftTodoTask, MicrosoftTodoTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
 import type { PublicMicrosoftTodoSettings } from '../../../shared/ipc'
 import { TaskExportControl } from './TaskExportControl'
+import { isRemoteTaskImported, RemoteTaskImportButton } from './RemoteTaskImportButton'
 
-export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh }: {
+export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh, onSnapshot }: {
   settings: PublicMicrosoftTodoSettings | null
   todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
   onSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
+  onSnapshot: (snapshot: TodaySnapshot) => void
 }): React.JSX.Element {
   const [lists, setLists] = useState<MicrosoftTodoTaskList[]>([])
   const [listsLoaded, setListsLoaded] = useState(false)
@@ -85,7 +87,7 @@ export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSetti
         <h3 id="microsoft-todo-title">Microsoft To Do</h3>
         {settings?.connected && tasks.length > 0 && <span>{tasks.length} open</span>}
       </div>
-      <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing. Chat may send approved task details to your configured model provider.</p>
+      <p className="today-google-tasks-note">Load a list to copy an open task into local Today or send a local task here. Copying is one-time; later provider edits do not sync. Each provider read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing. Chat may send approved task details to your configured model provider.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking Microsoft To Do connection…</p>
       ) : !settings.connected ? (
@@ -143,7 +145,14 @@ export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSetti
                   {item.due && <span>Due {formatTaskDue(item.due)}</span>}
                   {item.notes && <p>{item.notes}{item.notesTruncated && <span> Note shortened to 4,000 characters.</span>}</p>}
                 </div>
-                <span className="today-google-task-status">{formatTaskStatus(item.status)}</span>
+                <RemoteTaskImportButton
+                  provider="microsoft_todo"
+                  taskListId={selectedListId}
+                  task={item}
+                  alreadyImported={isRemoteTaskImported(todayTasks, 'microsoft_todo', selectedListId, item.id)}
+                  disabled={disabled || busy}
+                  onSnapshot={onSnapshot}
+                />
               </article>)}
             </div>
           ) : tasksLoaded ? (
@@ -166,14 +175,4 @@ function errorText(error: unknown, fallback: string): string {
 function formatTaskDue(value: string): string {
   const date = new Date(`${value}T00:00:00`)
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date) : value
-}
-
-function formatTaskStatus(status: MicrosoftTodoTask['status']): string {
-  switch (status) {
-    case 'inProgress': return 'In progress'
-    case 'waitingOnOthers': return 'Waiting on others'
-    case 'deferred': return 'Deferred'
-    case 'completed': return 'Completed'
-    default: return 'Open'
-  }
 }

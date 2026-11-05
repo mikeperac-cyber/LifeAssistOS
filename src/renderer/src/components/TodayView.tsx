@@ -7,6 +7,7 @@ import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
 import { GoogleCalendarPanel } from './GoogleCalendarPanel'
 import { GoogleGmailFollowupPanel, OutlookMailFollowupPanel } from './EmailFollowupPanel'
 import { TaskExportControl } from './TaskExportControl'
+import { isRemoteTaskImported, RemoteTaskImportButton } from './RemoteTaskImportButton'
 
 export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onPrepareMeeting, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh, searchTarget, onSearchTargetConsumed }: {
   googleCalendarSettings: PublicGoogleCalendarSettings | null
@@ -328,6 +329,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
                   <strong>{item.title}</strong>
                   {item.emailSource && <span className="today-task-source" title={`Message ID: ${item.emailSource.messageId}`}>From {item.emailSource.provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
                   {item.calendarSource && <span className="today-task-source">From {item.calendarSource.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'}</span>}
+                  {item.remoteTaskSource && <span className="today-task-source">Copied from {item.remoteTaskSource.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'}</span>}
                   {item.taskExports?.map((exported) => (
                     <span className={`today-task-export export-${exportStatusTone(exported, item)}`} key={`${exported.provider}:${exported.taskListId}`} title={exportStatusTitle(exported, item)}>
                       {exported.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} · {exportStatusLabel(exported, item)}
@@ -387,7 +389,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
           <h3 id="google-tasks-title">Google Tasks</h3>
           {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
         </div>
-        <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing; Google Tasks does not store local priority. Chat may send approved task details to your configured model provider.</p>
+        <p className="today-google-tasks-note">Load a list to copy an open task into local Today or send a local task here. Copying is one-time; later provider edits do not sync. Each provider read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing; Google Tasks does not store local priority. Chat may send approved task details to your configured model provider.</p>
         {googleTasksSettings === null ? (
           <p className="muted" role="status">Checking Google Tasks connection…</p>
         ) : !googleTasksSettings.connected ? (
@@ -450,7 +452,14 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
                       {item.due && <span>Due {formatTaskDue(item.due)}</span>}
                       {item.notes && <p>{item.notes}{item.notesTruncated && <span> Note shortened to 4,000 characters.</span>}</p>}
                     </div>
-                    <span className="today-google-task-status">{item.status === 'completed' ? 'Completed' : 'Open'}</span>
+                    <RemoteTaskImportButton
+                      provider="google_tasks"
+                      taskListId={selectedGoogleTaskListId}
+                      task={item}
+                      alreadyImported={isRemoteTaskImported(snapshot.tasks, 'google_tasks', selectedGoogleTaskListId, item.id)}
+                      disabled={disabled || googleTasksReadBusy}
+                      onSnapshot={setSnapshot}
+                    />
                   </article>
                 ))}
                 {googleTasksPageToken && (
@@ -472,6 +481,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
+        onSnapshot={setSnapshot}
       />
       <GoogleCalendarPanel
         settings={googleCalendarSettings}

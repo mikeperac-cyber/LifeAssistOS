@@ -334,9 +334,57 @@ describe('Today planning store', () => {
     expect(store.getTask('legacy-task')).toMatchObject({ title: 'Keep this task', remindAt: null })
     expect(store.getTask('legacy-task')?.emailSource).toBeUndefined()
     expect(store.getTask('legacy-task')?.calendarSource).toBeUndefined()
+    expect(store.getTask('legacy-task')?.remoteTaskSource).toBeUndefined()
     const linked = store.addTask({ title: 'Follow up on legacy task', emailSource: { provider: 'outlook', messageId: 'legacy-db-message' } })
     expect(store.getTask(linked.id).emailSource).toEqual({ provider: 'outlook', messageId: 'legacy-db-message' })
     store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('copies provider tasks into Today once and keeps their source across restarts', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-import-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const source = { provider: 'google_tasks' as const, taskListId: 'work-list', taskId: 'remote-123' }
+    const first = store.importRemoteTask({
+      source,
+      title: '  Draft\u0001 the next lesson  ',
+      notes: 'First line\u0000\nSecond line',
+      dueDate: '2026-11-09'
+    })
+    expect(first.created).toBe(true)
+    expect(first.task).toMatchObject({
+      title: 'Draft  the next lesson',
+      notes: 'First line\nSecond line',
+      dueDate: '2026-11-09',
+      remoteTaskSource: source
+    })
+
+    const duplicate = store.importRemoteTask({ source, title: 'Changed remotely after first copy', dueDate: null })
+    expect(duplicate.created).toBe(false)
+    expect(duplicate.task.id).toBe(first.task.id)
+    expect(duplicate.task.title).toBe(first.task.title)
+
+    const sameIdOtherList = store.importRemoteTask({
+      source: { ...source, taskListId: 'personal-list' },
+      title: 'A separate task list copy'
+    })
+    const sameIdOtherProvider = store.importRemoteTask({
+      source: { provider: 'microsoft_todo', taskListId: source.taskListId, taskId: source.taskId },
+      title: 'A separate provider copy'
+    })
+    expect(sameIdOtherList.created).toBe(true)
+    expect(sameIdOtherProvider.created).toBe(true)
+
+    store.close()
+    const reopened = new PlanningStore(file)
+    await reopened.init()
+    expect(reopened.getTask(first.task.id)?.remoteTaskSource).toEqual(source)
+    const afterRestart = reopened.importRemoteTask({ source, title: 'Another changed remote title' })
+    expect(afterRestart.created).toBe(false)
+    expect(afterRestart.task.id).toBe(first.task.id)
+    reopened.close()
     await rm(dir, { recursive: true, force: true })
   })
 })

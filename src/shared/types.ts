@@ -239,6 +239,7 @@ export type AuditType =
   | 'vault.document_updated'
   | 'vault.document_deleted'
   | 'plan.task_created'
+  | 'plan.task_imported'
   | 'plan.task_updated'
   | 'plan.task_completed'
   | 'plan.reminder_notified'
@@ -296,6 +297,14 @@ export interface MicrosoftTodoTask {
   updated?: string
   etag?: string
   priority?: PlanTaskPriority
+}
+
+export type RemoteTaskProvider = 'google_tasks' | 'microsoft_todo'
+
+export interface RemoteTaskSource {
+  provider: RemoteTaskProvider
+  taskListId: string
+  taskId: string
 }
 
 export interface MicrosoftCalendarEvent {
@@ -737,6 +746,7 @@ export interface PlanTask {
   sourceGoalId?: string
   emailSource?: EmailTaskSource
   calendarSource?: CalendarTaskSource
+  remoteTaskSource?: RemoteTaskSource
   taskExports?: TaskExportRecord[]
 }
 

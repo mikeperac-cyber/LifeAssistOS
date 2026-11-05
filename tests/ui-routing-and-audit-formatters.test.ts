@@ -86,6 +86,7 @@ const ALL_AUDIT_TYPES: AuditType[] = [
   'vault.document_updated',
   'vault.document_deleted',
   'plan.task_created',
+  'plan.task_imported',
   'plan.task_updated',
   'plan.task_completed',
   'plan.reminder_notified',

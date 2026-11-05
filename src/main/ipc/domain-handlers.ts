@@ -272,6 +272,35 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     }
   })
 
+  ipcMain.handle('assist:plan-task-import', async (_event, input: unknown) => {
+    const planning = ctx.getPlanning()
+    if (!planning || !input || typeof input !== 'object') return { ok: false, error: 'Invalid imported task.' }
+    const value = input as { provider?: unknown; taskListId?: unknown; taskId?: unknown; title?: unknown; notes?: unknown; dueDate?: unknown; priority?: unknown; status?: unknown }
+    if ((value.provider !== 'google_tasks' && value.provider !== 'microsoft_todo') ||
+      typeof value.taskListId !== 'string' || typeof value.taskId !== 'string' || typeof value.title !== 'string' ||
+      (value.notes !== undefined && typeof value.notes !== 'string') ||
+      (value.dueDate !== undefined && value.dueDate !== null && typeof value.dueDate !== 'string')) {
+      return { ok: false, error: 'Invalid imported task.' }
+    }
+    const isOpenRemoteTask = value.provider === 'google_tasks'
+      ? value.status === 'needsAction'
+      : ['notStarted', 'inProgress', 'waitingOnOthers', 'deferred'].includes(String(value.status))
+    if (!isOpenRemoteTask) return { ok: false, error: 'Completed provider tasks cannot be copied as open Today tasks.' }
+    try {
+      const result = planning.importRemoteTask({
+        source: { provider: value.provider, taskListId: value.taskListId, taskId: value.taskId },
+        title: value.title,
+        notes: value.notes as string | undefined,
+        dueDate: value.dueDate as string | null | undefined,
+        priority: value.priority as PlanTaskPriority | undefined
+      })
+      if (result.created) await ctx.appendAuditAfterMutation({ type: 'plan.task_imported', data: { provider: value.provider } })
+      return { ok: true, task: result.task, created: result.created, snapshot: planning.snapshot() }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
   ipcMain.handle('assist:plan-task-update', async (_event, payload: unknown) => {
     const planning = ctx.getPlanning()
     if (!planning || !payload || typeof payload !== 'object') return { ok: false, error: 'Invalid task update.' }
