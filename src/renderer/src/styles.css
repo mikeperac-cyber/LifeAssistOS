@@ -3512,6 +3512,14 @@ summary:focus-visible {
 .cloud-files-reader { min-height: 250px; }
 .cloud-files-text { max-height: 560px; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cloud-files-reader > .ghost-button { padding: 6px 8px; font-size: 9px; }
+.cloud-files-follow-ups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0; }
+.cloud-files-follow-up { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
+.cloud-files-follow-up h4 { margin: 0; color: var(--text); font-size: 10px; }
+.cloud-files-follow-up p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.cloud-files-follow-up label { color: var(--faint); font-size: 9px; font-weight: 600; }
+.cloud-files-follow-up input { width: 100%; min-width: 0; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10px; }
+.cloud-files-follow-up .ghost-button { padding: 7px 9px; font-size: 9px; }
+.cloud-files-follow-up .cloud-files-error, .cloud-files-follow-up .cloud-files-status { width: 100%; }
 .cloud-files-reader-empty { display: flex; min-height: 210px; flex-direction: column; align-items: center; justify-content: center; padding: 16px; text-align: center; }
 .cloud-files-reader-empty > span { color: var(--accent); font-size: 22px; }
 .cloud-files-reader-empty h3, .cloud-files-connect-empty h3, .cloud-files-first-search h3 { margin: 8px 0 5px; color: var(--text); font-size: 12px; }
@@ -3697,6 +3705,7 @@ summary:focus-visible {
   .research-project-list { max-height: 180px; }
   .today-grid { grid-template-columns: 1fr; }
   .cloud-files-layout { grid-template-columns: 1fr; }
+  .cloud-files-follow-ups { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 680px) {

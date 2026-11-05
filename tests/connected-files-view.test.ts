@@ -1,10 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectedCloudFile, ConnectedCloudFileReadOutput } from '../src/shared/ipc'
-import { nextConnectedFileReadCursor } from '../src/renderer/src/components/ConnectedFilesView'
+import { buildCloudFileReviewTaskInput, buildCloudFileVaultInput, nextConnectedFileReadCursor } from '../src/renderer/src/components/ConnectedFilesView'
 
 const file = (mimeType: string): ConnectedCloudFile => ({ id: 'abc123_file', name: 'Report', mimeType })
 
 describe('connected file reading', () => {
+  it('builds a local vault capture with provider provenance and the displayed text', () => {
+    expect(buildCloudFileVaultInput(file('text/plain'), 'google_drive', '  Course notes  ', 'approved excerpt'))
+      .toEqual({
+        title: 'Course notes', body: 'approved excerpt', tags: ['cloud-files', 'Google Drive'],
+        sourceType: 'cloud_file', sourceRef: 'google_drive:abc123_file'
+      })
+  })
+
+  it('builds a local Today follow-up that explains how to find the cloud file again', () => {
+    expect(buildCloudFileReviewTaskInput(file('text/plain'), 'microsoft_onedrive', '  Review report  '))
+      .toEqual({
+        title: 'Review report',
+        notes: 'Review “Report” in Microsoft OneDrive. Find it in Cloud Files and request approval before reading it again.'
+      })
+  })
+
   it('continues bounded text and Word extracts by character offset', () => {
     expect(nextConnectedFileReadCursor(file('text/plain'), { text: 'part', truncated: true, nextStartChar: 5000 }))
       .toEqual({ startChar: 5000 })

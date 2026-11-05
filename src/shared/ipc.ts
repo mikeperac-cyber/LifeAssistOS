@@ -21,6 +21,7 @@ import type {
   VaultDocument,
   VaultQuickSearchResult,
   VaultSearchResult,
+  VaultSourceType,
   PlanTask,
   InboxItem,
   TodaySnapshot,
@@ -670,7 +671,7 @@ export interface AssistApi {
   getVaultDocuments(query?: string): Promise<VaultSearchResult[]>
   searchVaultSummaries(query: string, limit?: number): Promise<VaultQuickSearchResult[]>
   getVaultDocument(id: string): Promise<VaultMutationResult>
-  createVaultDocument(input: { title: string; body: string; tags?: string[]; sourceType?: string; sourceRef?: string }): Promise<VaultMutationResult>
+  createVaultDocument(input: { title: string; body: string; tags?: string[]; sourceType?: VaultSourceType; sourceRef?: string }): Promise<VaultMutationResult>
   updateVaultDocument(id: string, patch: { title?: string; body?: string; tags?: string[] }): Promise<VaultMutationResult>
   deleteVaultDocument(id: string): Promise<VaultMutationResult>
   getToday(date?: string): Promise<TodaySnapshot>

@@ -193,6 +193,10 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     if (typeof value.title !== 'string' || typeof value.body !== 'string') {
       return { ok: false, error: 'A document needs a title and content.' }
     }
+    const validSourceTypes: VaultSourceType[] = ['note', 'research', 'teaching', 'manual', 'cloud_file']
+    if (value.sourceType !== undefined && (typeof value.sourceType !== 'string' || !validSourceTypes.includes(value.sourceType as VaultSourceType))) {
+      return { ok: false, error: 'Choose a valid vault source type.' }
+    }
     try {
       const document = vault.create({
         title: value.title,

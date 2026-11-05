@@ -655,7 +655,7 @@ export interface ResearchProject {
 
 /* ---------- Knowledge vault ---------- */
 
-export type VaultSourceType = 'note' | 'research' | 'teaching' | 'manual'
+export type VaultSourceType = 'note' | 'research' | 'teaching' | 'manual' | 'cloud_file'
 
 export interface VaultDocument {
   id: string

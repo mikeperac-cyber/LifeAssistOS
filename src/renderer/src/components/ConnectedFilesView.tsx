@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ConnectedCloudFile,
   ConnectedCloudFileReadInput,
@@ -27,6 +27,23 @@ export function nextConnectedFileReadCursor(file: ConnectedCloudFile, output: Co
   }
   const nextChar = output.nextStartChar ?? output.nextChar
   return nextChar !== undefined ? { startChar: nextChar } : null
+}
+
+export function buildCloudFileVaultInput(file: ConnectedCloudFile, provider: ConnectedFileProvider, title: string, text: string) {
+  return {
+    title: title.trim(),
+    body: text,
+    tags: ['cloud-files', providerName(provider)],
+    sourceType: 'cloud_file' as const,
+    sourceRef: `${provider}:${file.id}`
+  }
+}
+
+export function buildCloudFileReviewTaskInput(file: ConnectedCloudFile, provider: ConnectedFileProvider, title: string) {
+  return {
+    title: title.trim(),
+    notes: `Review “${file.name}” in ${providerName(provider)}. Find it in Cloud Files and request approval before reading it again.`
+  }
 }
 
 function displaySize(size: string | number | undefined): string | null {
@@ -78,8 +95,29 @@ export function ConnectedFilesView({
   const [readOutput, setReadOutput] = useState<ConnectedCloudFileReadOutput | null>(null)
   const [readError, setReadError] = useState('')
   const [action, setAction] = useState<'search' | 'read' | null>(null)
+  const [localAction, setLocalAction] = useState<'vault' | 'task' | null>(null)
+  const [captureTitle, setCaptureTitle] = useState('')
+  const [taskTitle, setTaskTitle] = useState('')
+  const [captureStatus, setCaptureStatus] = useState('')
+  const [captureError, setCaptureError] = useState('')
+  const [taskStatus, setTaskStatus] = useState('')
+  const [taskError, setTaskError] = useState('')
+  const [captureSaved, setCaptureSaved] = useState(false)
+  const [taskCreated, setTaskCreated] = useState(false)
+  const localActionBusy = useRef(false)
   const requestVersion = useRef(0)
   const mounted = useRef(true)
+
+  const resetLocalFollowUps = useCallback((file: ConnectedCloudFile | null = null): void => {
+    setCaptureTitle(file?.name.slice(0, 240) ?? '')
+    setTaskTitle(file ? `Review ${file.name}`.slice(0, 240) : '')
+    setCaptureStatus('')
+    setCaptureError('')
+    setTaskStatus('')
+    setTaskError('')
+    setCaptureSaved(false)
+    setTaskCreated(false)
+  }, [])
 
   useEffect(() => {
     mounted.current = true
@@ -104,7 +142,8 @@ export function ConnectedFilesView({
     setReadParts([])
     setReadOutput(null)
     setReadError('')
-  }, [availableProviders.join('|'), provider])
+    resetLocalFollowUps()
+  }, [availableProviders.join('|'), provider, resetLocalFollowUps])
 
   const chooseProvider = (value: ConnectedFileProvider): void => {
     if (value === provider || disabled || action) return
@@ -119,6 +158,7 @@ export function ConnectedFilesView({
     setReadParts([])
     setReadOutput(null)
     setReadError('')
+    resetLocalFollowUps()
   }
 
   const search = async (pageToken?: string): Promise<void> => {
@@ -139,6 +179,7 @@ export function ConnectedFilesView({
       setReadParts([])
       setReadOutput(null)
       setHasSearched(false)
+      resetLocalFollowUps()
     }
     try {
       const result = provider === 'google_drive'
@@ -193,6 +234,9 @@ export function ConnectedFilesView({
       setSelectedFile(file)
       setReadOutput(result.output)
       setReadParts((previous) => [...previous, result.output!.text].slice(0, MAX_RETAINED_READ_PARTS))
+      setCaptureSaved(false)
+      setCaptureStatus('')
+      setCaptureError('')
     } catch (error) {
       if (mounted.current && version === requestVersion.current) {
         setReadError(error instanceof Error ? error.message : String(error))
@@ -207,11 +251,68 @@ export function ConnectedFilesView({
     setReadParts([])
     setReadOutput(null)
     setReadError('')
+    resetLocalFollowUps(file)
     void readFile(file)
   }
 
+  const saveExcerptToVault = async (): Promise<void> => {
+    if (!selectedFile || !visibleReadText.trim() || localActionBusy.current) return
+    const title = captureTitle.trim()
+    if (!title) {
+      setCaptureError('Enter a title for the saved excerpt.')
+      return
+    }
+    localActionBusy.current = true
+    setLocalAction('vault')
+    setCaptureError('')
+    setCaptureStatus('')
+    try {
+      const result = await window.assist.createVaultDocument(buildCloudFileVaultInput(selectedFile, provider, title, visibleReadText))
+      if (!mounted.current) return
+      if (!result.ok) {
+        setCaptureError(result.error ?? 'Could not save this excerpt to the Knowledge Vault.')
+        return
+      }
+      setCaptureSaved(true)
+      setCaptureStatus('Excerpt saved to the Knowledge Vault on this device.')
+    } catch (error) {
+      if (mounted.current) setCaptureError(error instanceof Error ? error.message : String(error))
+    } finally {
+      localActionBusy.current = false
+      if (mounted.current) setLocalAction(null)
+    }
+  }
+
+  const createReviewTask = async (): Promise<void> => {
+    if (!selectedFile || localActionBusy.current) return
+    const title = taskTitle.trim()
+    if (!title) {
+      setTaskError('Enter a title for the follow-up task.')
+      return
+    }
+    localActionBusy.current = true
+    setLocalAction('task')
+    setTaskError('')
+    setTaskStatus('')
+    try {
+      const result = await window.assist.addPlanTask(buildCloudFileReviewTaskInput(selectedFile, provider, title))
+      if (!mounted.current) return
+      if (!result.ok) {
+        setTaskError(result.error ?? 'Could not create the follow-up task.')
+        return
+      }
+      setTaskCreated(true)
+      setTaskStatus('Follow-up added to Today on this device.')
+    } catch (error) {
+      if (mounted.current) setTaskError(error instanceof Error ? error.message : String(error))
+    } finally {
+      localActionBusy.current = false
+      if (mounted.current) setLocalAction(null)
+    }
+  }
+
   const selectedProviderConnected = provider === 'google_drive' ? googleConnected : oneDriveConnected
-  const providerDisabled = disabled || action !== null
+  const providerDisabled = disabled || action !== null || localAction !== null
   const continueCursor = selectedFile && readOutput ? nextConnectedFileReadCursor(selectedFile, readOutput) : null
   const visibleReadText = readParts.join('\n\n')
 
@@ -347,6 +448,32 @@ export function ConnectedFilesView({
                           </button>
                         )}
                         {continueCursor && readParts.length >= MAX_RETAINED_READ_PARTS && <p className="cloud-files-note">This view has reached its 10-part reading limit. Start a new file read to clear it.</p>}
+                        {visibleReadText.trim() && (
+                          <section className="cloud-files-follow-ups" aria-label="Save or follow up on this file">
+                            <div className="cloud-files-follow-up">
+                              <h4>Save an excerpt</h4>
+                              <p>{visibleReadText.length.toLocaleString()} characters will be saved locally. Saving does not send another request to {providerName(provider)}.</p>
+                              <label htmlFor="cloud-files-capture-title">Knowledge Vault title</label>
+                              <input id="cloud-files-capture-title" value={captureTitle} maxLength={240} disabled={providerDisabled || captureSaved} onChange={(event) => setCaptureTitle(event.target.value)} />
+                              <button className="ghost-button" type="button" disabled={providerDisabled || captureSaved || !visibleReadText.trim()} onClick={() => void saveExcerptToVault()}>
+                                {localAction === 'vault' ? 'Saving locally…' : captureSaved ? 'Saved to Knowledge Vault' : 'Save to Knowledge Vault'}
+                              </button>
+                              {captureError && <p className="cloud-files-error" role="alert">{captureError}</p>}
+                              {captureStatus && <p className="cloud-files-status" role="status">{captureStatus}</p>}
+                            </div>
+                            <div className="cloud-files-follow-up">
+                              <h4>Create a Today follow-up</h4>
+                              <p>Adds a task to this device. It will not change the cloud file or create a task in the connected account.</p>
+                              <label htmlFor="cloud-files-task-title">Task title</label>
+                              <input id="cloud-files-task-title" value={taskTitle} maxLength={240} disabled={providerDisabled || taskCreated} onChange={(event) => setTaskTitle(event.target.value)} />
+                              <button className="ghost-button" type="button" disabled={providerDisabled || taskCreated} onClick={() => void createReviewTask()}>
+                                {localAction === 'task' ? 'Adding task…' : taskCreated ? 'Added to Today' : 'Add to Today'}
+                              </button>
+                              {taskError && <p className="cloud-files-error" role="alert">{taskError}</p>}
+                              {taskStatus && <p className="cloud-files-status" role="status">{taskStatus}</p>}
+                            </div>
+                          </section>
+                        )}
                       </>
                     ) : !readError && action !== 'read' ? (
                       <p className="cloud-files-empty">Choose Read again to request an approved extract.</p>
