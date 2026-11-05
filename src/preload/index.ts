@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AssistApi, SettingsPatch } from '../shared/ipc'
+import type { AssistApi, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import type { ApprovalChoice, AssistantSkillInput, MemoryFactPatch, McpServerInput } from '../shared/types'
 import type { AssistEvent } from '../shared/types'
 
@@ -125,6 +125,8 @@ const api: AssistApi = {
   disconnectGoogleTasks: () => ipcRenderer.invoke('assist:google-tasks-disconnect'),
   listGoogleTaskLists: (pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-lists', pageToken),
   listGoogleTasks: (taskListId: string, pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-tasks', taskListId, pageToken),
+  exportTodayTask: (input: TodayTaskExportInput) => ipcRenderer.invoke('assist:today-task-export', input),
+  clearTodayTaskExportRetryGuard: (input: TodayTaskExportClearInput) => ipcRenderer.invoke('assist:today-task-export-clear-guard', input),
   getMicrosoftTodoSettings: () => ipcRenderer.invoke('assist:microsoft-todo-settings'),
   updateMicrosoftTodoClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-todo-client-id-update', clientId),
   beginMicrosoftTodoConnect: () => ipcRenderer.invoke('assist:microsoft-todo-connect-begin'),

@@ -3,6 +3,7 @@ import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../
 import type { PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
 import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
+import { TaskExportControl } from './TaskExportControl'
 
 export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, disabled, onOpenSettings, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh }: {
   googleTasksSettings: PublicGoogleTasksSettings | null
@@ -282,7 +283,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
           <h3 id="google-tasks-title">Google Tasks</h3>
           {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
         </div>
-        <p className="today-google-tasks-note">Loading lists and tasks, and sending a local task, each ask for approval. Ask Mike Assist in Chat to send an open Today task. Old read-only connections need to be disconnected and reconnected in Settings first. Chat may send approved task details to your configured model provider.</p>
+        <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read and send shows a separate approval with the task details. Existing read-only connections need to be disconnected and reconnected in Settings to send. Later local edits will not sync. Chat may send approved task details to your configured model provider.</p>
         {googleTasksSettings === null ? (
           <p className="muted" role="status">Checking Google Tasks connection…</p>
         ) : !googleTasksSettings.connected ? (
@@ -323,6 +324,18 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
                 <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists(googleTaskListsPageToken)} disabled={disabled || googleTasksReadBusy}>Load more lists</button>
               )}
             </div>
+            {googleTaskListsLoaded && selectedGoogleTaskListId && (
+              <TaskExportControl
+                provider="google_tasks"
+                providerLabel="Google Tasks"
+                canWrite={googleTasksSettings.taskWriteEnabled}
+                taskListId={selectedGoogleTaskListId}
+                taskListTitle={googleTaskLists.find((list) => list.id === selectedGoogleTaskListId)?.title ?? ''}
+                tasks={snapshot.tasks}
+                disabled={disabled || googleTasksReadBusy}
+                onOpenSettings={onOpenSettings}
+              />
+            )}
             {googleTaskListsLoaded && googleTaskLists.length === 0 && <p className="muted">No Google Tasks lists were found.</p>}
             {googleTasks.length > 0 ? (
               <div className="today-google-task-list">
@@ -351,6 +364,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
       </section>
       <MicrosoftTodoPanel
         settings={microsoftTodoSettings}
+        todayTasks={snapshot.tasks}
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftTodoSettingsRefresh}

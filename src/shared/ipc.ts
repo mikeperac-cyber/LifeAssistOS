@@ -43,7 +43,8 @@ import type {
   MicrosoftMailMessage,
   MicrosoftMailMessageSummary,
   MicrosoftTodoTask,
-  MicrosoftTodoTaskList
+  MicrosoftTodoTaskList,
+  TaskExportProvider
 } from './types'
 
 export interface PublicWebSearchSettings {
@@ -230,6 +231,28 @@ export interface GoogleTasksReadResult {
   tasks?: GoogleTask[]
   nextPageToken?: string
   settings?: PublicGoogleTasksSettings
+}
+
+export interface TodayTaskExportInput {
+  provider: TaskExportProvider
+  taskId: string
+  expectedUpdatedAt: string
+  taskListId: string
+  taskListTitle: string
+}
+
+export interface TodayTaskExportClearInput {
+  provider: TaskExportProvider
+  taskId: string
+  taskListId: string
+}
+
+export interface TodayTaskExportActionResult {
+  ok: boolean
+  output?: unknown
+  error?: string
+  denied?: boolean
+  outcomeUnknown?: boolean
 }
 
 export interface MicrosoftTodoSettingsResult {
@@ -566,6 +589,8 @@ export interface AssistApi {
   disconnectGoogleTasks(): Promise<GoogleTasksSettingsResult>
   listGoogleTaskLists(pageToken?: string): Promise<GoogleTaskListsReadResult>
   listGoogleTasks(taskListId: string, pageToken?: string): Promise<GoogleTasksReadResult>
+  exportTodayTask(input: TodayTaskExportInput): Promise<TodayTaskExportActionResult>
+  clearTodayTaskExportRetryGuard(input: TodayTaskExportClearInput): Promise<TodayTaskExportActionResult>
 
   getMicrosoftTodoSettings(): Promise<PublicMicrosoftTodoSettings>
   updateMicrosoftTodoClientId(clientId: string): Promise<MicrosoftTodoSettingsResult>

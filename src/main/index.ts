@@ -58,6 +58,7 @@ import type {
   ToolCall,
   ToolContext
 } from '../shared/types'
+import type { TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import { createFileCheckpointTools, createWriteFileTool, fsTools } from '../tools/fs'
 import { readPdfTool } from '../tools/pdf'
 import { readOfficeDocumentTool } from '../tools/office-document'
@@ -158,6 +159,24 @@ function hasOtherAssistantTask(): boolean {
 
 function hasRunningAssistantTask(): boolean {
   return hasOtherAssistantTask() || localApiBusy
+}
+
+function isTodayTaskExportInput(value: unknown): value is TodayTaskExportInput {
+  if (!value || typeof value !== 'object') return false
+  const input = value as Partial<TodayTaskExportInput>
+  return (input.provider === 'google_tasks' || input.provider === 'microsoft_todo') &&
+    typeof input.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.taskId) &&
+    typeof input.expectedUpdatedAt === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(input.expectedUpdatedAt) && Number.isFinite(Date.parse(input.expectedUpdatedAt)) &&
+    typeof input.taskListId === 'string' && input.taskListId.length > 0 && input.taskListId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.taskListId) &&
+    typeof input.taskListTitle === 'string' && input.taskListTitle.trim().length > 0 && input.taskListTitle.length <= 2_048 && !/[\u0000-\u001f\u007f]/.test(input.taskListTitle)
+}
+
+function isTodayTaskExportClearInput(value: unknown): value is TodayTaskExportClearInput {
+  if (!value || typeof value !== 'object') return false
+  const input = value as Partial<TodayTaskExportClearInput>
+  return (input.provider === 'google_tasks' || input.provider === 'microsoft_todo') &&
+    typeof input.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.taskId) &&
+    typeof input.taskListId === 'string' && input.taskListId.length > 0 && input.taskListId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.taskListId)
 }
 
 if (!hasSingleInstanceLock) {
@@ -1951,6 +1970,33 @@ function registerIpc(): void {
     }
   })
 
+  const runTaskActionWithApproval = async (
+    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'clear_task_export_retry_guard',
+    args: unknown,
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string; denied?: boolean; outcomeUnknown?: boolean }> => {
+    if (!gateway) return { ok: false, error: 'The permission gateway is still starting.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary })
+      return {
+        ok: result.ok,
+        ...(result.output !== undefined ? { output: result.output } : {}),
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.denied ? { denied: true } : {}),
+        ...(result.outcomeUnknown ? { outcomeUnknown: true } : {})
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[task-export] could not clear the renderer busy state', error) }
+    }
+  }
+
   ipcMain.handle('assist:google-tasks-list-tasks', async (_event, taskListId: unknown, pageToken: unknown) => {
     if (typeof taskListId !== 'string' || (pageToken !== undefined && typeof pageToken !== 'string')) {
       return { ok: false, error: 'Invalid Google Tasks list or page token.' }
@@ -1976,6 +2022,29 @@ function registerIpc(): void {
       tasks: output.tasks,
       ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
     }
+  })
+
+  ipcMain.handle('assist:today-task-export', async (_event, input: unknown) => {
+    if (!isTodayTaskExportInput(input)) return { ok: false, error: 'Choose a valid task, destination, and provider.' }
+    const service = input.provider === 'google_tasks' ? googleTasks : microsoftTodo
+    if (!service?.isReady()) return { ok: false, error: `Connect ${input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} in Settings first.` }
+    if (!service.canWriteTasks()) return { ok: false, error: 'Reconnect this task service in Settings to grant permission to create tasks.' }
+    const name = input.provider === 'google_tasks'
+      ? 'google_tasks_create_from_today_task'
+      : 'microsoft_todo_create_from_today_task'
+    const label = input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+    const listTitle = input.taskListTitle.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120)
+    return runTaskActionWithApproval(name, input, `Send this local Today task to ${label} list “${listTitle}”`)
+  })
+
+  ipcMain.handle('assist:today-task-export-clear-guard', async (_event, input: unknown) => {
+    if (!isTodayTaskExportClearInput(input)) return { ok: false, error: 'Choose a valid task, destination, and provider.' }
+    const label = input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+    return runTaskActionWithApproval(
+      'clear_task_export_retry_guard',
+      input,
+      `Clear the local retry guard for this task in ${label}. Check the remote list first.`
+    )
   })
 
   ipcMain.handle('assist:microsoft-todo-settings', () =>

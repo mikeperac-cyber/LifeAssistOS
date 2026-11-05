@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MicrosoftTodoTask, MicrosoftTodoTaskList } from '../../../shared/types'
+import type { MicrosoftTodoTask, MicrosoftTodoTaskList, PlanTask } from '../../../shared/types'
 import type { PublicMicrosoftTodoSettings } from '../../../shared/ipc'
+import { TaskExportControl } from './TaskExportControl'
 
-export function MicrosoftTodoPanel({ settings, disabled, onOpenSettings, onSettingsRefresh }: {
+export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh }: {
   settings: PublicMicrosoftTodoSettings | null
+  todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
   onSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
@@ -83,7 +85,7 @@ export function MicrosoftTodoPanel({ settings, disabled, onOpenSettings, onSetti
         <h3 id="microsoft-todo-title">Microsoft To Do</h3>
         {settings?.connected && tasks.length > 0 && <span>{tasks.length} open</span>}
       </div>
-      <p className="today-google-tasks-note">Loading lists and tasks, and sending a local task, each ask for approval. Ask Mike Assist in Chat to send an open Today task. {settings?.connected && !settings.taskWriteEnabled ? 'This connection is read-only; disconnect and reconnect in Settings to enable sends.' : 'Chat may send approved task details to your configured model provider.'}</p>
+      <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read and send shows a separate approval with the task details. Existing read-only connections need to be disconnected and reconnected in Settings to send. Later local edits will not sync. Chat may send approved task details to your configured model provider.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking Microsoft To Do connection…</p>
       ) : !settings.connected ? (
@@ -120,6 +122,18 @@ export function MicrosoftTodoPanel({ settings, disabled, onOpenSettings, onSetti
             </>}
             {listsPageToken && <button className="ghost-button" type="button" onClick={() => void loadLists(listsPageToken)} disabled={disabled || busy}>Load more lists</button>}
           </div>
+          {listsLoaded && selectedListId && (
+            <TaskExportControl
+              provider="microsoft_todo"
+              providerLabel="Microsoft To Do"
+              canWrite={settings.taskWriteEnabled}
+              taskListId={selectedListId}
+              taskListTitle={lists.find((list) => list.id === selectedListId)?.title ?? ''}
+              tasks={todayTasks}
+              disabled={disabled || busy}
+              onOpenSettings={onOpenSettings}
+            />
+          )}
           {listsLoaded && lists.length === 0 && <p className="muted">No Microsoft To Do lists were found.</p>}
           {tasks.length > 0 ? (
             <div className="today-google-task-list">

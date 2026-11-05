@@ -1467,7 +1467,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Google Tasks</h2>
           <p>
-            Connect one Google account with the <code>tasks</code> OAuth permission. Google grants broad task access, but Mike Assist only lists tasks and creates new ones; it exposes no edit or delete action. Every read and each task send asks for separate approval. Existing read-only connections stay read-only until disconnected and reconnected. The refresh token is encrypted with OS storage when available. Disconnecting here clears Mike Assist’s saved token; Google keeps the authorization active until you remove it in your Google Account, because revoking a shared Google project can affect other connected services.
+            Connect one Google account with the <code>tasks</code> OAuth permission. Google grants broad task access, but Mike Assist only lists tasks and creates new ones; it exposes no edit or delete action. Every read and each task send asks for separate approval. Today can send a local task directly; Chat can also send one, and approved Chat details may be sent to your configured model provider. Existing read-only connections stay read-only until disconnected and reconnected. The refresh token is encrypted with OS storage when available. Disconnecting here clears Mike Assist’s saved token; Google keeps the authorization active until you remove it in your Google Account, because revoking a shared Google project can affect other connected services.
           </p>
         </div>
         {googleTasksSettings ? (

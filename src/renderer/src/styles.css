@@ -3284,6 +3284,16 @@ summary:focus-visible {
 .today-google-task-status { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--line-soft); border-radius: 999px; }
 .today-google-tasks-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 11px; }
 .today-google-tasks-empty p { margin: 0; }
+.today-task-export-control { margin-top: 10px; padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--panel-2); }
+.today-task-export-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 9px; }
+.today-task-export-task-select { display: flex; flex: 1 1 250px; min-width: 180px; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; }
+.today-task-export-task-select strong { color: var(--text); font-weight: 600; }
+.today-task-export-task-select select { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; font-size: 11px; }
+.today-task-export-warning, .today-task-export-help { margin: 7px 0 0; font-size: 10px; line-height: 1.45; }
+.today-task-export-warning { color: var(--amber); }
+.today-task-export-help { color: var(--faint); }
+.today-task-export-guidance { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 10px; }
+.today-task-export-control > .status-success, .today-task-export-control > .status-error { margin: 7px 0 0; padding: 6px 8px; border-radius: 7px; font-size: 10px; line-height: 1.4; }
 .microsoft-todo-user-code { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 16px; font-weight: 700; letter-spacing: 0.14em; }
 .today-card { padding: 17px; border: 1px solid var(--line-soft); border-radius: 13px; background: var(--panel); }
 .today-card-head { align-items: center; margin-bottom: 13px; }
@@ -3413,6 +3423,8 @@ summary:focus-visible {
   .research-source-add input, .task-add input:first-child { flex-basis: 100%; }
   .task-add input[type='date'], .task-add input[type='datetime-local'], .task-add select { flex: 1; width: auto; }
   .today-task { align-items: flex-start; }
+  .today-task-export-actions { align-items: stretch; flex-direction: column; }
+  .today-task-export-actions > button { width: 100%; }
 }
 
 /* ---------- Integration transparency hub ---------- */
