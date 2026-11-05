@@ -1,6 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FolderGrant } from '../../../shared/types'
-import { NAV_GROUPS, VIEW_META, type View } from '../navigation'
+import {
+  DEFAULT_SIDEBAR_SHORTCUTS,
+  filterNavigationGroups,
+  normalizeSidebarShortcuts,
+  SIDEBAR_SHORTCUT_OPTIONS,
+  SIDEBAR_SHORTCUT_STORAGE_KEY,
+  VIEW_META,
+  type View
+} from '../navigation'
 
 export type { View } from '../navigation'
 
@@ -24,17 +32,18 @@ export function Sidebar({
   onQuickCapture: () => void
 }): React.JSX.Element {
   const [navQuery, setNavQuery] = useState('')
-  const normalizedQuery = navQuery.trim().toLocaleLowerCase()
-  const visibleGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => {
-      const label = VIEW_META[item].label === 'Assistant' ? 'Chat' : VIEW_META[item].label
-      return !normalizedQuery ||
-        label.toLocaleLowerCase().includes(normalizedQuery) ||
-        VIEW_META[item].label.toLocaleLowerCase().includes(normalizedQuery) ||
-        group.label.toLocaleLowerCase().includes(normalizedQuery)
-    })
-  })).filter((group) => group.items.length > 0)
+  const [customizingShortcuts, setCustomizingShortcuts] = useState(false)
+  const [shortcuts, setShortcuts] = useState<View[]>(readSavedShortcuts)
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_SHORTCUT_STORAGE_KEY, JSON.stringify(shortcuts))
+    } catch {
+      // Keep the current-session shortcuts usable if storage is unavailable.
+    }
+  }, [shortcuts])
+
+  const visibleGroups = filterNavigationGroups(navQuery)
   const firstVisibleView = visibleGroups[0]?.items[0]
 
   return (
@@ -84,6 +93,61 @@ export function Sidebar({
         <span>Quick capture</span>
         <kbd className="quick-capture-shortcut">Ctrl ⇧ K</kbd>
       </button>
+
+      <section className="sidebar-shortcuts" aria-label="Quick access">
+        <div className="sidebar-shortcuts-head">
+          <span>Quick access</span>
+          <button
+            className="sidebar-customize-button"
+            type="button"
+            aria-expanded={customizingShortcuts}
+            aria-controls="sidebar-shortcut-editor"
+            onClick={() => setCustomizingShortcuts((open) => !open)}
+          >
+            {customizingShortcuts ? 'Done' : 'Customize'}
+          </button>
+        </div>
+        <div className="sidebar-shortcut-actions" role="group" aria-label="Quick access shortcuts">
+          {shortcuts.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={`sidebar-shortcut-button ${view === item ? 'active' : ''}`}
+              aria-current={view === item ? 'page' : undefined}
+              onClick={() => onChange(item)}
+            >
+              {iconForView(item)}
+              <span>{item === 'today' ? 'Tasks' : VIEW_META[item].label}</span>
+            </button>
+          ))}
+          {shortcuts.length === 0 && <span className="sidebar-shortcuts-empty">Choose up to four sections.</span>}
+        </div>
+        <fieldset className="sidebar-shortcut-editor" id="sidebar-shortcut-editor" hidden={!customizingShortcuts}>
+          <legend>Choose up to four shortcuts</legend>
+          {SIDEBAR_SHORTCUT_OPTIONS.map((item) => {
+            const checked = shortcuts.includes(item)
+            return (
+              <label key={item}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!checked && shortcuts.length >= 4}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked
+                    setShortcuts((current) => checked
+                      ? current.length < 4 ? [...current, item] : current
+                      : current.filter((shortcut) => shortcut !== item))
+                  }}
+                />
+                <span>{item === 'today' ? 'Tasks' : VIEW_META[item].label}</span>
+              </label>
+            )
+          })}
+          <button className="sidebar-shortcut-reset" type="button" onClick={() => setShortcuts([...DEFAULT_SIDEBAR_SHORTCUTS])}>
+            Restore defaults
+          </button>
+        </fieldset>
+      </section>
 
       <nav className="nav" aria-label="Main navigation">
         {visibleGroups.length === 0 && <p className="nav-empty" role="status">No matching sections.</p>}
@@ -188,6 +252,7 @@ function iconForView(view: View): React.JSX.Element {
   const glyphs: Record<Exclude<View, 'chat' | 'memory' | 'finances' | 'workflows' | 'settings' | 'activity'>, string> = {
     coach: '✧',
     today: '◷',
+    work: '▧',
     email: '✉',
     cloud_files: '▤',
     scheduled: '◴',
@@ -198,6 +263,17 @@ function iconForView(view: View): React.JSX.Element {
     skills: '✧'
   }
   return <span className="nav-glyph" aria-hidden="true">{glyphs[view]}</span>
+}
+
+function readSavedShortcuts(): View[] {
+  try {
+    const value = localStorage.getItem(SIDEBAR_SHORTCUT_STORAGE_KEY)
+    return value === null
+      ? [...DEFAULT_SIDEBAR_SHORTCUTS]
+      : normalizeSidebarShortcuts(JSON.parse(value) as unknown)
+  } catch {
+    return [...DEFAULT_SIDEBAR_SHORTCUTS]
+  }
 }
 
 function FinanceIcon(): React.JSX.Element {

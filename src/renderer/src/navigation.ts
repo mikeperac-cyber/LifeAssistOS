@@ -7,6 +7,10 @@ export const VIEW_META = {
     label: 'Today',
     description: 'Your next actions and capture inbox, stored locally.'
   },
+  work: {
+    label: 'Work',
+    description: 'Plan tasks, open work context, and run the workflows you have approved.'
+  },
   email: {
     label: 'Email',
     description: 'Search connected Gmail or Outlook and create local follow-up tasks with per-action approval.'
@@ -68,12 +72,41 @@ export const VIEW_META = {
 export type View = keyof typeof VIEW_META
 
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
-  { label: 'Workspace', items: ['chat', 'today', 'coach'] },
+  { label: 'Workspace', items: ['chat', 'today', 'work', 'coach'] },
   { label: 'Communication', items: ['email'] },
   { label: 'Knowledge', items: ['memory', 'research', 'vault', 'cloud_files', 'teaching'] },
   { label: 'Tools', items: ['scheduled', 'workflows', 'skills', 'integrations', 'finances'] },
   { label: 'System', items: ['activity', 'settings'] }
 ]
+
+export const SIDEBAR_SHORTCUT_STORAGE_KEY = 'mike-assist-sidebar-shortcuts'
+export const DEFAULT_SIDEBAR_SHORTCUTS: View[] = ['today', 'work', 'workflows']
+export const SIDEBAR_SHORTCUT_OPTIONS = Object.keys(VIEW_META) as View[]
+
+export function normalizeSidebarShortcuts(value: unknown): View[] {
+  if (!Array.isArray(value)) return [...DEFAULT_SIDEBAR_SHORTCUTS]
+  return [...new Set(value.filter((item): item is View =>
+    typeof item === 'string' && Object.prototype.hasOwnProperty.call(VIEW_META, item)
+  ))].slice(0, 4)
+}
+
+export function filterNavigationGroups(query: string): Array<{ label: string; items: View[] }> {
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const directMatches = new Set(NAV_GROUPS.flatMap((group) => group.items.filter((item) => {
+    const label = VIEW_META[item].label === 'Assistant' ? 'Chat' : VIEW_META[item].label
+    return label.toLocaleLowerCase().includes(normalizedQuery) ||
+      VIEW_META[item].label.toLocaleLowerCase().includes(normalizedQuery)
+  })))
+
+  return NAV_GROUPS.map((group) => ({
+    label: group.label,
+    items: group.items.filter((item) => !normalizedQuery || (
+      directMatches.size > 0
+        ? directMatches.has(item)
+        : group.label.toLocaleLowerCase().includes(normalizedQuery)
+    ))
+  })).filter((group) => group.items.length > 0)
+}
 
 export function shouldHandleNavigationShortcut(
   event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'defaultPrevented'>,

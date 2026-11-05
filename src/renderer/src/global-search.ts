@@ -4,6 +4,7 @@ import type { ChatMode, InboxItem, MemoryFact, PlanTask, VaultQuickSearchResult 
 const VIEW_KEYWORDS: Record<View, string> = {
   chat: 'assistant conversation conversations ask write create new',
   today: 'task tasks inbox capture reminder reminders plan',
+  work: 'work workspace tasks email files research teaching workflows schedule',
   email: 'mail messages gmail outlook communication follow up followup correspondence',
   cloud_files: 'cloud file files google drive onedrive microsoft storage search read pdf docx xlsx documents',
   coach: 'goal goals habits reflection personal business',

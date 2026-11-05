@@ -77,6 +77,7 @@ import { statusFor, type TimelineItem } from './types'
 
 const ActivityView = lazy(() => import('./components/ActivityView').then((module) => ({ default: module.ActivityView })))
 const FinanceView = lazy(() => import('./components/FinanceView').then((module) => ({ default: module.FinanceView })))
+const WorkView = lazy(() => import('./components/WorkView').then((module) => ({ default: module.WorkView })))
 const MemoryView = lazy(() => import('./components/MemoryView').then((module) => ({ default: module.MemoryView })))
 const WorkflowsView = lazy(() => import('./components/WorkflowsView').then((module) => ({ default: module.WorkflowsView })))
 const ScheduledTasksView = lazy(() => import('./components/ScheduledTasksView').then((module) => ({ default: module.ScheduledTasksView })))
@@ -1741,6 +1742,7 @@ export default function App(): React.JSX.Element {
             />
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
+          {view === 'work' && <WorkView onNavigate={setView} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
             <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
