@@ -132,7 +132,7 @@ describe('Outlook Calendar settings and device-code sign-in', () => {
 describe('Outlook Calendar read-only Graph boundary', () => {
   it('normalizes an offset range, bounds selected fields, sanitizes titles, and pages within the same range', async () => {
     const store = await connectedStore()
-    const requests: Array<{ url: URL; method?: string; maxResponseBytes?: number }> = []
+    const requests: Array<{ url: URL; method?: string; maxResponseBytes?: number; headers?: Record<string, string> }> = []
     const startDateTime = '2026-11-05T00:00:00+03:00'
     const endDateTime = '2026-11-06T00:00:00+03:00'
     const startUtc = '2026-11-04T21:00:00.000Z'
@@ -144,7 +144,7 @@ describe('Outlook Calendar read-only Graph boundary', () => {
     next.searchParams.set('$select', 'id,subject,start,end,location,isAllDay,showAs')
     next.searchParams.set('$skiptoken', 'next-page')
     const request: MicrosoftCalendarRequest = async (url, _signal, options) => {
-      requests.push({ url, method: options.method, maxResponseBytes: options.maxResponseBytes })
+      requests.push({ url, method: options.method, maxResponseBytes: options.maxResponseBytes, headers: options.headers as Record<string, string> })
       if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
       if (url.searchParams.has('$skiptoken')) return response(JSON.stringify({ value: [] }))
       return response(JSON.stringify({ value: [
@@ -177,6 +177,7 @@ describe('Outlook Calendar read-only Graph boundary', () => {
     expect(requests[1]?.url.searchParams.get('$select')).toBe('id,subject,start,end,location,isAllDay,showAs')
     expect(requests[1]?.method).toBe('GET')
     expect(requests[1]?.maxResponseBytes).toBe(1_000_000)
+    expect(requests[1]?.headers?.Prefer).toBe('outlook.timezone="UTC"')
   })
 
   it('refreshes after a 401 and persists token rotation', async () => {

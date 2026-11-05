@@ -3294,6 +3294,10 @@ summary:focus-visible {
 .today-task-export-help { color: var(--faint); }
 .today-task-export-guidance { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 10px; }
 .today-task-export-control > .status-success, .today-task-export-control > .status-error { margin: 7px 0 0; padding: 6px 8px; border-radius: 7px; font-size: 10px; line-height: 1.4; }
+.today-calendar-event-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 5px; }
+.today-calendar-event-actions button { padding: 6px 8px; font-size: 9px; }
+.today-calendar-prep-done { padding: 3px 6px; border: 1px solid rgba(var(--accent-rgb), .22); border-radius: 999px; color: var(--accent); font-size: 9px; white-space: nowrap; }
+.today-calendar-prep-status { margin: 8px 0 0; font-size: 10px; }
 .microsoft-todo-user-code { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 16px; font-weight: 700; letter-spacing: 0.14em; }
 .today-card { padding: 17px; border: 1px solid var(--line-soft); border-radius: 13px; background: var(--panel); }
 .today-card-head { align-items: center; margin-bottom: 13px; }
@@ -3425,6 +3429,7 @@ summary:focus-visible {
   .today-task { align-items: flex-start; }
   .today-task-export-actions { align-items: stretch; flex-direction: column; }
   .today-task-export-actions > button { width: 100%; }
+  .today-calendar-event-actions { align-items: flex-end; }
 }
 
 /* ---------- Integration transparency hub ---------- */

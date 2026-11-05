@@ -1603,7 +1603,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Outlook Calendar</h2>
           <p>
-            Connect Outlook Calendar with the delegated read-only <code>Calendars.ReadBasic</code> permission. Mike Assist only lists events in a bounded time range; it cannot create, edit, or delete events. Each event page asks for approval. Today displays approved events locally. In Chat, approved event details may be sent to your configured model provider and saved with chat history.
+            Connect Outlook Calendar with the delegated read-only <code>Calendars.ReadBasic</code> permission. Mike Assist only reads events in a bounded time range; it cannot create, edit, or delete calendar events. Each event page asks for approval. In Today, you can create a local prep task from a selected event after a separate approval. In Chat, approved event details may be sent to your configured model provider and saved with chat history.
           </p>
         </div>
         {microsoftCalendarSettings ? (

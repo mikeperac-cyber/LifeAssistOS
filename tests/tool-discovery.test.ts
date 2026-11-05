@@ -98,4 +98,17 @@ describe('tool discovery', () => {
     expect(microsoft.tools[0]?.name).toBe('microsoft_todo_create_from_today_task')
     expect(optionalToolDomain('microsoft_todo_create_from_today_task')).toBe('planning')
   })
+
+  it('finds local prep-task creation from calendar event requests', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('create_calendar_prep_task', 'Create a local prep task from a selected Outlook Calendar event after approval.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const result = await discovery.run(
+      { query: 'make a prep task from my Outlook meeting' },
+      { kind: 'none', signal: new AbortController().signal }
+    ) as { tools: Array<{ name: string }> }
+
+    expect(result.tools[0]?.name).toBe('create_calendar_prep_task')
+    expect(optionalToolDomain('create_calendar_prep_task')).toBe('calendar')
+  })
 })

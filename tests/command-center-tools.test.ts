@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PlanningStore } from '../src/core/planning'
 import { VaultStore } from '../src/core/vault'
 import { createCommandCenterTools } from '../src/tools/command-center'
@@ -63,6 +63,42 @@ describe('command-center assistant tools', () => {
 
     vault.close()
     planning.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('creates an approval-gated prep task from a selected all-day calendar event only once', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-calendar-prep-tool-'))
+    const vault = new VaultStore(path.join(dir, 'vault.sqlite'))
+    const planning = new PlanningStore(path.join(dir, 'planning.sqlite'))
+    await vault.init()
+    await planning.init()
+    const onTodayChanged = vi.fn()
+    const tool = createCommandCenterTools(vault, planning, onTodayChanged).find((item) => item.name === 'create_calendar_prep_task')!
+    const args = {
+      provider: 'google_calendar' as const,
+      eventId: 'google-event-123',
+      eventTitle: 'Planning day',
+      start: '2026-11-05',
+      end: '2026-11-06',
+      location: 'Room 4'
+    }
+    const context = { kind: 'none' as const, signal: new AbortController().signal }
+
+    expect(tool.risk).toBe('write')
+    expect(tool.sessionApprovalAllowed).toBe(false)
+    expect(tool.preview!(args, context)).toContain('Event time: all day.')
+    expect(tool.preview!(args, context)).toContain('The calendar is not changed.')
+    expect(await tool.run(args, context)).toMatchObject({ status: 'created', title: 'Prepare for: Planning day', dueDate: '2026-11-05' })
+    expect(await tool.run(args, context)).toMatchObject({ status: 'already_exists' })
+    expect(planning.listTasks(true)).toHaveLength(1)
+    expect(planning.listTasks(true)[0]).toMatchObject({
+      calendarSource: { provider: 'google_calendar', eventId: 'google-event-123' },
+      notes: expect.stringContaining('Location: Room 4')
+    })
+    expect(onTodayChanged).toHaveBeenCalledTimes(1)
+
+    planning.close()
+    vault.close()
     await rm(dir, { recursive: true, force: true })
   })
 })

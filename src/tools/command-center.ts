@@ -1,7 +1,12 @@
 import { z } from 'zod'
-import type { EmailTaskProvider, TaskExportProvider, ToolDef } from '../shared/types'
+import type { CalendarTaskProvider, EmailTaskProvider, TaskExportProvider, ToolDef } from '../shared/types'
 import type { PlanningStore } from '../core/planning'
 import type { VaultStore } from '../core/vault'
+
+const calendarEventTimeSchema = z.union([
+  z.string().datetime({ offset: true }),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealDateOnly, 'Use a real all-day event date.')
+])
 
 export function createCommandCenterTools(vault: VaultStore, planning: PlanningStore, onTodayChanged: () => void = () => undefined): ToolDef<any, any>[] {
   const searchVault: ToolDef<{ query: string }, unknown> = {
@@ -80,6 +85,85 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     run: async ({ provider, messageId, ...task }) => { const created = planning.addTask({ ...task, emailSource: { provider, messageId } }); onTodayChanged(); return created }
   }
 
+  const createCalendarPrepTask: ToolDef<{
+    provider: CalendarTaskProvider
+    eventId: string
+    eventTitle: string
+    start: string
+    end: string
+    isAllDay?: boolean
+    location?: string
+    taskTitle?: string
+    priority?: 'low' | 'normal' | 'high'
+  }, unknown> = {
+    name: 'create_calendar_prep_task',
+    description: 'Create one local Today prep task from a selected event returned by an approved Google Calendar or Outlook Calendar read. Use the event ID, title, times, and location from that selected event; this tool does not access or change the calendar. The source event is stored locally and duplicate conversions return the existing task. Requires a separate approval for each selected event.',
+    risk: 'write',
+    sessionApprovalAllowed: false,
+    input: z.object({
+      provider: z.enum(['google_calendar', 'microsoft_calendar']),
+      eventId: z.string().trim().min(1).max(1_024).refine((id) => !/[\u0000-\u001f\u007f]/.test(id), 'Calendar event IDs cannot contain control characters.'),
+      eventTitle: z.string().trim().min(1).max(500),
+      start: calendarEventTimeSchema,
+      end: calendarEventTimeSchema,
+      isAllDay: z.boolean().optional(),
+      location: z.string().trim().max(300).optional(),
+      taskTitle: z.string().trim().min(1).max(240).optional(),
+      priority: z.enum(['low', 'normal', 'high']).optional()
+    }).superRefine((args, context) => {
+      if (Date.parse(args.end) <= Date.parse(args.start)) context.addIssue({ code: 'custom', message: 'The event must end after it starts.' })
+      if (args.isAllDay === false && (!args.start.includes('T') || !args.end.includes('T'))) {
+        context.addIssue({ code: 'custom', message: 'Timed events need date-time values.' })
+      }
+    }),
+    scope: () => ({ kind: 'none' }),
+    preview: (args) => {
+      const eventTitle = safeCalendarText(args.eventTitle)
+      const title = safeCalendarText(args.taskTitle ?? `Prepare for: ${eventTitle}`).slice(0, 240)
+      const allDay = args.isAllDay ?? !args.start.includes('T')
+      const date = calendarEventDueDate(args.start, allDay)
+      const provider = args.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'
+      return [
+        `Create a local prep task from ${provider}: “${eventTitle}”.`,
+        `Task title: ${title}`,
+        `Due date: ${date}`,
+        allDay ? 'Event time: all day.' : `Event time: ${args.start} to ${args.end}`,
+        args.location ? `Location saved locally: ${safeCalendarText(args.location)}` : undefined,
+        `Priority: ${args.priority ?? 'normal'}.`,
+        'The calendar is not changed. The local task stores the event ID to prevent duplicate conversions.'
+      ].filter(Boolean).join('\n')
+    },
+    run: async (args) => {
+      const eventTitle = safeCalendarText(args.eventTitle)
+      const taskTitle = safeCalendarText(args.taskTitle ?? `Prepare for: ${eventTitle}`).slice(0, 240)
+      const location = args.location ? safeCalendarText(args.location).slice(0, 300) : ''
+      const notes = [
+        `Calendar event: ${eventTitle}`,
+        `Starts: ${args.start}`,
+        `Ends: ${args.end}`,
+        (args.isAllDay ?? !args.start.includes('T')) ? 'All-day event' : undefined,
+        location ? `Location: ${location}` : undefined
+      ].filter(Boolean).join('\n').slice(0, 2_000)
+      const result = planning.addCalendarPrepTask({
+        title: taskTitle,
+        notes,
+        dueDate: calendarEventDueDate(args.start, args.isAllDay ?? !args.start.includes('T')),
+        priority: args.priority ?? 'normal',
+        calendarSource: { provider: args.provider, eventId: args.eventId }
+      })
+      if (result.created) onTodayChanged()
+      return {
+        status: result.created ? 'created' : 'already_exists',
+        taskId: result.task.id,
+        title: result.task.title,
+        dueDate: result.task.dueDate,
+        provider: args.provider,
+        eventId: args.eventId,
+        note: result.created ? 'Created a local task; the calendar event was not changed.' : 'A task from this event already exists; no duplicate was created.'
+      }
+    }
+  }
+
   const updateTask: ToolDef<{
     id: string
     title?: string
@@ -139,5 +223,19 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     }
   }
 
-  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, updateTask, completeTask, clearTaskExportRetryGuard]
+  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, createCalendarPrepTask, updateTask, completeTask, clearTaskExportRetryGuard]
+}
+
+function safeCalendarText(value: string): string { return value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim() }
+
+function calendarEventDueDate(start: string, isAllDay: boolean): string {
+  if (isAllDay) return start.slice(0, 10)
+  const date = new Date(start)
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function isRealDateOnly(value: string): boolean {
+  const time = Date.parse(`${value}T00:00:00.000Z`)
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value
 }

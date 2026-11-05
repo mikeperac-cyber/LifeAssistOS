@@ -233,6 +233,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
                 <div className="today-task-copy">
                   <strong>{item.title}</strong>
                   {item.emailSource && <span className="today-task-source" title={`Message ID: ${item.emailSource.messageId}`}>From {item.emailSource.provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
+                  {item.calendarSource && <span className="today-task-source">From {item.calendarSource.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'}</span>}
                   {item.taskExports?.map((exported) => (
                     <span className={`today-task-export export-${exported.status}`} key={`${exported.provider}:${exported.taskListId}`} title={exportStatusTitle(exported.status)}>
                       {exported.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} · {exportStatusLabel(exported.status)}
@@ -371,6 +372,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
       />
       <MicrosoftCalendarPanel
         settings={microsoftCalendarSettings}
+        todayTasks={snapshot.tasks}
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}

@@ -58,7 +58,7 @@ import type {
   ToolCall,
   ToolContext
 } from '../shared/types'
-import type { TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type { CalendarPrepTaskInput, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import { createFileCheckpointTools, createWriteFileTool, fsTools } from '../tools/fs'
 import { readPdfTool } from '../tools/pdf'
 import { readOfficeDocumentTool } from '../tools/office-document'
@@ -177,6 +177,18 @@ function isTodayTaskExportClearInput(value: unknown): value is TodayTaskExportCl
   return (input.provider === 'google_tasks' || input.provider === 'microsoft_todo') &&
     typeof input.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.taskId) &&
     typeof input.taskListId === 'string' && input.taskListId.length > 0 && input.taskListId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.taskListId)
+}
+
+function isCalendarPrepTaskInput(value: unknown): value is CalendarPrepTaskInput {
+  if (!value || typeof value !== 'object') return false
+  const input = value as Partial<CalendarPrepTaskInput>
+  const validDateTime = (date: unknown): date is string => typeof date === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(date) && Number.isFinite(Date.parse(date))
+  return (input.provider === 'google_calendar' || input.provider === 'microsoft_calendar') &&
+    typeof input.eventId === 'string' && input.eventId.trim().length > 0 && input.eventId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.eventId) &&
+    typeof input.eventTitle === 'string' && input.eventTitle.trim().length > 0 && input.eventTitle.length <= 500 && !/[\u0000-\u001f\u007f]/.test(input.eventTitle) &&
+    validDateTime(input.start) && validDateTime(input.end) && Date.parse(input.end) > Date.parse(input.start) &&
+    typeof input.isAllDay === 'boolean' && (input.location === undefined || (typeof input.location === 'string' && input.location.length <= 300 && !/[\u0000-\u001f\u007f]/.test(input.location)))
 }
 
 if (!hasSingleInstanceLock) {
@@ -1971,7 +1983,7 @@ function registerIpc(): void {
   })
 
   const runTaskActionWithApproval = async (
-    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'clear_task_export_retry_guard',
+    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'create_calendar_prep_task' | 'clear_task_export_retry_guard',
     args: unknown,
     summary: string
   ): Promise<{ ok: boolean; output?: unknown; error?: string; denied?: boolean; outcomeUnknown?: boolean }> => {
@@ -2045,6 +2057,13 @@ function registerIpc(): void {
       input,
       `Clear the local retry guard for this task in ${label}. Check the remote list first.`
     )
+  })
+
+  ipcMain.handle('assist:calendar-prep-task', async (_event, input: unknown) => {
+    if (!isCalendarPrepTaskInput(input)) return { ok: false, error: 'Choose a valid calendar event to turn into a local prep task.' }
+    const eventTitle = input.eventTitle.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120)
+    const provider = input.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'
+    return runTaskActionWithApproval('create_calendar_prep_task', input, `Create a local prep task from ${provider} event “${eventTitle}”`)
   })
 
   ipcMain.handle('assist:microsoft-todo-settings', () =>

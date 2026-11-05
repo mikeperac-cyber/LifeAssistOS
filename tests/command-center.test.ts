@@ -144,6 +144,37 @@ describe('Today planning store', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('converts a calendar event into one durable prep task and deduplicates retries', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-calendar-prep-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const input = {
+      title: 'Prepare for: Annual review',
+      notes: 'Calendar event: Annual review\nStarts: 2026-11-05T10:00:00.000Z',
+      dueDate: '2026-11-05',
+      calendarSource: { provider: 'microsoft_calendar' as const, eventId: 'AAMk-event-123' }
+    }
+    const first = store.addCalendarPrepTask(input)
+    const retry = store.addCalendarPrepTask({ ...input, title: 'Prepare a different agenda' })
+    expect(first.created).toBe(true)
+    expect(retry.created).toBe(false)
+    expect(retry.task.id).toBe(first.task.id)
+    expect(retry.task.title).toBe(input.title)
+    expect(store.getTask(first.task.id)).toMatchObject({
+      dueDate: '2026-11-05',
+      calendarSource: { provider: 'microsoft_calendar', eventId: 'AAMk-event-123' }
+    })
+    store.close()
+
+    const reopened = new PlanningStore(file)
+    await reopened.init()
+    expect(reopened.listTasks(true)).toHaveLength(1)
+    expect(reopened.getTask(first.task.id).calendarSource).toEqual(input.calendarSource)
+    reopened.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('prevents duplicate provider-task sends and leaves interrupted sends for manual review', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-export-'))
     const file = path.join(dir, 'planning.sqlite')
@@ -192,6 +223,7 @@ describe('Today planning store', () => {
     await store.init()
     expect(store.getTask('legacy-task')).toMatchObject({ title: 'Keep this task', remindAt: null })
     expect(store.getTask('legacy-task')?.emailSource).toBeUndefined()
+    expect(store.getTask('legacy-task')?.calendarSource).toBeUndefined()
     const linked = store.addTask({ title: 'Follow up on legacy task', emailSource: { provider: 'outlook', messageId: 'legacy-db-message' } })
     expect(store.getTask(linked.id).emailSource).toEqual({ provider: 'outlook', messageId: 'legacy-db-message' })
     store.close()

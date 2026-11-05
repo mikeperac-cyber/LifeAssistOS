@@ -660,6 +660,13 @@ export interface EmailTaskSource {
   messageId: string
 }
 
+export type CalendarTaskProvider = 'google_calendar' | 'microsoft_calendar'
+
+export interface CalendarTaskSource {
+  provider: CalendarTaskProvider
+  eventId: string
+}
+
 export interface PlanTask {
   id: string
   title: string
@@ -675,6 +682,7 @@ export interface PlanTask {
   sourceInboxId?: string
   sourceGoalId?: string
   emailSource?: EmailTaskSource
+  calendarSource?: CalendarTaskSource
   taskExports?: TaskExportRecord[]
 }
 

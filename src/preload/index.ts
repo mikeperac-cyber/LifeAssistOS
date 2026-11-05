@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AssistApi, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type { AssistApi, CalendarPrepTaskInput, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import type { ApprovalChoice, AssistantSkillInput, MemoryFactPatch, McpServerInput } from '../shared/types'
 import type { AssistEvent } from '../shared/types'
 
@@ -143,6 +143,7 @@ const api: AssistApi = {
   disconnectMicrosoftCalendar: () => ipcRenderer.invoke('assist:microsoft-calendar-disconnect'),
   listMicrosoftCalendarEvents: (startDateTime?: string, endDateTime?: string, pageToken?: string) =>
     ipcRenderer.invoke('assist:microsoft-calendar-list-events', startDateTime, endDateTime, pageToken),
+  createCalendarPrepTask: (input: CalendarPrepTaskInput) => ipcRenderer.invoke('assist:calendar-prep-task', input),
   getMicrosoftMailSettings: () => ipcRenderer.invoke('assist:microsoft-mail-settings'),
   updateMicrosoftMailClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-mail-client-id-update', clientId),
   beginMicrosoftMailConnect: () => ipcRenderer.invoke('assist:microsoft-mail-connect-begin'),

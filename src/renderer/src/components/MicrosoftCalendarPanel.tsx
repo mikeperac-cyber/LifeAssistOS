@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { MicrosoftCalendarEvent } from '../../../shared/types'
+import type { MicrosoftCalendarEvent, PlanTask } from '../../../shared/types'
 import type { PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 
-export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onSettingsRefresh }: {
+export function MicrosoftCalendarPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh }: {
   settings: PublicMicrosoftCalendarSettings | null
+  todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
   onSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
@@ -14,7 +15,12 @@ export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onS
   const [range, setRange] = useState<{ startDateTime: string; endDateTime: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [creatingEventId, setCreatingEventId] = useState('')
+  const [createdEventIds, setCreatedEventIds] = useState<Set<string>>(() => new Set())
+  const [prepError, setPrepError] = useState('')
+  const [prepMessage, setPrepMessage] = useState('')
   const busyRef = useRef(false)
+  const prepBusyRef = useRef(false)
   const requestVersion = useRef(0)
 
   useEffect(() => {
@@ -25,6 +31,9 @@ export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onS
     setNextPageToken(undefined)
     setRange(null)
     setError('')
+    setCreatedEventIds(new Set())
+    setPrepError('')
+    setPrepMessage('')
   }, [settings?.connected])
 
   useEffect(() => () => { requestVersion.current += 1 }, [])
@@ -58,13 +67,43 @@ export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onS
     }
   }
 
+  const createPrepTask = async (event: MicrosoftCalendarEvent): Promise<void> => {
+    if (prepBusyRef.current) return
+    prepBusyRef.current = true
+    setCreatingEventId(event.id)
+    setPrepError('')
+    setPrepMessage('')
+    try {
+      const result = await window.assist.createCalendarPrepTask({
+        provider: 'microsoft_calendar',
+        eventId: event.id,
+        eventTitle: event.title,
+        start: event.start,
+        end: event.end,
+        isAllDay: event.isAllDay,
+        ...(event.location ? { location: event.location } : {})
+      })
+      if (!result.ok) throw new Error(result.error ?? 'Could not create a prep task from this event.')
+      const output = result.output !== null && typeof result.output === 'object' ? result.output as { status?: unknown; title?: unknown } : undefined
+      setCreatedEventIds((current) => new Set(current).add(event.id))
+      setPrepMessage(output?.status === 'already_exists'
+        ? 'A local task from this event already exists.'
+        : `Prep task created${typeof output?.title === 'string' ? `: ${output.title}` : ''}.`)
+    } catch (cause) {
+      setPrepError(errorText(cause, 'Could not create a prep task from this event.'))
+    } finally {
+      prepBusyRef.current = false
+      setCreatingEventId('')
+    }
+  }
+
   return (
     <section className="today-card today-google-tasks" aria-labelledby="microsoft-calendar-title">
       <div className="today-card-head">
         <h3 id="microsoft-calendar-title">Outlook Calendar</h3>
         {settings?.connected && events.length > 0 && <span>{events.length} events</span>}
       </div>
-      <p className="today-google-tasks-note">Read-only connection. Loading each event page asks for approval. Chat may send approved event details to your configured model provider.</p>
+      <p className="today-google-tasks-note">Loading each event page asks for approval. Create a local prep task from a selected event with its own approval; the calendar stays unchanged. Chat may send approved event details to your configured model provider.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking Outlook Calendar connection…</p>
       ) : !settings.connected ? (
@@ -88,7 +127,16 @@ export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onS
                     <span>{formatEventTime(event)}</span>
                     {event.location && <span>{event.location}</span>}
                   </div>
-                  {event.showAs && <span className="today-google-task-status">{formatShowAs(event.showAs)}</span>}
+                  <div className="today-calendar-event-actions">
+                    {event.showAs && <span className="today-google-task-status">{formatShowAs(event.showAs)}</span>}
+                    {todayTasks.some((task) => task.calendarSource?.provider === 'microsoft_calendar' && task.calendarSource.eventId === event.id) || createdEventIds.has(event.id) ? (
+                      <span className="today-calendar-prep-done">Prep task added</span>
+                    ) : (
+                      <button className="ghost-button" type="button" aria-label={`Create a prep task from ${event.title}`} onClick={() => void createPrepTask(event)} disabled={disabled || Boolean(creatingEventId)}>
+                        {creatingEventId === event.id ? 'Waiting for approval…' : 'Create prep task'}
+                      </button>
+                    )}
+                  </div>
                 </article>
               ))}
             </div>
@@ -97,6 +145,8 @@ export function MicrosoftCalendarPanel({ settings, disabled, onOpenSettings, onS
           ) : null}
           {nextPageToken && <button className="ghost-button" type="button" onClick={() => void load(nextPageToken)} disabled={disabled || busy}>Load more events</button>}
           {error && <p className="status-error" role="alert">{error}</p>}
+          {prepMessage && <p className="status-success today-calendar-prep-status" role="status">{prepMessage}</p>}
+          {prepError && <p className="status-error today-calendar-prep-status" role="alert">{prepError}</p>}
         </>
       )}
     </section>

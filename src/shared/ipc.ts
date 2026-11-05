@@ -44,6 +44,7 @@ import type {
   MicrosoftMailMessageSummary,
   MicrosoftTodoTask,
   MicrosoftTodoTaskList,
+  CalendarTaskProvider,
   TaskExportProvider
 } from './types'
 
@@ -253,6 +254,16 @@ export interface TodayTaskExportActionResult {
   error?: string
   denied?: boolean
   outcomeUnknown?: boolean
+}
+
+export interface CalendarPrepTaskInput {
+  provider: CalendarTaskProvider
+  eventId: string
+  eventTitle: string
+  start: string
+  end: string
+  isAllDay: boolean
+  location?: string
 }
 
 export interface MicrosoftTodoSettingsResult {
@@ -608,6 +619,7 @@ export interface AssistApi {
   cancelMicrosoftCalendarConnect(): Promise<MicrosoftCalendarConnectStatusResult>
   disconnectMicrosoftCalendar(): Promise<MicrosoftCalendarSettingsResult>
   listMicrosoftCalendarEvents(startDateTime?: string, endDateTime?: string, pageToken?: string): Promise<MicrosoftCalendarEventsReadResult>
+  createCalendarPrepTask(input: CalendarPrepTaskInput): Promise<TodayTaskExportActionResult>
 
   getMicrosoftMailSettings(): Promise<PublicMicrosoftMailSettings>
   updateMicrosoftMailClientId(clientId: string): Promise<MicrosoftMailSettingsResult>

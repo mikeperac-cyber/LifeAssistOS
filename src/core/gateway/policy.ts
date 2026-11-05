@@ -59,6 +59,7 @@ export const defaultPolicy: PolicyConfig = {
     microsoft_todo_list_tasks: 'ask',
     microsoft_todo_create_from_today_task: 'ask',
     microsoft_calendar_list_events: 'ask',
+    create_calendar_prep_task: 'ask',
     microsoft_mail_search_messages: 'ask',
     microsoft_mail_read_message: 'ask',
     search_vault: 'allow',

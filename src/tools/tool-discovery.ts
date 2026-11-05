@@ -66,8 +66,8 @@ function aliasesForTool(name: string): string {
   if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft' || name === 'create_email_followup_task') {
     return 'eposta mail gelen kutusu taslak gonder yanit alici task followup follow-up task from email email follow-up make a task'
   }
-  if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') {
-    return 'outlook calendar event meeting appointment agenda availability takvim etkinlik toplanti randevu musaitlik ajanda'
+  if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event' || name === 'create_calendar_prep_task') {
+    return 'outlook calendar event meeting appointment agenda availability prepare prep task follow-up takvim etkinlik toplanti randevu musaitlik ajanda hazirlik gorev'
   }
   if (name.startsWith('google_drive_')) {
     return 'drive dokuman belge dosya klasor sunum tablo rapor teklif sozlesme'

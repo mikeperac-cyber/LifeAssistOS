@@ -74,6 +74,7 @@ describe('defaultPolicy completeness', () => {
 
     expect(missing).toEqual([])
     expect(resolveDecision('create_email_followup_task', 'write', defaultPolicy).decision).toBe('ask')
+    expect(resolveDecision('create_calendar_prep_task', 'write', defaultPolicy).decision).toBe('ask')
     expect(resolveDecision('google_tasks_create_from_today_task', 'external', defaultPolicy).decision).toBe('ask')
     expect(resolveDecision('microsoft_todo_create_from_today_task', 'external', defaultPolicy).decision).toBe('ask')
     expect(resolveDecision('clear_task_export_retry_guard', 'write', defaultPolicy).decision).toBe('ask')

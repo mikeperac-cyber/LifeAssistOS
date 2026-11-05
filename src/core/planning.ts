@@ -3,10 +3,10 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TodaySnapshot } from '../shared/types'
+import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TodaySnapshot } from '../shared/types'
 import { assertDateOnly } from '../shared/date-only'
 
-interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null }
+interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null }
 interface InboxRow { id: string; text: string; created_at: string; converted_task_id: string | null; dismissed_at: string | null }
 interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string }
 
@@ -34,7 +34,9 @@ export class PlanningStore {
         status TEXT NOT NULL CHECK (status IN ('open', 'done', 'cancelled')),
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, source_inbox_id TEXT, source_goal_id TEXT,
         source_email_provider TEXT CHECK (source_email_provider IS NULL OR source_email_provider IN ('gmail', 'outlook')),
-        source_email_message_id TEXT
+        source_email_message_id TEXT,
+        source_calendar_provider TEXT CHECK (source_calendar_provider IS NULL OR source_calendar_provider IN ('google_calendar', 'microsoft_calendar')),
+        source_calendar_event_id TEXT
       );
       CREATE TABLE IF NOT EXISTS inbox (
         id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -53,6 +55,9 @@ export class PlanningStore {
     if (!columns.some((column) => column.name === 'source_goal_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_goal_id TEXT')
     if (!columns.some((column) => column.name === 'source_email_provider')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_provider TEXT')
     if (!columns.some((column) => column.name === 'source_email_message_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_message_id TEXT')
+    if (!columns.some((column) => column.name === 'source_calendar_provider')) this.db.exec("ALTER TABLE tasks ADD COLUMN source_calendar_provider TEXT CHECK (source_calendar_provider IS NULL OR source_calendar_provider IN ('google_calendar', 'microsoft_calendar'))")
+    if (!columns.some((column) => column.name === 'source_calendar_event_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_calendar_event_id TEXT')
+    this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tasks_calendar_source ON tasks(source_calendar_provider, source_calendar_event_id) WHERE source_calendar_event_id IS NOT NULL')
     if (!columns.some((column) => column.name === 'remind_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT')
     if (!columns.some((column) => column.name === 'reminder_notified_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN reminder_notified_at TEXT')
     this.db.prepare("UPDATE task_exports SET status = 'uncertain', updated_at = ? WHERE status = 'sending'").run(new Date().toISOString())
@@ -70,16 +75,41 @@ export class PlanningStore {
     return this.attachTaskExports(rows.map(taskFromRow))
   }
 
-  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource }): PlanTask {
+  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource; calendarSource?: CalendarTaskSource }): PlanTask {
     const title = input.title.trim().slice(0, 240)
     if (!title) throw new Error('A task needs a title.')
     const priority = input.priority ?? 'normal'
     if (!['low', 'normal', 'high'].includes(priority)) throw new Error('Choose a valid task priority.')
     const now = new Date().toISOString()
     const emailSource = input.emailSource ? normalizeEmailTaskSource(input.emailSource) : undefined
-    const task: PlanTask = { id: randomUUID(), title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource }
-    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null)
+    const calendarSource = input.calendarSource ? normalizeCalendarTaskSource(input.calendarSource) : undefined
+    const task: PlanTask = { id: randomUUID(), title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource, calendarSource }
+    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id, source_calendar_provider, source_calendar_event_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null, task.calendarSource?.provider ?? null, task.calendarSource?.eventId ?? null)
     return task
+  }
+
+  addCalendarPrepTask(input: {
+    title: string
+    notes?: string
+    dueDate?: string | null
+    priority?: PlanTaskPriority
+    calendarSource: CalendarTaskSource
+  }): { task: PlanTask; created: boolean } {
+    const source = normalizeCalendarTaskSource(input.calendarSource)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db.prepare('SELECT * FROM tasks WHERE source_calendar_provider = ? AND source_calendar_event_id = ?').get(source.provider, source.eventId) as TaskRow | undefined
+      if (existing) {
+        this.db.exec('COMMIT')
+        return { task: this.attachTaskExports([taskFromRow(existing)])[0]!, created: false }
+      }
+      const task = this.addTask({ ...input, calendarSource: source })
+      this.db.exec('COMMIT')
+      return { task, created: true }
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
   }
 
   updateTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; status?: PlanTaskStatus }): PlanTask {
@@ -203,7 +233,7 @@ export class PlanningStore {
   }
 }
 
-function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined } }
+function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined, calendarSource: isCalendarTaskProvider(row.source_calendar_provider) && row.source_calendar_event_id ? { provider: row.source_calendar_provider, eventId: row.source_calendar_event_id } : undefined } }
 function inboxFromRow(row: InboxRow): InboxItem { return { id: row.id, text: row.text, createdAt: row.created_at, convertedTaskId: row.converted_task_id, dismissedAt: row.dismissed_at } }
 function normalizeEmailTaskSource(source: EmailTaskSource): EmailTaskSource {
   if (!isEmailTaskProvider(source.provider)) throw new Error('Choose Gmail or Outlook as the email source.')
@@ -211,7 +241,14 @@ function normalizeEmailTaskSource(source: EmailTaskSource): EmailTaskSource {
   if (!messageId || messageId.length > 512 || /[\u0000-\u001f\u007f]/.test(messageId)) throw new Error('Provide a valid email message ID.')
   return { provider: source.provider, messageId }
 }
+function normalizeCalendarTaskSource(source: CalendarTaskSource): CalendarTaskSource {
+  if (!isCalendarTaskProvider(source.provider)) throw new Error('Choose Google Calendar or Outlook Calendar as the event source.')
+  const eventId = source.eventId.trim()
+  if (!eventId || eventId.length > 1_024 || /[\u0000-\u001f\u007f]/.test(eventId)) throw new Error('Provide a valid calendar event ID.')
+  return { provider: source.provider, eventId }
+}
 function isEmailTaskProvider(value: string | null): value is EmailTaskProvider { return value === 'gmail' || value === 'outlook' }
+function isCalendarTaskProvider(value: string | null): value is CalendarTaskProvider { return value === 'google_calendar' || value === 'microsoft_calendar' }
 function taskExportFromRow(row: TaskExportRow): TaskExportRecord { return { provider: row.provider, taskListId: row.task_list_id, status: row.status, ...(row.remote_task_id ? { remoteTaskId: row.remote_task_id } : {}), updatedAt: row.updated_at } }
 function validateTaskExportTarget(provider: TaskExportProvider, taskListId: string): void {
   if (provider !== 'google_tasks' && provider !== 'microsoft_todo') throw new Error('Choose Google Tasks or Microsoft To Do as the destination.')

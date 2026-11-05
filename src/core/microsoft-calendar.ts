@@ -244,7 +244,7 @@ export class MicrosoftCalendarService {
     }
     const makeRequest = async (token: string): Promise<ResponseBody> => this.request(url, signal, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', Prefer: 'outlook.timezone="UTC"' },
       maxResponseBytes: 1_000_000,
       timeoutMs: 15_000
     })
