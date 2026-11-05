@@ -65,6 +65,7 @@ import type {
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
+import { speakWithLocalVoice } from './local-speech'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
 import { Sidebar } from './components/Sidebar'
@@ -180,16 +181,6 @@ function StartupLoadNotice({
       {!loading && <button className="ghost-button" type="button" onClick={onRetry}>Retry</button>}
     </div>
   )
-}
-
-function speakWithLocalVoice(text: string): void {
-  if (typeof window === 'undefined' || !window.speechSynthesis) return
-  const voice = window.speechSynthesis.getVoices().find((candidate) => candidate.localService)
-  if (!voice) return
-  const utterance = new SpeechSynthesisUtterance(text.slice(0, 4000))
-  utterance.voice = voice
-  window.speechSynthesis.cancel()
-  window.speechSynthesis.speak(utterance)
 }
 
 function upsertMessage(items: TimelineItem[], message: ChatMessage): TimelineItem[] {

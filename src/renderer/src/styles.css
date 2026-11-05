@@ -3511,6 +3511,11 @@ summary:focus-visible {
 .cloud-files-result .cloud-files-path { color: var(--muted); }
 .cloud-files-reader { min-height: 250px; }
 .cloud-files-text { max-height: 560px; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-files-speech { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 9px 0 12px; }
+.cloud-files-speech > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.cloud-files-speech .ghost-button { padding: 7px 9px; font-size: 9px; }
+.cloud-files-speech > span { color: var(--faint); font-size: 9px; line-height: 1.4; }
+.cloud-files-speech p { margin: 0; }
 .cloud-files-reader > .ghost-button { padding: 6px 8px; font-size: 9px; }
 .cloud-files-follow-ups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 9px; margin: 12px 0; }
 .cloud-files-follow-up { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }

@@ -8,9 +8,11 @@ import type {
   PublicMicrosoftOneDriveSettings
 } from '../../../shared/ipc'
 import { MAX_CHAT_MESSAGE_CHARS } from '../../../shared/types'
+import { getLocalSpeechVoiceWhenReady } from '../local-speech'
 
 const MAX_RETAINED_READ_PARTS = 10
 const MAX_CHAT_PROMPT_CHARS = MAX_CHAT_MESSAGE_CHARS - 500
+const MAX_SPEECH_CHUNK_CHARS = 2_400
 
 function providerName(provider: ConnectedFileProvider): string {
   return provider === 'google_drive' ? 'Google Drive' : 'Microsoft OneDrive'
@@ -89,6 +91,79 @@ export function buildCloudFileChatPrompt(
   return text.length > 0 && bestIncludedLength === 0 ? '' : best
 }
 
+export function splitCloudFileTextForSpeech(text: string, maxChars = MAX_SPEECH_CHUNK_CHARS): string[] {
+  const clean = text.trim()
+  if (!clean) return []
+  const requestedChunkLimit = Math.floor(maxChars)
+  const chunkLimit = Number.isFinite(requestedChunkLimit) ? Math.max(2, requestedChunkLimit) : MAX_SPEECH_CHUNK_CHARS
+  const chunks: string[] = []
+  let start = 0
+  while (start < clean.length) {
+    let end = Math.min(start + chunkLimit, clean.length)
+    if (end < clean.length) {
+      const minimumBoundary = start + Math.floor(chunkLimit * 0.6)
+      const segment = clean.slice(start, end)
+      const sentenceBoundary = Math.max(
+        segment.lastIndexOf('. '), segment.lastIndexOf('! '), segment.lastIndexOf('? '),
+        segment.lastIndexOf('; '), segment.lastIndexOf('\n')
+      )
+      if (sentenceBoundary >= minimumBoundary - start) {
+        end = start + sentenceBoundary + 1
+      } else {
+        for (let index = end; index > minimumBoundary; index -= 1) {
+          if (/\s/u.test(clean[index - 1])) {
+            end = index - 1
+            break
+          }
+        }
+      }
+    }
+    if (
+      end < clean.length && end > start &&
+      clean.charCodeAt(end - 1) >= 0xD800 && clean.charCodeAt(end - 1) <= 0xDBFF &&
+      clean.charCodeAt(end) >= 0xDC00 && clean.charCodeAt(end) <= 0xDFFF
+    ) end -= 1
+    if (end <= start) end = Math.min(start + chunkLimit, clean.length)
+    const chunk = clean.slice(start, end).trim()
+    if (chunk) chunks.push(chunk)
+    start = end
+    while (start < clean.length && /\s/u.test(clean[start])) start += 1
+  }
+  return chunks
+}
+
+function speakCloudFileChunk(
+  generation: number,
+  index: number,
+  chunks: string[],
+  voice: SpeechSynthesisVoice,
+  isCurrent: (generation: number) => boolean,
+  onComplete: () => void,
+  onError: (message: string) => void
+): void {
+  if (!isCurrent(generation)) return
+  try {
+    const utterance = new SpeechSynthesisUtterance(chunks[index])
+    utterance.voice = voice
+    utterance.onend = () => {
+      if (!isCurrent(generation)) return
+      if (index + 1 < chunks.length) {
+        speakCloudFileChunk(generation, index + 1, chunks, voice, isCurrent, onComplete, onError)
+      } else {
+        onComplete()
+      }
+    }
+    utterance.onerror = (event) => {
+      if (!isCurrent(generation)) return
+      if (event.error === 'interrupted' || event.error === 'canceled') onError('Read aloud stopped.')
+      else onError(`Local speech failed: ${event.error}.`)
+    }
+    window.speechSynthesis.speak(utterance)
+  } catch (error) {
+    onError(error instanceof Error ? error.message : String(error))
+  }
+}
+
 function displaySize(size: string | number | undefined): string | null {
   const bytes = typeof size === 'number' ? size : typeof size === 'string' && /^\d+$/.test(size) ? Number(size) : NaN
   if (!Number.isSafeInteger(bytes) || bytes < 0) return null
@@ -152,7 +227,11 @@ export function ConnectedFilesView({
   const [chatPrepareError, setChatPrepareError] = useState('')
   const [captureSaved, setCaptureSaved] = useState(false)
   const [taskCreated, setTaskCreated] = useState(false)
+  const [speechState, setSpeechState] = useState<'idle' | 'loading' | 'speaking' | 'paused'>('idle')
+  const [speechStatus, setSpeechStatus] = useState('')
+  const [speechError, setSpeechError] = useState('')
   const localActionBusy = useRef(false)
+  const speechGeneration = useRef(0)
   const requestVersion = useRef(0)
   const mounted = useRef(true)
 
@@ -168,11 +247,21 @@ export function ConnectedFilesView({
     setTaskCreated(false)
   }, [])
 
+  const stopSpeech = useCallback((): void => {
+    speechGeneration.current += 1
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
+    setSpeechState('idle')
+    setSpeechStatus('')
+    setSpeechError('')
+  }, [])
+
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
       requestVersion.current += 1
+      speechGeneration.current += 1
+      window.speechSynthesis?.cancel()
     }
   }, [])
 
@@ -192,10 +281,12 @@ export function ConnectedFilesView({
     setReadOutput(null)
     setReadError('')
     resetLocalFollowUps()
-  }, [availableProviders.join('|'), provider, resetLocalFollowUps])
+    stopSpeech()
+  }, [availableProviders.join('|'), provider, resetLocalFollowUps, stopSpeech])
 
   const chooseProvider = (value: ConnectedFileProvider): void => {
     if (value === provider || disabled || action) return
+    stopSpeech()
     requestVersion.current += 1
     setProvider(value)
     setFiles([])
@@ -222,6 +313,7 @@ export function ConnectedFilesView({
     setReadError('')
     setSearchNote('')
     if (!pageToken) {
+      stopSpeech()
       setFiles([])
       setNextPageToken(null)
       setSelectedFile(null)
@@ -262,6 +354,7 @@ export function ConnectedFilesView({
 
   const readFile = async (file: ConnectedCloudFile, cursor?: Partial<ConnectedCloudFileReadInput>): Promise<void> => {
     const version = ++requestVersion.current
+    stopSpeech()
     setAction('read')
     setReadError('')
     try {
@@ -374,6 +467,58 @@ export function ConnectedFilesView({
     if (!prompt || !onPrepareChat(prompt)) {
       setChatPrepareError('The current Chat draft changed or is too long to combine. Shorten it, then prepare this extract again.')
     }
+  }
+
+  const playSpeech = async (): Promise<void> => {
+    if (typeof window === 'undefined' || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') {
+      setSpeechError('Local read-aloud is not available on this device.')
+      return
+    }
+    const chunks = splitCloudFileTextForSpeech(visibleReadText)
+    if (!chunks.length) return
+    const generation = ++speechGeneration.current
+    window.speechSynthesis.cancel()
+    setSpeechError('')
+    setSpeechStatus('Checking for a local speech voice…')
+    setSpeechState('loading')
+    const voice = await getLocalSpeechVoiceWhenReady()
+    if (!mounted.current || speechGeneration.current !== generation) return
+    if (!voice) {
+      setSpeechState('idle')
+      setSpeechStatus('')
+      setSpeechError('No local speech voice is available. Install a Windows voice and restart Mike Assist.')
+      return
+    }
+    window.speechSynthesis.cancel()
+    setSpeechStatus(`Reading ${chunks.length.toLocaleString()} text parts with a local voice.`)
+    setSpeechState('speaking')
+    const isCurrent = (candidate: number): boolean => mounted.current && speechGeneration.current === candidate
+    const onComplete = (): void => {
+      if (!isCurrent(generation)) return
+      setSpeechState('idle')
+      setSpeechStatus('Finished reading aloud.')
+    }
+    const onError = (message: string): void => {
+      if (!isCurrent(generation)) return
+      setSpeechState('idle')
+      if (message === 'Read aloud stopped.') setSpeechStatus(message)
+      else setSpeechError(message)
+    }
+    speakCloudFileChunk(generation, 0, chunks, voice, isCurrent, onComplete, onError)
+  }
+
+  const pauseSpeech = (): void => {
+    if (speechState !== 'speaking' || typeof window === 'undefined') return
+    window.speechSynthesis?.pause()
+    setSpeechState('paused')
+    setSpeechStatus('Read aloud paused.')
+  }
+
+  const resumeSpeech = (): void => {
+    if (speechState !== 'paused' || typeof window === 'undefined') return
+    window.speechSynthesis?.resume()
+    setSpeechState('speaking')
+    setSpeechStatus('Reading with a local voice.')
   }
 
   return (
@@ -502,6 +647,23 @@ export function ConnectedFilesView({
                       <>
                         <pre className="cloud-files-text">{visibleReadText}</pre>
                         {readOutput?.text.length === 0 && <p className="cloud-files-empty">This file has no extractable text.</p>}
+                        <div className="cloud-files-speech" aria-label="Local read-aloud controls">
+                          <div>
+                            {speechState === 'loading' ? (
+                              <button className="ghost-button" type="button" disabled>Checking local voice…</button>
+                            ) : speechState === 'speaking' ? (
+                              <button className="ghost-button" type="button" disabled={providerDisabled} onClick={pauseSpeech}>Pause reading</button>
+                            ) : speechState === 'paused' ? (
+                              <button className="ghost-button" type="button" disabled={providerDisabled} onClick={resumeSpeech}>Resume reading</button>
+                            ) : (
+                              <button className="ghost-button" type="button" disabled={providerDisabled || !visibleReadText.trim()} onClick={playSpeech}>Read aloud</button>
+                            )}
+                            {speechState !== 'idle' && <button className="ghost-button" type="button" onClick={stopSpeech}>Stop</button>}
+                          </div>
+                          <span>Uses an installed local voice. Text and audio stay on this device.</span>
+                          {speechStatus && <p className="cloud-files-status" role="status" aria-live="polite">{speechStatus}</p>}
+                          {speechError && <p className="cloud-files-error" role="alert">{speechError}</p>}
+                        </div>
                         {continueCursor && readParts.length < MAX_RETAINED_READ_PARTS && (
                           <button className="ghost-button" type="button" disabled={providerDisabled} onClick={() => void readFile(selectedFile, continueCursor)}>
                             Read next part (asks approval again)

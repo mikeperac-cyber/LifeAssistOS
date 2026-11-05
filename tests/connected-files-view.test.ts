@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ConnectedCloudFile, ConnectedCloudFileReadOutput } from '../src/shared/ipc'
-import { buildCloudFileChatPrompt, buildCloudFileReviewTaskInput, buildCloudFileVaultInput, nextConnectedFileReadCursor } from '../src/renderer/src/components/ConnectedFilesView'
+import { buildCloudFileChatPrompt, buildCloudFileReviewTaskInput, buildCloudFileVaultInput, nextConnectedFileReadCursor, splitCloudFileTextForSpeech } from '../src/renderer/src/components/ConnectedFilesView'
 
 const file = (mimeType: string): ConnectedCloudFile => ({ id: 'abc123_file', name: 'Report', mimeType })
 
@@ -33,6 +33,23 @@ describe('connected file reading', () => {
     expect(prompt.length).toBeLessThanOrEqual(2_000)
     expect(prompt).toContain('shortened to fit the chat message limit')
     expect(prompt).not.toContain(`"text":"${'"\n\\'.repeat(5_000)}"`)
+  })
+
+  it('splits local speech into bounded chunks at readable boundaries', () => {
+    const text = 'Read this sentence clearly. '.repeat(20)
+    const chunks = splitCloudFileTextForSpeech(text, 50)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.every((chunk) => chunk.length <= 50)).toBe(true)
+    expect(chunks.join(' ').replace(/\s+/g, ' ').trim()).toBe(text.trim().replace(/\s+/g, ' '))
+    expect(splitCloudFileTextForSpeech(' \n\t ')).toEqual([])
+  })
+
+  it('keeps emoji intact while splitting long local speech text', () => {
+    const text = '😀'.repeat(30)
+    const chunks = splitCloudFileTextForSpeech(text, 9)
+    expect(chunks.every((chunk) => chunk.length <= 9)).toBe(true)
+    expect(chunks.every((chunk) => !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(chunk))).toBe(true)
+    expect(chunks.join('')).toBe(text)
   })
 
   it('continues bounded text and Word extracts by character offset', () => {
