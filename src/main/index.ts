@@ -553,10 +553,10 @@ async function initialize(): Promise<void> {
   for (const tool of createGoogleDriveTools(googleDrive)) {
     registry.register(tool)
   }
-  for (const tool of createGoogleTasksTools(googleTasks)) {
+  for (const tool of createGoogleTasksTools(googleTasks, planning, () => sendToRenderer({ type: 'today_changed' }))) {
     registry.register(tool)
   }
-  for (const tool of createMicrosoftTodoTools(microsoftTodo)) {
+  for (const tool of createMicrosoftTodoTools(microsoftTodo, planning, () => sendToRenderer({ type: 'today_changed' }))) {
     registry.register(tool)
   }
   for (const tool of createMicrosoftCalendarTools(microsoftCalendar)) {
@@ -565,7 +565,7 @@ async function initialize(): Promise<void> {
   for (const tool of createMicrosoftMailTools(microsoftMail)) {
     registry.register(tool)
   }
-  for (const tool of createCommandCenterTools(vault, planning)) {
+  for (const tool of createCommandCenterTools(vault, planning, () => sendToRenderer({ type: 'today_changed' }))) {
     registry.register(tool)
   }
   for (const tool of createCoachingTools(coaching)) {
@@ -1853,7 +1853,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('assist:google-tasks-settings', () =>
-    googleTasksSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+    googleTasksSettings?.public() ?? { clientId: '', connected: false, tokenStored: false, taskWriteEnabled: false }
   )
 
   ipcMain.handle('assist:google-tasks-client-id-update', async (_event, input: unknown) => {
@@ -1876,7 +1876,7 @@ function registerIpc(): void {
     try {
       const updated = await googleTasks.connect()
       await appendAuditAfterMutation({ type: 'google_tasks.connected', data: { tokenStored: updated.tokenStored } })
-      return { ok: true, settings: updated, message: 'Google Tasks connected. Loading lists and tasks still asks each time.' }
+      return { ok: true, settings: updated, message: 'Google Tasks connected. Each list or task read, and each new task send, asks for approval.' }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
     } finally {
@@ -1979,7 +1979,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('assist:microsoft-todo-settings', () =>
-    microsoftTodoSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+    microsoftTodoSettings?.public() ?? { clientId: '', connected: false, tokenStored: false, taskWriteEnabled: false }
   )
 
   ipcMain.handle('assist:microsoft-todo-client-id-update', async (_event, input: unknown) => {
@@ -2006,7 +2006,7 @@ function registerIpc(): void {
         ok: true,
         settings: microsoftTodoSettings?.public(),
         prompt,
-        message: 'Enter the displayed code on Microsoft’s sign-in page. Only Microsoft’s read-only Tasks.Read permission is requested.'
+        message: 'Enter the displayed code on Microsoft’s sign-in page. Tasks.ReadWrite is requested so Mike Assist can create approved tasks; it does not edit or delete tasks.'
       }
     } catch (error) {
       return { ok: false, error: errorMessage(error), settings: microsoftTodoSettings?.public() }

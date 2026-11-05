@@ -83,7 +83,7 @@ export function MicrosoftTodoPanel({ settings, disabled, onOpenSettings, onSetti
         <h3 id="microsoft-todo-title">Microsoft To Do</h3>
         {settings?.connected && tasks.length > 0 && <span>{tasks.length} open</span>}
       </div>
-      <p className="today-google-tasks-note">Read-only connection. Loading lists and task pages asks for approval each time. Chat may send approved results to your configured model provider.</p>
+      <p className="today-google-tasks-note">Loading lists and tasks, and sending a local task, each ask for approval. Ask Mike Assist in Chat to send an open Today task. {settings?.connected && !settings.taskWriteEnabled ? 'This connection is read-only; disconnect and reconnect in Settings to enable sends.' : 'Chat may send approved task details to your configured model provider.'}</p>
       {settings === null ? (
         <p className="muted" role="status">Checking Microsoft To Do connection…</p>
       ) : !settings.connected ? (

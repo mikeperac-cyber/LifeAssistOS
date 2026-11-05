@@ -73,12 +73,14 @@ export interface PublicGoogleTasksSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
+  taskWriteEnabled: boolean
 }
 
 export interface PublicMicrosoftTodoSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
+  taskWriteEnabled: boolean
 }
 
 export interface PublicMicrosoftCalendarSettings {

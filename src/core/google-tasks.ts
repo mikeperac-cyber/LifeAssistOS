@@ -7,8 +7,9 @@ import type { SecretCodec } from './settings'
 import { authorizeGoogleDesktop, normalizeGoogleClientId, type GoogleOAuthClient } from './google-oauth'
 import { requestPinnedHttps, type PinnedHttpsRequestOptions, type ResponseBody } from '../tools/web'
 import { readJsonStore } from './json-store'
+import { TaskExportError } from './task-export-errors'
 
-export const GOOGLE_TASKS_SCOPE = 'https://www.googleapis.com/auth/tasks.readonly'
+export const GOOGLE_TASKS_SCOPE = 'https://www.googleapis.com/auth/tasks'
 const GOOGLE_TOKEN_URL = new URL('https://oauth2.googleapis.com/token')
 const GOOGLE_TASKS_ORIGIN = 'https://tasks.googleapis.com'
 const GOOGLE_TASK_LISTS_PATH = '/tasks/v1/users/@me/lists'
@@ -41,36 +42,43 @@ const GOOGLE_TASK_LIST_RESULT_SCHEMA = z.object({
 })
 const MAX_TASK_NOTES_CHARS = 4_000
 
+export interface GoogleTaskCreateInput { title: string; notes?: string; dueDate?: string | null }
+
 interface GoogleTasksSettingsFile {
   version: 1
   clientId: string
   refreshTokenEnc?: string
+  taskWriteEnabled?: boolean
 }
 
 function isGoogleTasksSettingsFile(value: unknown): value is GoogleTasksSettingsFile {
   if (!value || typeof value !== 'object') return false
   const file = value as Partial<GoogleTasksSettingsFile>
   return file.version === 1 && typeof file.clientId === 'string' &&
-    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string')
+    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string') &&
+    (file.taskWriteEnabled === undefined || typeof file.taskWriteEnabled === 'boolean')
 }
 
 interface GoogleTasksStoreState {
   clientId: string
   refreshToken: string
   storedRefreshTokenEnc?: string
+  taskWriteEnabled: boolean
 }
 
 export interface PublicGoogleTasksSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
+  taskWriteEnabled: boolean
 }
 
-/** Stores the read-only Google Tasks refresh token outside renderer state. */
+/** Stores the Google Tasks refresh token and granted write capability outside renderer state. */
 export class GoogleTasksSettingsStore {
   private clientId = ''
   private refreshToken = ''
   private storedRefreshTokenEnc?: string
+  private taskWriteEnabled = false
   private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string, private readonly codec?: SecretCodec) {}
@@ -78,10 +86,11 @@ export class GoogleTasksSettingsStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next: GoogleTasksStoreState = { clientId: '', refreshToken: '' }
+      let next: GoogleTasksStoreState = { clientId: '', refreshToken: '', taskWriteEnabled: false }
       const loaded = await readJsonStore<GoogleTasksSettingsFile>(this.file, 'google-tasks', isGoogleTasksSettingsFile)
       if (loaded) {
         try { next.clientId = normalizeGoogleClientId(loaded.clientId, true) } catch { next.clientId = '' }
+        next.taskWriteEnabled = loaded.taskWriteEnabled === true
         if (typeof loaded.refreshTokenEnc === 'string' && loaded.refreshTokenEnc.length > 0) {
           next.storedRefreshTokenEnc = loaded.refreshTokenEnc
           if (this.codec?.available) {
@@ -98,13 +107,15 @@ export class GoogleTasksSettingsStore {
     return {
       clientId: this.clientId,
       connected: Boolean(this.clientId && this.refreshToken),
-      tokenStored: Boolean(this.storedRefreshTokenEnc)
+      tokenStored: Boolean(this.storedRefreshTokenEnc),
+      taskWriteEnabled: this.taskWriteEnabled
     }
   }
 
   getClientId(): string { return this.clientId }
   getRefreshToken(): string | undefined { return this.refreshToken || undefined }
   hasStoredRefreshToken(): boolean { return Boolean(this.refreshToken || this.storedRefreshTokenEnc) }
+  canWriteTasks(): boolean { return this.taskWriteEnabled }
 
   async updateClientId(input: string): Promise<PublicGoogleTasksSettings> {
     return this.mutate(async () => {
@@ -128,18 +139,23 @@ export class GoogleTasksSettingsStore {
 
   async clearConnection(): Promise<void> {
     await this.mutate(async () => {
-      this.apply(await this.persist({ ...this.snapshot(), refreshToken: '', storedRefreshTokenEnc: undefined }))
+      this.apply(await this.persist({ ...this.snapshot(), refreshToken: '', storedRefreshTokenEnc: undefined, taskWriteEnabled: false }))
     })
   }
 
+  async enableTaskWrites(): Promise<void> {
+    await this.mutate(async () => { this.apply(await this.persist({ ...this.snapshot(), taskWriteEnabled: true })) })
+  }
+
   private snapshot(): GoogleTasksStoreState {
-    return { clientId: this.clientId, refreshToken: this.refreshToken, storedRefreshTokenEnc: this.storedRefreshTokenEnc }
+    return { clientId: this.clientId, refreshToken: this.refreshToken, storedRefreshTokenEnc: this.storedRefreshTokenEnc, taskWriteEnabled: this.taskWriteEnabled }
   }
 
   private apply(state: GoogleTasksStoreState): void {
     this.clientId = state.clientId
     this.refreshToken = state.refreshToken
     this.storedRefreshTokenEnc = state.storedRefreshTokenEnc
+    this.taskWriteEnabled = state.taskWriteEnabled
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
@@ -155,6 +171,7 @@ export class GoogleTasksSettingsStore {
     const payload: GoogleTasksSettingsFile = {
       version: 1,
       clientId: state.clientId,
+      taskWriteEnabled: state.taskWriteEnabled,
       ...(storedRefreshTokenEnc ? { refreshTokenEnc: storedRefreshTokenEnc } : {})
     }
     const temporary = `${this.file}.${randomUUID()}.tmp`
@@ -181,7 +198,7 @@ export interface GoogleTasksServiceOptions {
   openExternal: (url: string) => Promise<void>
 }
 
-/** OAuth and fixed-host read-only Tasks API operations used by approval-gated tools. */
+/** OAuth and fixed-host Google Tasks API operations used by approval-gated tools. */
 export class GoogleTasksService {
   private readonly request: GoogleTasksRequest
   private accessToken = ''
@@ -192,6 +209,7 @@ export class GoogleTasksService {
   }
 
   isReady(): boolean { return Boolean(this.store.getClientId() && this.store.getRefreshToken()) }
+  canWriteTasks(): boolean { return this.store.canWriteTasks() }
 
   clearCachedAccessToken(): void {
     this.accessToken = ''
@@ -209,6 +227,7 @@ export class GoogleTasksService {
       oauthClient: this.options.oauthClient
     })
     await this.store.saveRefreshToken(tokens.refresh_token)
+    await this.store.enableTaskWrites()
     this.accessToken = tokens.access_token
     this.accessTokenExpiresAt = tokens.expiry_date ?? Date.now() + 3_600_000
     return this.store.public()
@@ -273,6 +292,58 @@ export class GoogleTasksService {
     }
   }
 
+  async createTask(taskListId: string, input: GoogleTaskCreateInput, signal: AbortSignal): Promise<GoogleTask> {
+    if (!this.canWriteTasks()) throw new TaskExportError('Reconnect Google Tasks in Settings to grant task-write permission before sending tasks.', false)
+    if (!isGoogleTaskListId(taskListId)) throw new TaskExportError('Choose a valid Google Tasks list.', false)
+    const title = cleanSingleLine(input.title).slice(0, 1_024)
+    if (!title) throw new TaskExportError('This local task has no title Google can accept.', false)
+    const notes = input.notes ? cleanTaskNotes(input.notes).slice(0, MAX_TASK_NOTES_CHARS) : ''
+    const body = {
+      title,
+      ...(notes ? { notes } : {}),
+      ...(input.dueDate ? { due: `${input.dueDate}T00:00:00.000Z` } : {})
+    }
+    const url = new URL(`/tasks/v1/lists/${encodeURIComponent(taskListId)}/tasks`, GOOGLE_TASKS_ORIGIN)
+    if (!isAllowedGoogleTasksApiRequest(url, 'POST')) throw new TaskExportError('Google Tasks request was outside the approved create-task route.', false)
+
+    let token: string
+    try { token = await this.getAccessToken(signal) }
+    catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Google Tasks access could not be refreshed.', false) }
+    let response: ResponseBody
+    try { response = await this.requestTaskCreate(url, signal, token, body) }
+    catch { throw new TaskExportError('Google Tasks did not confirm whether it created the task.', true) }
+    if (response.status === 401) {
+      this.clearCachedAccessToken()
+      try { token = await this.getAccessToken(signal) }
+      catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Google Tasks access could not be refreshed.', false) }
+      try { response = await this.requestTaskCreate(url, signal, token, body) }
+      catch { throw new TaskExportError('Google Tasks did not confirm whether it created the task.', true) }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new TaskExportError(`Google Tasks could not create the task (HTTP ${response.status}).`, response.status >= 500)
+    }
+    const parsed = GOOGLE_TASK_SCHEMA.safeParse(parseJson(response.text, 'created-task response'))
+    if (!parsed.success) throw new TaskExportError('Google may have created the task, but its response could not be verified.', true)
+    return {
+      id: parsed.data.id,
+      title: cleanSingleLine(parsed.data.title) || title,
+      ...(notes ? { notes } : {}),
+      ...(input.dueDate ? { due: input.dueDate } : {}),
+      status: parsed.data.status ?? 'needsAction',
+      ...(parsed.data.updated ? { updated: parsed.data.updated } : {})
+    }
+  }
+
+  private async requestTaskCreate(url: URL, signal: AbortSignal, token: string, body: Record<string, string>): Promise<ResponseBody> {
+    return this.request(url, signal, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      maxResponseBytes: 256_000,
+      timeoutMs: 15_000
+    })
+  }
+
   private async requestTasksApi(url: URL, signal: AbortSignal): Promise<ResponseBody> {
     if (!isAllowedGoogleTasksApiRequest(url, 'GET')) {
       throw new Error('Google Tasks requests are limited to task list and task reads on the fixed API host.')
@@ -325,11 +396,14 @@ export class GoogleTasksService {
 }
 
 export function isAllowedGoogleTasksApiRequest(url: URL, method: string): boolean {
-  if (method !== 'GET' || url.origin !== GOOGLE_TASKS_ORIGIN || url.username || url.password || url.port) return false
-  if (url.pathname === GOOGLE_TASK_LISTS_PATH) return true
+  if (!['GET', 'POST'].includes(method) || url.origin !== GOOGLE_TASKS_ORIGIN || url.username || url.password || url.port || url.hash) return false
+  if (method === 'GET' && url.pathname === GOOGLE_TASK_LISTS_PATH) return true
   const match = url.pathname.match(/^\/tasks\/v1\/lists\/([^/]{1,1536})\/tasks$/)
   if (!match?.[1]) return false
-  try { return isGoogleTaskListId(decodeURIComponent(match[1])) } catch { return false }
+  try {
+    if (!isGoogleTaskListId(decodeURIComponent(match[1]))) return false
+    return method === 'GET' || (method === 'POST' && !url.search)
+  } catch { return false }
 }
 
 export function isGoogleTaskListId(value: string): boolean {

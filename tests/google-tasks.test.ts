@@ -13,6 +13,7 @@ import {
 import type { GoogleOAuthClient } from '../src/core/google-oauth'
 import type { SecretCodec } from '../src/core/settings'
 import { defaultPolicy } from '../src/core/gateway/policy'
+import { PlanningStore } from '../src/core/planning'
 import { createGoogleTasksTools } from '../src/tools/google-tasks'
 
 let dir = ''
@@ -74,7 +75,7 @@ describe('Google Tasks settings and fixed API boundary', () => {
     expect(store.getRefreshToken()).toBeUndefined()
   })
 
-  it('uses PKCE and requests only the read-only Tasks scope', async () => {
+  it('uses PKCE and requests the Tasks scope required for approved creation', async () => {
     const store = new GoogleTasksSettingsStore(file, codec)
     await store.init()
     await store.updateClientId(clientId)
@@ -108,7 +109,56 @@ describe('Google Tasks settings and fixed API boundary', () => {
     expect(auth.searchParams.get('scope')).toBe(GOOGLE_TASKS_SCOPE)
     expect(auth.searchParams.get('code_challenge_method')).toBe('S256')
     expect(auth.searchParams.get('code_challenge')).toBe('tasks-challenge')
-    expect(result).toMatchObject({ connected: true, tokenStored: true })
+    expect(result).toMatchObject({ connected: true, tokenStored: true, taskWriteEnabled: true })
+  })
+
+  it('creates a task only with recorded write consent and sends no unsupported priority field', async () => {
+    const store = await connectedStore()
+    const requests: Array<{ url: URL; options: { method?: string; body?: string } }> = []
+    const request: GoogleTasksRequest = async (url, _signal, options) => {
+      requests.push({ url, options })
+      if (url.hostname === 'oauth2.googleapis.com') return tokenResponse()
+      return response(JSON.stringify({ id: 'remote-task-1', title: 'Call the dentist', status: 'needsAction', updated: '2026-11-05T10:00:00Z' }), 200)
+    }
+    const service = new GoogleTasksService(store, { request, openExternal: async () => undefined })
+    await expect(service.createTask('list-1', { title: 'Call the dentist' }, new AbortController().signal)).rejects.toThrow(/read|write permission/i)
+    await store.enableTaskWrites()
+    const task = await service.createTask('list-1', { title: 'Call the dentist', notes: 'Ask about an appointment.', dueDate: '2026-11-12' }, new AbortController().signal)
+
+    expect(task).toMatchObject({ id: 'remote-task-1', title: 'Call the dentist', due: '2026-11-12' })
+    const create = requests.find(({ url, options }) => url.hostname === 'tasks.googleapis.com' && options.method === 'POST' && options.body)
+    expect(create?.url.toString()).toBe('https://tasks.googleapis.com/tasks/v1/lists/list-1/tasks')
+    expect(JSON.parse(create?.options.body ?? '{}')).toEqual({ title: 'Call the dentist', notes: 'Ask about an appointment.', due: '2026-11-12T00:00:00.000Z' })
+  })
+
+  it('sends an approved local task once and returns the existing link on retry', async () => {
+    const settings = await connectedStore()
+    await settings.enableTaskWrites()
+    const planning = new PlanningStore(path.join(dir, 'planning.sqlite'))
+    await planning.init()
+    const task = planning.addTask({ title: 'Prepare the agenda', notes: 'Include the updated schedule.' })
+    let createCalls = 0
+    const request: GoogleTasksRequest = async (url, _signal, options) => {
+      if (url.hostname === 'oauth2.googleapis.com') return tokenResponse()
+      if (options.method === 'POST') {
+        createCalls += 1
+        return response(JSON.stringify({ id: 'google-task-1', title: 'Prepare the agenda', status: 'needsAction' }), 201)
+      }
+      return response('{}')
+    }
+    const service = new GoogleTasksService(settings, { request, openExternal: async () => undefined })
+    const tool = createGoogleTasksTools(service, planning).find((item) => item.name === 'google_tasks_create_from_today_task')!
+    const args = { taskId: task.id, expectedUpdatedAt: task.updatedAt, taskListId: 'list-1', taskListTitle: 'Personal' }
+    const context = { kind: 'none' as const, signal: new AbortController().signal }
+
+    expect(tool.risk).toBe('external')
+    expect(tool.sessionApprovalAllowed).toBe(false)
+    expect(tool.preview!(args, context)).toContain('Prepare the agenda')
+    expect(await tool.run(args, context)).toMatchObject({ status: 'sent', remoteTaskId: 'google-task-1' })
+    expect(await tool.run(args, context)).toMatchObject({ status: 'already_sent', remoteTaskId: 'google-task-1' })
+    expect(createCalls).toBe(1)
+    expect(planning.getTask(task.id).taskExports).toMatchObject([{ status: 'sent', remoteTaskId: 'google-task-1' }])
+    planning.close()
   })
 
   it('reads bounded task-list and task pages and treats remote text as untrusted', async () => {
@@ -159,7 +209,9 @@ describe('Google Tasks settings and fixed API boundary', () => {
     expect(seen.at(-1)?.pathname).toBe('/tasks/v1/lists/%40default/tasks')
     expect(isAllowedGoogleTasksApiRequest(seen.at(-1)!, 'GET')).toBe(true)
     expect(isAllowedGoogleTasksApiRequest(new URL('https://tasks.googleapis.com/tasks/v1/lists/list-123/tasks/other'), 'GET')).toBe(false)
-    expect(isAllowedGoogleTasksApiRequest(new URL('https://tasks.googleapis.com/tasks/v1/lists/list-123/tasks'), 'POST')).toBe(false)
+    expect(isAllowedGoogleTasksApiRequest(new URL('https://tasks.googleapis.com/tasks/v1/lists/list-123/tasks'), 'POST')).toBe(true)
+    expect(isAllowedGoogleTasksApiRequest(new URL('https://tasks.googleapis.com/tasks/v1/lists/list-123/tasks?parent=task-1'), 'POST')).toBe(false)
+    expect(isAllowedGoogleTasksApiRequest(new URL('https://tasks.googleapis.com/tasks/v1/users/@me/lists'), 'POST')).toBe(false)
     expect(isAllowedGoogleTasksApiRequest(new URL('https://evil.example/tasks/v1/users/@me/lists'), 'GET')).toBe(false)
   })
 
@@ -196,10 +248,10 @@ describe('Google Tasks settings and fixed API boundary', () => {
 
   it('registers only per-call-approved external read tools', async () => {
     const store = await connectedStore()
-    const tools = createGoogleTasksTools(new GoogleTasksService(store, { openExternal: async () => undefined }))
-    expect(tools.map((tool) => tool.name)).toEqual(['google_tasks_list_task_lists', 'google_tasks_list_tasks'])
+    const tools = createGoogleTasksTools(new GoogleTasksService(store, { openExternal: async () => undefined }), {} as never)
+    expect(tools.map((tool) => tool.name)).toEqual(['google_tasks_list_task_lists', 'google_tasks_list_tasks', 'google_tasks_create_from_today_task'])
     expect(tools.every((tool) => tool.risk === 'external' && tool.sessionApprovalAllowed === false)).toBe(true)
-    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask'])
+    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask', 'ask'])
     expect(tools[0]?.scope?.({ }, { grants: {} as never, primaryGrantId: '' })).toMatchObject({ kind: 'url', host: 'tasks.googleapis.com' })
   })
 })

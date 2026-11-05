@@ -85,4 +85,17 @@ describe('tool discovery', () => {
     expect(result.tools[0]?.name).toBe('create_email_followup_task')
     expect(optionalToolDomain('create_email_followup_task')).toBe('email')
   })
+
+  it('finds connected-task send workflows from natural language', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('google_tasks_create_from_today_task', 'Send one open local Today task to a selected Google Tasks list after approval.'))
+      .register(catalogTool('microsoft_todo_create_from_today_task', 'Send one open local Today task to a selected Microsoft To Do list after approval.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const google = await discovery.run({ query: 'send my Today task to Google Tasks' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
+    const microsoft = await discovery.run({ query: 'copy my Today task to Microsoft To Do' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
+
+    expect(google.tools[0]?.name).toBe('google_tasks_create_from_today_task')
+    expect(microsoft.tools[0]?.name).toBe('microsoft_todo_create_from_today_task')
+    expect(optionalToolDomain('microsoft_todo_create_from_today_task')).toBe('planning')
+  })
 })

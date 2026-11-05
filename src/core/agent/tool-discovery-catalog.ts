@@ -46,13 +46,13 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft' || name === 'create_email_followup_task') return 'email'
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') return 'calendar'
   if (name.startsWith('google_drive_')) return 'drive'
-  if (name.startsWith('google_tasks_')) return 'planning'
+  if (name.startsWith('google_tasks_') || name.startsWith('microsoft_todo_')) return 'planning'
   if (name.startsWith('finance_') || name === 'record_transaction') return 'finance'
   if (name.includes('memory') || name === 'recall_memory') return 'memory'
   if (name.includes('coaching') || name === 'get_coaching_context') return 'coaching'
   if (name.includes('vault')) return 'vault'
   if (name === 'list_today' || name === 'capture_inbox' || name === 'create_task' || name === 'create_email_followup_task' || name === 'update_task' ||
-    name === 'complete_task' || name === 'schedule_agent_task' || name === 'list_scheduled_agent_tasks') {
+    name === 'complete_task' || name === 'clear_task_export_retry_guard' || name === 'schedule_agent_task' || name === 'list_scheduled_agent_tasks') {
     return 'planning'
   }
   return null

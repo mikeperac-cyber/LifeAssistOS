@@ -12,6 +12,7 @@ import {
 } from '../src/core/microsoft-todo'
 import type { SecretCodec } from '../src/core/settings'
 import { defaultPolicy } from '../src/core/gateway/policy'
+import { PlanningStore } from '../src/core/planning'
 import { createMicrosoftTodoTools } from '../src/tools/microsoft-todo'
 
 let dir = ''
@@ -70,7 +71,7 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
     await expect(store.updateClientId('22222222-2222-4222-8222-222222222222')).rejects.toThrow(/clear the saved/i)
   })
 
-  it('uses Microsoft device-code flow with only Tasks.Read and never exposes the device code', async () => {
+  it('uses Microsoft device-code flow with Tasks.ReadWrite and never exposes the device code', async () => {
     const store = await configuredStore()
     const seen: Array<{ url: URL; body: URLSearchParams }> = []
     const request: MicrosoftTodoRequest = async (url, _signal, options) => {
@@ -91,7 +92,7 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
     expect(prompt).toMatchObject({ userCode: 'ABCD-EFGH', verificationUri: 'https://microsoft.com/devicelogin' })
     expect(JSON.stringify(prompt)).not.toContain('secret-device-code')
     expect(openExternal).toHaveBeenCalledWith('https://microsoft.com/devicelogin')
-    expect(store.public()).toMatchObject({ connected: true, tokenStored: true })
+    expect(store.public()).toMatchObject({ connected: true, tokenStored: true, taskWriteEnabled: true })
   })
 
   it('honors authorization_pending and backs off after slow_down', async () => {
@@ -113,6 +114,64 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
     await service.beginConnect()
     await vi.waitFor(() => expect(service.connectStatus().phase).toBe('connected'))
     expect(waits).toEqual([1_000, 1_000, 6_000])
+  })
+
+  it('creates a Microsoft To Do task only with recorded write consent and carries priority', async () => {
+    const store = await connectedStore()
+    const requests: Array<{ url: URL; options: { method?: string; body?: string } }> = []
+    const request: MicrosoftTodoRequest = async (url, _signal, options) => {
+      requests.push({ url, options })
+      if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
+      return response(JSON.stringify({
+        id: 'remote-task-1', title: 'Review the proposal', status: 'notStarted',
+        dueDateTime: { dateTime: '2026-11-12T00:00:00.0000000', timeZone: 'UTC' }
+      }), 201)
+    }
+    const service = new MicrosoftTodoService(store, { request, openExternal: async () => undefined })
+    await expect(service.createTask('AAMk-list=', { title: 'Review the proposal' }, new AbortController().signal)).rejects.toThrow(/read|write permission/i)
+    await store.enableTaskWrites()
+    const task = await service.createTask('AAMk-list=', {
+      title: 'Review the proposal', notes: 'Add the final cost estimate.', dueDate: '2026-11-12', priority: 'high'
+    }, new AbortController().signal)
+
+    expect(task).toMatchObject({ id: 'remote-task-1', title: 'Review the proposal', due: '2026-11-12' })
+    const create = requests.find(({ url, options }) => url.hostname === 'graph.microsoft.com' && options.method === 'POST')
+    expect(create?.url.toString()).toBe('https://graph.microsoft.com/v1.0/me/todo/lists/AAMk-list%3D/tasks')
+    expect(JSON.parse(create?.options.body ?? '{}')).toEqual({
+      title: 'Review the proposal', status: 'notStarted', importance: 'high',
+      body: { contentType: 'text', content: 'Add the final cost estimate.' },
+      dueDateTime: { dateTime: '2026-11-12T00:00:00', timeZone: 'UTC' }
+    })
+  })
+
+  it('sends an approved local task once and returns the existing link on retry', async () => {
+    const store = await connectedStore()
+    await store.enableTaskWrites()
+    const planning = new PlanningStore(path.join(dir, 'planning.sqlite'))
+    await planning.init()
+    const task = planning.addTask({ title: 'Review the proposal', notes: 'Add the final cost estimate.', priority: 'high' })
+    let createCalls = 0
+    const request: MicrosoftTodoRequest = async (url, _signal, options) => {
+      if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
+      if (options.method === 'POST') {
+        createCalls += 1
+        return response(JSON.stringify({ id: 'graph-task-1', title: 'Review the proposal', status: 'notStarted' }), 201)
+      }
+      return response('{}')
+    }
+    const service = new MicrosoftTodoService(store, { request, openExternal: async () => undefined })
+    const tool = createMicrosoftTodoTools(service, planning).find((item) => item.name === 'microsoft_todo_create_from_today_task')!
+    const args = { taskId: task.id, expectedUpdatedAt: task.updatedAt, taskListId: 'AAMk-list=', taskListTitle: 'Tasks' }
+    const context = { kind: 'none' as const, signal: new AbortController().signal }
+
+    expect(tool.risk).toBe('external')
+    expect(tool.sessionApprovalAllowed).toBe(false)
+    expect(tool.preview!(args, context)).toContain('Review the proposal')
+    expect(await tool.run(args, context)).toMatchObject({ status: 'sent', remoteTaskId: 'graph-task-1' })
+    expect(await tool.run(args, context)).toMatchObject({ status: 'already_sent', remoteTaskId: 'graph-task-1' })
+    expect(createCalls).toBe(1)
+    expect(planning.getTask(task.id).taskExports).toMatchObject([{ status: 'sent', remoteTaskId: 'graph-task-1' }])
+    planning.close()
   })
 
   it('cancels an in-progress device flow without storing a token', async () => {
@@ -231,6 +290,8 @@ describe('Microsoft Graph To Do read-only API boundary', () => {
     await expect(service.listTasks('list-1', signal, 'https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks?$select=id,title,body')).rejects.toThrow(/outside the approved/i)
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists'), 'GET')).toBe(true)
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists'), 'POST')).toBe(false)
+    expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks'), 'POST')).toBe(true)
+    expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks?$top=10'), 'POST')).toBe(false)
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://evil.example/v1.0/me/todo/lists'), 'GET')).toBe(false)
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists?%24filter=id'), 'GET')).toBe(false)
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks?%24top=100'), 'GET')).toBe(false)
@@ -238,10 +299,10 @@ describe('Microsoft Graph To Do read-only API boundary', () => {
 
   it('registers only per-call-approved external read tools', async () => {
     const store = await connectedStore()
-    const tools = createMicrosoftTodoTools(new MicrosoftTodoService(store, { openExternal: async () => undefined }))
-    expect(tools.map((tool) => tool.name)).toEqual(['microsoft_todo_list_task_lists', 'microsoft_todo_list_tasks'])
+    const tools = createMicrosoftTodoTools(new MicrosoftTodoService(store, { openExternal: async () => undefined }), {} as never)
+    expect(tools.map((tool) => tool.name)).toEqual(['microsoft_todo_list_task_lists', 'microsoft_todo_list_tasks', 'microsoft_todo_create_from_today_task'])
     expect(tools.every((tool) => tool.risk === 'external' && tool.sessionApprovalAllowed === false)).toBe(true)
-    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask'])
+    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask', 'ask'])
     expect(tools[0]?.scope?.({}, { grants: {} as never, primaryGrantId: '' })).toMatchObject({ kind: 'url', host: 'graph.microsoft.com' })
   })
 })

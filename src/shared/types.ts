@@ -642,6 +642,17 @@ export interface VaultSearchResult {
 
 export type PlanTaskStatus = 'open' | 'done' | 'cancelled'
 export type PlanTaskPriority = 'low' | 'normal' | 'high'
+export type TaskExportProvider = 'google_tasks' | 'microsoft_todo'
+export type TaskExportStatus = 'sending' | 'sent' | 'failed' | 'uncertain'
+
+export interface TaskExportRecord {
+  provider: TaskExportProvider
+  taskListId: string
+  status: TaskExportStatus
+  remoteTaskId?: string
+  updatedAt: string
+}
+
 export type EmailTaskProvider = 'gmail' | 'outlook'
 
 export interface EmailTaskSource {
@@ -664,6 +675,7 @@ export interface PlanTask {
   sourceInboxId?: string
   sourceGoalId?: string
   emailSource?: EmailTaskSource
+  taskExports?: TaskExportRecord[]
 }
 
 export interface InboxItem {
@@ -757,6 +769,7 @@ export type AssistEvent =
   | { type: 'busy'; busy: boolean }
   | { type: 'step'; index: number; max: number }
   | { type: 'local_api_activity'; active: boolean; summary?: string }
+  | { type: 'today_changed' }
   | { type: 'scheduled_tasks_changed' }
 
 /** Provider connection settings, persisted outside the audit log. */

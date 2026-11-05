@@ -268,7 +268,7 @@ export function SettingsView({
         const result = await onGetMicrosoftTodoConnectStatus()
         if (!active || microsoftTodoStatusVersion.current !== version || !result.ok || !result.status) return
         setMicrosoftTodoConnectStatus(result.status)
-        if (result.status.phase === 'connected') setMicrosoftTodoMessage('Microsoft To Do connected. Each list and task page still asks for approval.')
+        if (result.status.phase === 'connected') setMicrosoftTodoMessage('Microsoft To Do connected. Reads and each task send still ask for approval.')
         else if (result.status.phase === 'failed') setMicrosoftTodoMessage(result.status.error ?? 'Microsoft sign-in failed.')
         else if (result.status.phase === 'cancelled') setMicrosoftTodoMessage('Microsoft sign-in cancelled.')
       } catch (error) {
@@ -741,7 +741,7 @@ export function SettingsView({
       }
       const connected = await onConnectGoogleTasks()
       setGoogleTasksMessage(connected.ok
-        ? connected.message ?? 'Google Tasks connected.'
+        ? connected.message ?? 'Google Tasks connected. Reads and each task send still ask for approval.'
         : connected.error ?? 'Google sign-in did not complete.')
     } catch (error) {
       setGoogleTasksMessage(errorText(error))
@@ -1467,7 +1467,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Google Tasks</h2>
           <p>
-            Connect one Google account with the read-only <code>tasks.readonly</code> permission. Mike Assist only lists your task lists and open tasks; it cannot create, edit, or complete them. Loading a list or task page asks for approval each time. The Today panel displays results locally; if you use these tools in Chat, approved task details may be sent to your configured model provider and saved in chat history. The refresh token is encrypted with OS storage when available. Disconnecting here clears Mike Assist’s saved token; Google keeps the authorization active until you remove it in your Google Account, because revoking a shared Google project can affect other connected services.
+            Connect one Google account with the <code>tasks</code> OAuth permission. Google grants broad task access, but Mike Assist only lists tasks and creates new ones; it exposes no edit or delete action. Every read and each task send asks for separate approval. Existing read-only connections stay read-only until disconnected and reconnected. The refresh token is encrypted with OS storage when available. Disconnecting here clears Mike Assist’s saved token; Google keeps the authorization active until you remove it in your Google Account, because revoking a shared Google project can affect other connected services.
           </p>
         </div>
         {googleTasksSettings ? (
@@ -1476,7 +1476,7 @@ export function SettingsView({
               <span className="field-label">
                 OAuth Desktop Client ID
                 {googleTasksSettings.connected
-                  ? <span className="field-tag">{googleTasksSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}</span>
+                  ? <span className="field-tag">{googleTasksSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}{googleTasksSettings.taskWriteEnabled ? ' · can send' : ' · reconnect for send'}</span>
                   : googleTasksSettings.tokenStored
                     ? <span className="field-tag">saved token unavailable</span>
                     : null}
@@ -1494,6 +1494,9 @@ export function SettingsView({
               </span>
               {googleTasksSettings.tokenStored && !googleTasksSettings.connected && (
                 <span className="field-hint">Mike Assist could not unlock this saved token. Reconnect with this Client ID, or clear the saved connection and connect again.</span>
+              )}
+              {googleTasksSettings.connected && !googleTasksSettings.taskWriteEnabled && (
+                <span className="field-hint">This saved connection only has read access. Disconnect and reconnect to approve the broader Google Tasks permission before sending tasks. Mike Assist still only creates new tasks; it never edits or deletes them.</span>
               )}
             </label>
             <div className="settings-actions">
@@ -1526,7 +1529,7 @@ export function SettingsView({
         <div className="section-head">
           <h2>Microsoft To Do</h2>
           <p>
-            Connect Microsoft To Do with the delegated read-only <code>Tasks.Read</code> permission. Mike Assist only lists task lists and open tasks; it cannot create, edit, or complete them. Each list and task page asks for approval. Today displays the results locally. If you use these tools in Chat, approved task details may go to your configured model provider and be saved with chat history.
+            Connect Microsoft To Do with delegated <code>Tasks.ReadWrite</code> permission. This permission includes broad task changes; Mike Assist only lists tasks and creates new ones, with separate approval for every read and send. It exposes no edit or delete action. Existing read-only connections stay read-only until disconnected and reconnected. Today displays results locally; in Chat, approved details may be sent to your configured model provider and saved in chat history.
           </p>
         </div>
         {microsoftTodoSettings ? (
@@ -1535,7 +1538,7 @@ export function SettingsView({
               <span className="field-label">
                 Microsoft Entra Application (client) ID
                 {microsoftTodoSettings.connected
-                  ? <span className="field-tag">{microsoftTodoSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}</span>
+                  ? <span className="field-tag">{microsoftTodoSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}{microsoftTodoSettings.taskWriteEnabled ? ' · can send' : ' · reconnect for send'}</span>
                   : microsoftTodoSettings.tokenStored
                     ? <span className="field-tag">saved token unavailable</span>
                     : null}
@@ -1549,10 +1552,13 @@ export function SettingsView({
                 placeholder="00000000-0000-4000-8000-000000000000"
               />
               <span className="field-hint">
-                Register a public-client app supporting personal and work or school accounts, enable public-client flows, and add delegated Microsoft Graph <code>Tasks.Read</code>. Mike Assist uses device-code sign-in and does not need a client secret. See Microsoft's <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code" target="_blank" rel="noreferrer">device-code guide</a>, <a href="https://learn.microsoft.com/en-us/graph/api/todo-list-lists?view=graph-rest-1.0" target="_blank" rel="noreferrer">task-list API</a>, and <a href="https://entra.microsoft.com/" target="_blank" rel="noreferrer">Entra admin center</a>.
+                Register a public-client app supporting personal and work or school accounts, enable public-client flows, and add delegated Microsoft Graph <code>Tasks.ReadWrite</code>. Mike Assist uses device-code sign-in and does not need a client secret. See Microsoft's <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code" target="_blank" rel="noreferrer">device-code guide</a>, <a href="https://learn.microsoft.com/en-us/graph/api/todo-list-lists?view=graph-rest-1.0" target="_blank" rel="noreferrer">task-list API</a>, and <a href="https://entra.microsoft.com/" target="_blank" rel="noreferrer">Entra admin center</a>.
               </span>
               {microsoftTodoSettings.tokenStored && !microsoftTodoSettings.connected && (
                 <span className="field-hint">Mike Assist could not unlock this saved token. Reconnect with this Application ID, or clear the saved connection and connect again.</span>
+              )}
+              {microsoftTodoSettings.connected && !microsoftTodoSettings.taskWriteEnabled && (
+                <span className="field-hint">This saved connection only has read access. Disconnect and reconnect to approve Tasks.ReadWrite before sending tasks. Mike Assist still only creates new tasks; it never edits or deletes them.</span>
               )}
             </label>
             {microsoftTodoConnectStatus?.phase === 'pending' && microsoftTodoConnectStatus.prompt && (

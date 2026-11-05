@@ -144,6 +144,30 @@ describe('Today planning store', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('prevents duplicate provider-task sends and leaves interrupted sends for manual review', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-export-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const task = store.addTask({ title: 'Prepare the meeting notes', notes: 'Bring the printed copy.' })
+    const attempt = store.beginTaskExport(task.id, 'google_tasks', 'list-1', task.updatedAt)
+    expect(attempt).toMatchObject({ alreadySent: false, export: { status: 'sending' } })
+    store.close()
+
+    const recovered = new PlanningStore(file)
+    await recovered.init()
+    expect(recovered.getTask(task.id).taskExports).toMatchObject([{ provider: 'google_tasks', taskListId: 'list-1', status: 'uncertain' }])
+    expect(() => recovered.beginTaskExport(task.id, 'google_tasks', 'list-1', task.updatedAt)).toThrow(/check the destination/i)
+    recovered.clearTaskExportRetryGuard(task.id, 'google_tasks', 'list-1')
+    const retry = recovered.beginTaskExport(task.id, 'google_tasks', 'list-1', task.updatedAt)
+    recovered.finishTaskExport(task.id, 'google_tasks', 'list-1', 'sent', 'remote-task-1')
+    expect(recovered.getTask(task.id).taskExports).toMatchObject([{ status: 'sent', remoteTaskId: 'remote-task-1' }])
+    expect(recovered.beginTaskExport(task.id, 'google_tasks', 'list-1', task.updatedAt)).toMatchObject({ alreadySent: true, export: { remoteTaskId: 'remote-task-1' } })
+    expect(retry.alreadySent).toBe(false)
+    recovered.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('migrates existing plan databases without losing old tasks', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-plan-migration-'))
     const file = path.join(dir, 'planning.sqlite')

@@ -13,12 +13,15 @@ import {
 } from './microsoft-oauth'
 import { requestPinnedHttps, type ResponseBody } from '../tools/web'
 import { readJsonStore } from './json-store'
+import { TaskExportError } from './task-export-errors'
 
-export const MICROSOFT_TODO_SCOPES = 'Tasks.Read offline_access'
+export const MICROSOFT_TODO_SCOPES = 'Tasks.ReadWrite offline_access'
 export const MICROSOFT_TODO_API_ORIGIN = 'https://graph.microsoft.com'
 const MICROSOFT_TASK_LISTS_PATH = '/v1.0/me/todo/lists'
 const MAX_NOTE_CHARS = 4_000
 const MAX_NEXT_LINK_LENGTH = 8_192
+
+export interface MicrosoftTodoTaskCreateInput { title: string; notes?: string; dueDate?: string | null; priority?: 'low' | 'normal' | 'high' }
 
 const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LIST_PAGE_SCHEMA = z.object({
@@ -29,15 +32,16 @@ const LIST_PAGE_SCHEMA = z.object({
   })).max(100).default([]),
   '@odata.nextLink': z.string().min(1).max(MAX_NEXT_LINK_LENGTH).optional()
 }).passthrough()
+const TODO_TASK_SCHEMA = z.object({
+  id: z.string().min(1).max(512),
+  title: z.string().max(2_048).optional(),
+  body: z.object({ contentType: z.string().max(32).optional(), content: z.string().max(100_000).optional() }).optional(),
+  dueDateTime: z.object({ dateTime: z.string().max(128).optional(), timeZone: z.string().max(128).optional() }).optional(),
+  status: z.enum(['notStarted', 'inProgress', 'completed', 'waitingOnOthers', 'deferred']).optional(),
+  lastModifiedDateTime: z.string().max(64).optional()
+}).passthrough()
 const TASK_PAGE_SCHEMA = z.object({
-  value: z.array(z.object({
-    id: z.string().min(1).max(512),
-    title: z.string().max(2_048).optional(),
-    body: z.object({ contentType: z.string().max(32).optional(), content: z.string().max(100_000).optional() }).optional(),
-    dueDateTime: z.object({ dateTime: z.string().max(128).optional(), timeZone: z.string().max(128).optional() }).optional(),
-    status: z.enum(['notStarted', 'inProgress', 'completed', 'waitingOnOthers', 'deferred']).optional(),
-    lastModifiedDateTime: z.string().max(64).optional()
-  })).max(100).default([]),
+  value: z.array(TODO_TASK_SCHEMA).max(100).default([]),
   '@odata.nextLink': z.string().min(1).max(MAX_NEXT_LINK_LENGTH).optional()
 }).passthrough()
 
@@ -45,18 +49,21 @@ interface MicrosoftTodoSettingsFile {
   version: 1
   clientId: string
   refreshTokenEnc?: string
+  taskWriteEnabled?: boolean
 }
 
 interface MicrosoftTodoStoreState {
   clientId: string
   refreshToken: string
   storedRefreshTokenEnc?: string
+  taskWriteEnabled: boolean
 }
 
 export interface PublicMicrosoftTodoSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
+  taskWriteEnabled: boolean
 }
 
 export type MicrosoftTodoConnectPrompt = MicrosoftConnectPrompt
@@ -66,13 +73,15 @@ function isSettingsFile(value: unknown): value is MicrosoftTodoSettingsFile {
   if (!value || typeof value !== 'object') return false
   const file = value as Partial<MicrosoftTodoSettingsFile>
   return file.version === 1 && typeof file.clientId === 'string' &&
-    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string')
+    (file.refreshTokenEnc === undefined || typeof file.refreshTokenEnc === 'string') &&
+    (file.taskWriteEnabled === undefined || typeof file.taskWriteEnabled === 'boolean')
 }
 
 export class MicrosoftTodoSettingsStore {
   private clientId = ''
   private refreshToken = ''
   private storedRefreshTokenEnc?: string
+  private taskWriteEnabled = false
   private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string, private readonly codec?: SecretCodec) {}
@@ -80,10 +89,11 @@ export class MicrosoftTodoSettingsStore {
   async init(): Promise<void> {
     await this.mutate(async () => {
       await mkdir(path.dirname(this.file), { recursive: true })
-      let next: MicrosoftTodoStoreState = { clientId: '', refreshToken: '' }
+      let next: MicrosoftTodoStoreState = { clientId: '', refreshToken: '', taskWriteEnabled: false }
       const loaded = await readJsonStore<MicrosoftTodoSettingsFile>(this.file, 'microsoft-todo', isSettingsFile)
       if (loaded) {
         next.clientId = normalizeClientId(loaded.clientId, true)
+        next.taskWriteEnabled = loaded.taskWriteEnabled === true
         if (loaded.refreshTokenEnc) {
           next.storedRefreshTokenEnc = loaded.refreshTokenEnc
           if (this.codec?.available) {
@@ -97,12 +107,13 @@ export class MicrosoftTodoSettingsStore {
   }
 
   public(): PublicMicrosoftTodoSettings {
-    return { clientId: this.clientId, connected: Boolean(this.clientId && this.refreshToken), tokenStored: Boolean(this.storedRefreshTokenEnc) }
+    return { clientId: this.clientId, connected: Boolean(this.clientId && this.refreshToken), tokenStored: Boolean(this.storedRefreshTokenEnc), taskWriteEnabled: this.taskWriteEnabled }
   }
 
   getClientId(): string { return this.clientId }
   getRefreshToken(): string | undefined { return this.refreshToken || undefined }
   hasStoredRefreshToken(): boolean { return Boolean(this.refreshToken || this.storedRefreshTokenEnc) }
+  canWriteTasks(): boolean { return this.taskWriteEnabled }
 
   async updateClientId(input: string): Promise<PublicMicrosoftTodoSettings> {
     return this.mutate(async () => {
@@ -124,18 +135,23 @@ export class MicrosoftTodoSettingsStore {
 
   async clearConnection(): Promise<void> {
     await this.mutate(async () => {
-      this.apply(await this.persist({ ...this.snapshot(), refreshToken: '', storedRefreshTokenEnc: undefined }))
+      this.apply(await this.persist({ ...this.snapshot(), refreshToken: '', storedRefreshTokenEnc: undefined, taskWriteEnabled: false }))
     })
   }
 
+  async enableTaskWrites(): Promise<void> {
+    await this.mutate(async () => { this.apply(await this.persist({ ...this.snapshot(), taskWriteEnabled: true })) })
+  }
+
   private snapshot(): MicrosoftTodoStoreState {
-    return { clientId: this.clientId, refreshToken: this.refreshToken, storedRefreshTokenEnc: this.storedRefreshTokenEnc }
+    return { clientId: this.clientId, refreshToken: this.refreshToken, storedRefreshTokenEnc: this.storedRefreshTokenEnc, taskWriteEnabled: this.taskWriteEnabled }
   }
 
   private apply(state: MicrosoftTodoStoreState): void {
     this.clientId = state.clientId
     this.refreshToken = state.refreshToken
     this.storedRefreshTokenEnc = state.storedRefreshTokenEnc
+    this.taskWriteEnabled = state.taskWriteEnabled
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
@@ -151,6 +167,7 @@ export class MicrosoftTodoSettingsStore {
     const payload: MicrosoftTodoSettingsFile = {
       version: 1,
       clientId: state.clientId,
+      taskWriteEnabled: state.taskWriteEnabled,
       ...(storedRefreshTokenEnc ? { refreshTokenEnc: storedRefreshTokenEnc } : {})
     }
     const temporary = `${this.file}.${randomUUID()}.tmp`
@@ -175,12 +192,12 @@ export interface MicrosoftTodoServiceOptions {
   onConnected?: () => Promise<unknown>
 }
 
-/** Device-code OAuth and fixed-host, read-only Microsoft Graph To Do operations. */
+/** Device-code OAuth and fixed-host Microsoft Graph To Do operations. */
 export class MicrosoftTodoService {
   private readonly request: MicrosoftTodoRequest
   private readonly connection: MicrosoftOAuthConnection<PublicMicrosoftTodoSettings>
 
-  constructor(store: MicrosoftTodoSettingsStore, options: MicrosoftTodoServiceOptions) {
+  constructor(private readonly store: MicrosoftTodoSettingsStore, options: MicrosoftTodoServiceOptions) {
     this.request = options.request ?? requestPinnedHttps
     this.connection = new MicrosoftOAuthConnection(store, {
       scopes: MICROSOFT_TODO_SCOPES,
@@ -188,11 +205,15 @@ export class MicrosoftTodoService {
       request: this.request,
       openExternal: options.openExternal,
       ...(options.wait ? { wait: options.wait } : {}),
-      ...(options.onConnected ? { onConnected: options.onConnected } : {})
+      onConnected: async () => {
+        await store.enableTaskWrites()
+        await options.onConnected?.()
+      }
     })
   }
 
   isReady(): boolean { return this.connection.isReady() }
+  canWriteTasks(): boolean { return this.store.canWriteTasks() }
   isConnecting(): boolean { return this.connection.isConnecting() }
 
   connectStatus(): MicrosoftTodoConnectStatus { return this.connection.connectStatus() }
@@ -264,16 +285,65 @@ export class MicrosoftTodoService {
     }
   }
 
-  private async requestGraph(url: URL, signal: AbortSignal, expectedPath: string): Promise<ResponseBody> {
-    if (!isAllowedMicrosoftTodoApiRequest(url, 'GET', expectedPath)) {
-      throw new Error('Microsoft To Do requests are limited to read-only list and task pages on Microsoft Graph.')
+  async createTask(taskListId: string, input: MicrosoftTodoTaskCreateInput, signal: AbortSignal): Promise<MicrosoftTodoTask> {
+    if (!this.canWriteTasks()) throw new TaskExportError('Reconnect Microsoft To Do in Settings to grant task-write permission before sending tasks.', false)
+    if (!isSafeGraphId(taskListId)) throw new TaskExportError('Choose a valid Microsoft To Do list.', false)
+    const title = cleanSingleLine(input.title).slice(0, 240)
+    if (!title) throw new TaskExportError('This local task has no title Microsoft To Do can accept.', false)
+    const notes = input.notes ? input.notes.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim().slice(0, MAX_NOTE_CHARS) : ''
+    const requestBody = {
+      title,
+      status: 'notStarted',
+      importance: input.priority ?? 'normal',
+      ...(notes ? { body: { contentType: 'text', content: notes } } : {}),
+      ...(input.dueDate ? { dueDateTime: { dateTime: `${input.dueDate}T00:00:00`, timeZone: 'UTC' } } : {})
+    }
+    const taskPath = `/v1.0/me/todo/lists/${encodeURIComponent(taskListId)}/tasks`
+    const url = new URL(taskPath, MICROSOFT_TODO_API_ORIGIN)
+    if (!isAllowedMicrosoftTodoApiRequest(url, 'POST', taskPath)) throw new TaskExportError('Microsoft To Do request was outside the approved create-task route.', false)
+    let token: string
+    try { token = await this.connection.getAccessToken(signal) }
+    catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Microsoft To Do access could not be refreshed.', false) }
+    let response: ResponseBody
+    try { response = await this.requestGraph(url, signal, taskPath, 'POST', requestBody, token) }
+    catch { throw new TaskExportError('Microsoft To Do did not confirm whether it created the task.', true) }
+    if (response.status === 401) {
+      this.clearCachedAccessToken()
+      try { token = await this.connection.getAccessToken(signal) }
+      catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Microsoft To Do access could not be refreshed.', false) }
+      try { response = await this.requestGraph(url, signal, taskPath, 'POST', requestBody, token) }
+      catch { throw new TaskExportError('Microsoft To Do did not confirm whether it created the task.', true) }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new TaskExportError(`Microsoft To Do could not create the task (HTTP ${response.status}).`, response.status >= 500)
+    }
+    const parsed = TODO_TASK_SCHEMA.safeParse(parseJson(response.text, 'created-task response'))
+    if (!parsed.success) throw new TaskExportError('Microsoft To Do may have created the task, but its response could not be verified.', true)
+    const due = parsed.data.dueDateTime?.dateTime?.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
+    const updated = cleanSingleLine(parsed.data.lastModifiedDateTime)
+    return {
+      id: parsed.data.id,
+      title: cleanSingleLine(parsed.data.title) || title,
+      ...(notes ? { notes } : {}),
+      ...(due ?? (input.dueDate || undefined) ? { due: due ?? input.dueDate! } : {}),
+      status: parsed.data.status ?? 'notStarted',
+      ...(updated ? { updated } : {})
+    }
+  }
+
+  private async requestGraph(url: URL, signal: AbortSignal, expectedPath: string, method: 'GET' | 'POST' = 'GET', body?: unknown, tokenOverride?: string): Promise<ResponseBody> {
+    if (!isAllowedMicrosoftTodoApiRequest(url, method, expectedPath)) {
+      throw new Error('Microsoft To Do requests are limited to list and task routes on Microsoft Graph.')
     }
     const makeRequest = async (token: string): Promise<ResponseBody> => this.request(url, signal, {
-      method: 'GET', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
       maxResponseBytes: 1_000_000, timeoutMs: 15_000
     })
-    let response = await makeRequest(await this.connection.getAccessToken(signal))
-    if (response.status === 401) {
+    let response = await makeRequest(tokenOverride ?? await this.connection.getAccessToken(signal))
+    // The create caller owns the single safe re-auth retry. Keeping this GET
+    // helper retry for POSTs too could send the same create request three times.
+    if (response.status === 401 && method === 'GET') {
       this.clearCachedAccessToken()
       response = await makeRequest(await this.connection.getAccessToken(signal))
     }
@@ -282,7 +352,7 @@ export class MicrosoftTodoService {
 }
 
 export function isAllowedMicrosoftTodoApiRequest(url: URL, method: string, expectedPath?: string): boolean {
-  if (method !== 'GET' || url.origin !== MICROSOFT_TODO_API_ORIGIN || url.username || url.password || url.port || url.hash) return false
+  if (!['GET', 'POST'].includes(method) || url.origin !== MICROSOFT_TODO_API_ORIGIN || url.username || url.password || url.port || url.hash) return false
   const isListPath = url.pathname === MICROSOFT_TASK_LISTS_PATH
   const taskMatch = url.pathname.match(/^\/v1\.0\/me\/todo\/lists\/([^/]{1,2048})\/tasks$/)
   if (expectedPath && url.pathname !== expectedPath) return false
@@ -290,6 +360,7 @@ export function isAllowedMicrosoftTodoApiRequest(url: URL, method: string, expec
   if (taskMatch) {
     try { if (!isSafeGraphId(decodeURIComponent(taskMatch[1]!))) return false } catch { return false }
   }
+  if (method === 'POST') return Boolean(taskMatch) && !url.search
   return hasSafePageQuery(url, isListPath)
 }
 

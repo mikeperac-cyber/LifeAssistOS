@@ -48,7 +48,14 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
       setLoading(false)
     }
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    let active = true
+    void load()
+    const unsubscribe = window.assist.onEvent((event) => {
+      if (active && event.type === 'today_changed') void load()
+    })
+    return () => { active = false; unsubscribe() }
+  }, [])
 
   const addCapture = async (): Promise<void> => {
     try {
@@ -225,6 +232,11 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
                 <div className="today-task-copy">
                   <strong>{item.title}</strong>
                   {item.emailSource && <span className="today-task-source" title={`Message ID: ${item.emailSource.messageId}`}>From {item.emailSource.provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
+                  {item.taskExports?.map((exported) => (
+                    <span className={`today-task-export export-${exported.status}`} key={`${exported.provider}:${exported.taskListId}`} title={exportStatusTitle(exported.status)}>
+                      {exported.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} · {exportStatusLabel(exported.status)}
+                    </span>
+                  ))}
                   {item.dueDate && <span>Due {item.dueDate}</span>}
                   {item.remindAt && editingReminderId !== item.id && <span>Reminder {formatReminder(item.remindAt)}</span>}
                 </div>
@@ -270,7 +282,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
           <h3 id="google-tasks-title">Google Tasks</h3>
           {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
         </div>
-        <p className="today-google-tasks-note">Read-only connection. Loading lists and tasks asks for approval each time. Chat may send approved results to your configured model provider.</p>
+        <p className="today-google-tasks-note">Loading lists and tasks, and sending a local task, each ask for approval. Ask Mike Assist in Chat to send an open Today task. Old read-only connections need to be disconnected and reconnected in Settings first. Chat may send approved task details to your configured model provider.</p>
         {googleTasksSettings === null ? (
           <p className="muted" role="status">Checking Google Tasks connection…</p>
         ) : !googleTasksSettings.connected ? (
@@ -384,4 +396,18 @@ function formatTaskDue(value: string): string {
   const date = new Date(value)
   if (!Number.isFinite(date.getTime())) return value
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
+}
+
+function exportStatusLabel(status: NonNullable<PlanTask['taskExports']>[number]['status']): string {
+  if (status === 'sent') return 'sent'
+  if (status === 'sending') return 'sending'
+  if (status === 'uncertain') return 'check before retry'
+  return 'not sent'
+}
+
+function exportStatusTitle(status: NonNullable<PlanTask['taskExports']>[number]['status']): string {
+  if (status === 'uncertain') return 'The remote service may have created this task. Check its list before clearing the retry guard.'
+  if (status === 'failed') return 'The service rejected the create request. A new approved send can retry it.'
+  if (status === 'sending') return 'The task is being sent.'
+  return 'This is a one-time copy; later local edits will not update the remote task.'
 }

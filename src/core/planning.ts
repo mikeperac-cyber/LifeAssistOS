@@ -3,11 +3,12 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TodaySnapshot } from '../shared/types'
+import type { EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TodaySnapshot } from '../shared/types'
 import { assertDateOnly } from '../shared/date-only'
 
 interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null }
 interface InboxRow { id: string; text: string; created_at: string; converted_task_id: string | null; dismissed_at: string | null }
+interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string }
 
 export interface PendingTaskReminder { id: string; title: string; remindAt: string }
 
@@ -39,6 +40,12 @@ export class PlanningStore {
         id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL,
         converted_task_id TEXT, dismissed_at TEXT
       );
+      CREATE TABLE IF NOT EXISTS task_exports (
+        task_id TEXT NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('google_tasks', 'microsoft_todo')),
+        task_list_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('sending', 'sent', 'failed', 'uncertain')),
+        remote_task_id TEXT, updated_at TEXT NOT NULL,
+        PRIMARY KEY (task_id, provider, task_list_id)
+      );
       CREATE INDEX IF NOT EXISTS tasks_due_status ON tasks(due_date, status);
       CREATE INDEX IF NOT EXISTS inbox_active ON inbox(dismissed_at, converted_task_id);
     `)
@@ -48,18 +55,19 @@ export class PlanningStore {
     if (!columns.some((column) => column.name === 'source_email_message_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_message_id TEXT')
     if (!columns.some((column) => column.name === 'remind_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT')
     if (!columns.some((column) => column.name === 'reminder_notified_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN reminder_notified_at TEXT')
+    this.db.prepare("UPDATE task_exports SET status = 'uncertain', updated_at = ? WHERE status = 'sending'").run(new Date().toISOString())
   }
 
   snapshot(date = localDate()): TodaySnapshot {
     assertDateOnly(date)
     const tasks = this.db.prepare("SELECT * FROM tasks WHERE status = 'open' AND (due_date IS NULL OR due_date <= ?) ORDER BY CASE priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, due_date IS NULL, due_date, created_at").all(date) as unknown as TaskRow[]
     const inbox = this.db.prepare('SELECT * FROM inbox WHERE dismissed_at IS NULL AND converted_task_id IS NULL ORDER BY created_at DESC').all() as unknown as InboxRow[]
-    return { date, tasks: tasks.map(taskFromRow), inbox: inbox.map(inboxFromRow) }
+    return { date, tasks: this.attachTaskExports(tasks.map(taskFromRow)), inbox: inbox.map(inboxFromRow) }
   }
 
   listTasks(includeCompleted = false): PlanTask[] {
     const rows = this.db.prepare(`SELECT * FROM tasks ${includeCompleted ? '' : "WHERE status = 'open'"} ORDER BY status, due_date IS NULL, due_date, created_at DESC`).all() as unknown as TaskRow[]
-    return rows.map(taskFromRow)
+    return this.attachTaskExports(rows.map(taskFromRow))
   }
 
   addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource }): PlanTask {
@@ -100,7 +108,53 @@ export class PlanningStore {
   getTask(id: string): PlanTask {
     const row = this.db.prepare('SELECT * FROM tasks WHERE id = ?').get(id) as TaskRow | undefined
     if (!row) throw new Error('That task no longer exists.')
-    return taskFromRow(row)
+    return this.attachTaskExports([taskFromRow(row)])[0]!
+  }
+
+  getTaskExport(taskId: string, provider: TaskExportProvider, taskListId: string): TaskExportRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM task_exports WHERE task_id = ? AND provider = ? AND task_list_id = ?').get(taskId, provider, taskListId) as TaskExportRow | undefined
+    return row ? taskExportFromRow(row) : undefined
+  }
+
+  beginTaskExport(taskId: string, provider: TaskExportProvider, taskListId: string, expectedUpdatedAt: string): { task: PlanTask; export: TaskExportRecord; alreadySent: boolean } {
+    validateTaskExportTarget(provider, taskListId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const task = this.getTask(taskId)
+      if (task.status !== 'open') throw new Error('Only an open local Today task can be sent to a connected task service.')
+      if (task.updatedAt !== expectedUpdatedAt) throw new Error('This local task changed after approval was requested. Review it and approve the send again.')
+      const existing = this.getTaskExport(taskId, provider, taskListId)
+      if (existing?.status === 'sent') {
+        this.db.exec('COMMIT')
+        return { task, export: existing, alreadySent: true }
+      }
+      if (existing && (existing.status === 'sending' || existing.status === 'uncertain')) {
+        throw new Error('A previous send may already have created this remote task. Check the destination list, then ask Mike Assist to clear the retry guard before trying again.')
+      }
+      const updatedAt = new Date().toISOString()
+      if (existing) {
+        this.db.prepare("UPDATE task_exports SET status = 'sending', remote_task_id = NULL, updated_at = ? WHERE task_id = ? AND provider = ? AND task_list_id = ?").run(updatedAt, taskId, provider, taskListId)
+      } else {
+        this.db.prepare("INSERT INTO task_exports (task_id, provider, task_list_id, status, remote_task_id, updated_at) VALUES (?, ?, ?, 'sending', NULL, ?)").run(taskId, provider, taskListId, updatedAt)
+      }
+      this.db.exec('COMMIT')
+      return { task, export: { provider, taskListId, status: 'sending', updatedAt }, alreadySent: false }
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
+  }
+
+  finishTaskExport(taskId: string, provider: TaskExportProvider, taskListId: string, status: Exclude<TaskExportStatus, 'sending'>, remoteTaskId?: string): void {
+    if (status === 'sent' && (!remoteTaskId || remoteTaskId.length > 512)) throw new Error('The task service returned an invalid remote task ID.')
+    const result = this.db.prepare('UPDATE task_exports SET status = ?, remote_task_id = ?, updated_at = ? WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = ?')
+      .run(status, status === 'sent' ? (remoteTaskId ?? null) : null, new Date().toISOString(), taskId, provider, taskListId, 'sending')
+    if (result.changes === 0) throw new Error('The local task send record changed before it could be updated.')
+  }
+
+  clearTaskExportRetryGuard(taskId: string, provider: TaskExportProvider, taskListId: string): void {
+    const result = this.db.prepare("DELETE FROM task_exports WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status IN ('sending', 'uncertain')").run(taskId, provider, taskListId)
+    if (result.changes === 0) throw new Error('There is no uncertain send attempt to clear for that task and destination.')
   }
 
   capture(text: string): InboxItem {
@@ -135,6 +189,18 @@ export class PlanningStore {
   async backupTo(file: string): Promise<void> { await mkdir(path.dirname(file), { recursive: true }); await backup(this.db, file) }
   close(): void { if (!this.closed) { this.db.close(); this.closed = true } }
   private get dbPath(): string { const row = this.db.prepare('PRAGMA database_list').get() as { file?: string } | undefined; return row?.file ? path.dirname(row.file) : process.cwd() }
+
+  private attachTaskExports(tasks: PlanTask[]): PlanTask[] {
+    if (!tasks.length) return tasks
+    const exports = this.db.prepare('SELECT * FROM task_exports ORDER BY updated_at DESC').all() as unknown as TaskExportRow[]
+    const byTask = new Map<string, TaskExportRecord[]>()
+    for (const row of exports) {
+      const values = byTask.get(row.task_id) ?? []
+      values.push(taskExportFromRow(row))
+      byTask.set(row.task_id, values)
+    }
+    return tasks.map((task) => ({ ...task, taskExports: byTask.get(task.id) ?? [] }))
+  }
 }
 
 function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined } }
@@ -146,6 +212,11 @@ function normalizeEmailTaskSource(source: EmailTaskSource): EmailTaskSource {
   return { provider: source.provider, messageId }
 }
 function isEmailTaskProvider(value: string | null): value is EmailTaskProvider { return value === 'gmail' || value === 'outlook' }
+function taskExportFromRow(row: TaskExportRow): TaskExportRecord { return { provider: row.provider, taskListId: row.task_list_id, status: row.status, ...(row.remote_task_id ? { remoteTaskId: row.remote_task_id } : {}), updatedAt: row.updated_at } }
+function validateTaskExportTarget(provider: TaskExportProvider, taskListId: string): void {
+  if (provider !== 'google_tasks' && provider !== 'microsoft_todo') throw new Error('Choose Google Tasks or Microsoft To Do as the destination.')
+  if (!taskListId || taskListId.length > 512 || /[\u0000-\u001f\u007f]/.test(taskListId)) throw new Error('Choose a valid task list.')
+}
 function normalizeDate(value: string | null | undefined): string | null { return value ? assertDateOnly(value) : null }
 function normalizeReminderAt(value: string | null | undefined): string | null {
   if (!value) return null

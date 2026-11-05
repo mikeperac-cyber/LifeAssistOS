@@ -17,6 +17,8 @@ import { createWebSearchTool } from '../src/tools/web-search'
 import { createGoogleCalendarTools } from '../src/tools/google-calendar'
 import { createGoogleGmailTools } from '../src/tools/google-gmail'
 import { createGoogleDriveTools } from '../src/tools/google-drive'
+import { createGoogleTasksTools } from '../src/tools/google-tasks'
+import { createMicrosoftTodoTools } from '../src/tools/microsoft-todo'
 import { createCommandCenterTools } from '../src/tools/command-center'
 import { createCoachingTools } from '../src/tools/coaching'
 import { createScheduledTaskTools } from '../src/tools/scheduled-tasks'
@@ -53,6 +55,8 @@ describe('defaultPolicy completeness', () => {
     for (const tool of createGoogleCalendarTools(dummyStore)) registry.register(tool)
     for (const tool of createGoogleGmailTools(dummyStore)) registry.register(tool)
     for (const tool of createGoogleDriveTools(dummyStore)) registry.register(tool)
+    for (const tool of createGoogleTasksTools(dummyStore, dummyStore)) registry.register(tool)
+    for (const tool of createMicrosoftTodoTools(dummyStore, dummyStore)) registry.register(tool)
     for (const tool of createCommandCenterTools(dummyStore, dummyStore)) registry.register(tool)
     for (const tool of createCoachingTools(dummyStore)) registry.register(tool)
     for (const tool of createScheduledTaskTools(dummyStore)) registry.register(tool)
@@ -70,5 +74,8 @@ describe('defaultPolicy completeness', () => {
 
     expect(missing).toEqual([])
     expect(resolveDecision('create_email_followup_task', 'write', defaultPolicy).decision).toBe('ask')
+    expect(resolveDecision('google_tasks_create_from_today_task', 'external', defaultPolicy).decision).toBe('ask')
+    expect(resolveDecision('microsoft_todo_create_from_today_task', 'external', defaultPolicy).decision).toBe('ask')
+    expect(resolveDecision('clear_task_export_retry_guard', 'write', defaultPolicy).decision).toBe('ask')
   })
 })

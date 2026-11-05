@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import type { EmailTaskProvider, ToolDef } from '../shared/types'
+import type { EmailTaskProvider, TaskExportProvider, ToolDef } from '../shared/types'
 import type { PlanningStore } from '../core/planning'
 import type { VaultStore } from '../core/vault'
 
-export function createCommandCenterTools(vault: VaultStore, planning: PlanningStore): ToolDef<any, any>[] {
+export function createCommandCenterTools(vault: VaultStore, planning: PlanningStore, onTodayChanged: () => void = () => undefined): ToolDef<any, any>[] {
   const searchVault: ToolDef<{ query: string }, unknown> = {
     name: 'search_vault',
     description: 'Search the local Knowledge Vault using full-text search.',
@@ -41,7 +41,7 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     input: z.object({ text: z.string().min(1).max(2000) }),
     scope: () => ({ kind: 'none' }),
     preview: (args) => `Capture to Today inbox: ${args.text.slice(0, 180)}`,
-    run: async (args) => planning.capture(args.text)
+    run: async (args) => { const item = planning.capture(args.text); onTodayChanged(); return item }
   }
 
   const createTask: ToolDef<{ title: string; notes?: string; dueDate?: string; remindAt?: string; priority?: 'low' | 'normal' | 'high' }, unknown> = {
@@ -51,7 +51,7 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     input: z.object({ title: z.string().min(1).max(240), notes: z.string().max(2000).optional(), dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), remindAt: z.string().datetime({ offset: true }).optional(), priority: z.enum(['low', 'normal', 'high']).optional() }),
     scope: () => ({ kind: 'none' }),
     preview: (args) => `Create ${args.priority ?? 'normal'} task: ${args.title}${args.remindAt ? `\nWindows reminder: ${args.remindAt}` : ''}`,
-    run: async (args) => planning.addTask(args)
+    run: async (args) => { const task = planning.addTask(args); onTodayChanged(); return task }
   }
 
   const createEmailFollowupTask: ToolDef<{ provider: EmailTaskProvider; messageId: string; title: string; notes?: string; dueDate?: string; remindAt?: string; priority?: 'low' | 'normal' | 'high' }, unknown> = {
@@ -77,7 +77,7 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
       `Priority: ${args.priority ?? 'normal'}`,
       'The task stores only the email provider and message ID as provenance.'
     ].filter(Boolean).join('\n'),
-    run: async ({ provider, messageId, ...task }) => planning.addTask({ ...task, emailSource: { provider, messageId } })
+    run: async ({ provider, messageId, ...task }) => { const created = planning.addTask({ ...task, emailSource: { provider, messageId } }); onTodayChanged(); return created }
   }
 
   const updateTask: ToolDef<{
@@ -103,7 +103,7 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     }).refine((args) => Object.keys(args).some((key) => key !== 'id'), { message: 'Choose at least one task field to update.' }),
     scope: () => ({ kind: 'none' }),
     preview: (args) => `Update task ${args.id}: ${Object.keys(args).filter((key) => key !== 'id').join(', ')}.`,
-    run: async ({ id, ...patch }) => planning.updateTask(id, patch)
+    run: async ({ id, ...patch }) => { const updated = planning.updateTask(id, patch); onTodayChanged(); return updated }
   }
 
   const completeTask: ToolDef<{ id: string }, unknown> = {
@@ -113,8 +113,31 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     input: z.object({ id: z.string().uuid() }),
     scope: () => ({ kind: 'none' }),
     preview: (args) => `Complete local task ${args.id}.`,
-    run: async (args) => planning.updateTask(args.id, { status: 'done' })
+    run: async (args) => { const task = planning.updateTask(args.id, { status: 'done' }); onTodayChanged(); return task }
   }
 
-  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, updateTask, completeTask]
+  const clearTaskExportRetryGuard: ToolDef<{ taskId: string; provider: TaskExportProvider; taskListId: string }, unknown> = {
+    name: 'clear_task_export_retry_guard',
+    description: 'Clear a local retry guard after the user has checked the selected Google Tasks or Microsoft To Do list and confirmed the remote create did not happen. This changes only the local guard; it does not delete or change any remote task. Requires separate local approval.',
+    risk: 'write',
+    sessionApprovalAllowed: false,
+    input: z.object({ taskId: z.string().uuid(), provider: z.enum(['google_tasks', 'microsoft_todo']), taskListId: z.string().min(1).max(512) }),
+    scope: () => ({ kind: 'none' }),
+    preview: (args) => {
+      const task = planning.getTask(args.taskId)
+      const prior = planning.getTaskExport(args.taskId, args.provider, args.taskListId)
+      if (!prior || (prior.status !== 'sending' && prior.status !== 'uncertain')) throw new Error('This task has no uncertain send attempt for that destination.')
+      const provider = args.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+      const title = task.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim()
+      const listId = args.taskListId.replace(/[\u0000-\u001f\u007f]/g, ' ').trim()
+      return `Clear the local retry guard for “${title}” in ${provider} list ${listId}. First check that remote list; clearing the guard may allow a duplicate if the task was created.`
+    },
+    run: async (args) => {
+      planning.clearTaskExportRetryGuard(args.taskId, args.provider, args.taskListId)
+      onTodayChanged()
+      return { cleared: true, provider: args.provider, taskListId: args.taskListId, note: 'No remote task was changed.' }
+    }
+  }
+
+  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, updateTask, completeTask, clearTaskExportRetryGuard]
 }

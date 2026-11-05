@@ -73,7 +73,10 @@ function aliasesForTool(name: string): string {
     return 'drive dokuman belge dosya klasor sunum tablo rapor teklif sozlesme'
   }
   if (name.startsWith('google_tasks_')) {
-    return 'google tasks gorev task list yapilacak bugun yarin plan oncelik'
+    return 'google tasks send export copy push sync gorev task list yapilacak bugun yarin plan oncelik'
+  }
+  if (name.startsWith('microsoft_todo_')) {
+    return 'microsoft todo tasks send export copy push sync gorev task list yapilacak bugun yarin plan oncelik'
   }
   if (name.startsWith('finance_') || name === 'record_transaction') {
     return 'finans para harcama masraf gider gelir butce maliyet kazanc ciro fatura odeme'
@@ -83,7 +86,7 @@ function aliasesForTool(name: string): string {
     return 'koc kocluk kisisel isletme hedef gunluk yansima aliskanlik motivasyon'
   }
   if (name === 'list_today' || name === 'create_task' || name === 'create_email_followup_task' || name === 'capture_inbox' ||
-      name === 'update_task' || name === 'complete_task' || name.startsWith('schedule_agent_task') ||
+      name === 'update_task' || name === 'complete_task' || name === 'clear_task_export_retry_guard' || name.startsWith('schedule_agent_task') ||
       name === 'list_scheduled_agent_tasks') {
     return 'bugun yarin gorev yapilacak hatirlatma oncelik plan otomasyon zamanlama'
   }
