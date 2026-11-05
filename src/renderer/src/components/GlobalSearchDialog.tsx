@@ -10,7 +10,7 @@ import type {
   WorkflowRecord
 } from '../../../shared/types'
 import type { GlobalSearchSelection } from '../global-search'
-import { globalSearchMatches, searchNavigationViews } from '../global-search'
+import { globalSearchKeyAction, globalSearchMatches, searchNavigationViews } from '../global-search'
 import { VIEW_META } from '../navigation'
 
 interface SearchOption {
@@ -128,12 +128,11 @@ export function GlobalSearchDialog({ open, workflows, scheduledTasks, skills, on
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return
-              if (event.key === 'ArrowDown') { event.preventDefault(); moveActive(1) }
-              else if (event.key === 'ArrowUp') { event.preventDefault(); moveActive(-1) }
-              else if (event.key === 'Home' && options.length) { event.preventDefault(); setActiveIndex(0) }
-              else if (event.key === 'End' && options.length) { event.preventDefault(); setActiveIndex(options.length - 1) }
-              else if (event.key === 'Enter' && options[activeIndex]) { event.preventDefault(); choose(options[activeIndex]!) }
-              else if (event.key === 'Escape') { event.preventDefault(); onClose() }
+              const action = globalSearchKeyAction(event.key)
+              if (action === 'next') { event.preventDefault(); moveActive(1) }
+              else if (action === 'previous') { event.preventDefault(); moveActive(-1) }
+              else if (action === 'select' && options[activeIndex]) { event.preventDefault(); choose(options[activeIndex]!) }
+              else if (action === 'close') { event.preventDefault(); onClose() }
             }}
             placeholder="Find a page, chat, task, note, or saved item…"
             role="combobox"
@@ -155,6 +154,7 @@ export function GlobalSearchDialog({ open, workflows, scheduledTasks, skills, on
               key={option.id}
               id={option.id}
               type="button"
+              tabIndex={-1}
               role="option"
               aria-selected={index === activeIndex}
               className={`global-search-option ${index === activeIndex ? 'active' : ''}`}

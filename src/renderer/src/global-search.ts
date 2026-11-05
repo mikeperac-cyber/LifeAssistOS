@@ -34,6 +34,18 @@ export type GlobalSearchSelection =
 
 export type TodaySearchTarget = Extract<GlobalSearchSelection, { kind: 'today-task' | 'today-inbox' }>
 
+export type GlobalSearchKeyAction = 'next' | 'previous' | 'select' | 'close' | null
+
+export function globalSearchKeyAction(key: string): GlobalSearchKeyAction {
+  switch (key) {
+    case 'ArrowDown': return 'next'
+    case 'ArrowUp': return 'previous'
+    case 'Enter': return 'select'
+    case 'Escape': return 'close'
+    default: return null
+  }
+}
+
 export function normalizeGlobalSearchText(value: string): string {
   return value.normalize('NFKD').toLocaleLowerCase().replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
 }
