@@ -679,6 +679,12 @@ export default function App(): React.JSX.Element {
     void sendAgentMessage(pack.prompt)
   }, [sendAgentMessage])
 
+  const prepareMeeting = useCallback((prompt: string) => {
+    setChatMode('assistant')
+    setInput((current) => current.trim() ? `${current.trimEnd()}\n\n${prompt}` : prompt)
+    setView('chat')
+  }, [])
+
   const startCoachingChat = useCallback(async (area: CoachArea, prompt: string) => {
     if (busyRef.current || queueRunningRef.current || directWorkflowRunningRef.current) return
     try {
@@ -1507,6 +1513,7 @@ export default function App(): React.JSX.Element {
             microsoftMailSettings={microsoftMailSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
             onOpenSettings={() => setView('settings')}
+            onPrepareMeeting={prepareMeeting}
             onGoogleCalendarSettingsRefresh={setGoogleCalendarSettings}
             onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
             onSettingsRefresh={setGoogleTasksSettings}

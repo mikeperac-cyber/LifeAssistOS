@@ -7,7 +7,7 @@ import { GoogleCalendarPanel } from './GoogleCalendarPanel'
 import { GoogleGmailFollowupPanel, OutlookMailFollowupPanel } from './EmailFollowupPanel'
 import { TaskExportControl } from './TaskExportControl'
 
-export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh }: {
+export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onPrepareMeeting, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh }: {
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
@@ -16,6 +16,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
   microsoftMailSettings: PublicMicrosoftMailSettings | null
   disabled: boolean
   onOpenSettings: () => void
+  onPrepareMeeting: (prompt: string) => void
   onGoogleCalendarSettingsRefresh: (settings: PublicGoogleCalendarSettings) => void
   onGoogleGmailSettingsRefresh: (settings: PublicGoogleGmailSettings) => void
   onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
@@ -383,6 +384,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
         todayTasks={snapshot.tasks}
         disabled={disabled}
         onOpenSettings={onOpenSettings}
+        onPrepareMeeting={onPrepareMeeting}
         onSettingsRefresh={onGoogleCalendarSettingsRefresh}
       />
       <MicrosoftCalendarPanel
@@ -390,6 +392,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
         todayTasks={snapshot.tasks}
         disabled={disabled}
         onOpenSettings={onOpenSettings}
+        onPrepareMeeting={onPrepareMeeting}
         onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}
       />
       <GoogleGmailFollowupPanel

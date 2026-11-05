@@ -2,11 +2,12 @@ import type { PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 import type { PlanTask } from '../../../shared/types'
 import { CalendarEventsPanel } from './CalendarEventsPanel'
 
-export function MicrosoftCalendarPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh }: {
+export function MicrosoftCalendarPanel({ settings, todayTasks, disabled, onOpenSettings, onPrepareMeeting, onSettingsRefresh }: {
   settings: PublicMicrosoftCalendarSettings | null
   todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
+  onPrepareMeeting: (prompt: string) => void
   onSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
 }): React.JSX.Element {
   return (
@@ -17,6 +18,7 @@ export function MicrosoftCalendarPanel({ settings, todayTasks, disabled, onOpenS
       todayTasks={todayTasks}
       disabled={disabled}
       onOpenSettings={onOpenSettings}
+      onPrepareMeeting={onPrepareMeeting}
       onSettingsRefresh={onSettingsRefresh}
       listEvents={async (start, end, pageToken) => {
         const result = await window.assist.listMicrosoftCalendarEvents(start, end, pageToken)

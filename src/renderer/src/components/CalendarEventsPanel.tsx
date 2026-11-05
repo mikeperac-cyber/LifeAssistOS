@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CalendarTaskProvider, PlanTask } from '../../../shared/types'
 import type { CalendarPrepTaskInput, TodayTaskExportActionResult } from '../../../shared/ipc'
+import { buildMeetingPrepPrompt } from '../meeting-prep'
 
 export interface CalendarPanelEvent {
   id: string
@@ -27,6 +28,7 @@ export function CalendarEventsPanel<TSettings extends { connected: boolean }>({
   todayTasks,
   disabled,
   onOpenSettings,
+  onPrepareMeeting,
   onSettingsRefresh,
   listEvents
 }: {
@@ -36,6 +38,7 @@ export function CalendarEventsPanel<TSettings extends { connected: boolean }>({
   todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
+  onPrepareMeeting: (prompt: string) => void
   onSettingsRefresh: (settings: TSettings) => void
   listEvents: (start: string, end: string, pageToken?: string) => Promise<CalendarPanelReadResult<TSettings>>
 }): React.JSX.Element {
@@ -131,7 +134,7 @@ export function CalendarEventsPanel<TSettings extends { connected: boolean }>({
         <h3 id={headingId}>{providerName}</h3>
         {settings?.connected && events.length > 0 && <span>{events.length} events</span>}
       </div>
-      <p className="today-google-tasks-note">Loading each event page asks for approval. Create a local prep task from a selected event with its own approval; the calendar stays unchanged. Chat may send approved event details to your configured model provider.</p>
+      <p className="today-google-tasks-note">Each event page and local prep task needs approval. Prepare meeting opens a Chat draft for review; sending shares the event title, time, and location with your model. Drive searches and reads need approval; approved extracts may be sent to the model and saved in that chat.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking {providerName} connection…</p>
       ) : !settings.connected ? (
@@ -157,6 +160,14 @@ export function CalendarEventsPanel<TSettings extends { connected: boolean }>({
                   </div>
                   <div className="today-calendar-event-actions">
                     {event.statusLabel && <span className="today-google-task-status">{event.statusLabel}</span>}
+                    <button className="ghost-button" type="button" aria-label={`Prepare for ${event.title}`} onClick={() => onPrepareMeeting(buildMeetingPrepPrompt({
+                      calendar: providerName,
+                      title: event.title,
+                      start: event.start,
+                      end: event.end,
+                      isAllDay: event.isAllDay,
+                      ...(event.location ? { location: event.location } : {})
+                    }))} disabled={disabled}>Prepare meeting</button>
                     {todayTasks.some((task) => task.calendarSource?.provider === provider && task.calendarSource.eventId === event.id) || createdEventIds.has(event.id) ? (
                       <span className="today-calendar-prep-done">Prep task added</span>
                     ) : (

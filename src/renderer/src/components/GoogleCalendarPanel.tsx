@@ -2,11 +2,12 @@ import type { PublicGoogleCalendarSettings } from '../../../shared/ipc'
 import type { PlanTask } from '../../../shared/types'
 import { CalendarEventsPanel } from './CalendarEventsPanel'
 
-export function GoogleCalendarPanel({ settings, todayTasks, disabled, onOpenSettings, onSettingsRefresh }: {
+export function GoogleCalendarPanel({ settings, todayTasks, disabled, onOpenSettings, onPrepareMeeting, onSettingsRefresh }: {
   settings: PublicGoogleCalendarSettings | null
   todayTasks: PlanTask[]
   disabled: boolean
   onOpenSettings: () => void
+  onPrepareMeeting: (prompt: string) => void
   onSettingsRefresh: (settings: PublicGoogleCalendarSettings) => void
 }): React.JSX.Element {
   return (
@@ -17,6 +18,7 @@ export function GoogleCalendarPanel({ settings, todayTasks, disabled, onOpenSett
       todayTasks={todayTasks}
       disabled={disabled}
       onOpenSettings={onOpenSettings}
+      onPrepareMeeting={onPrepareMeeting}
       onSettingsRefresh={onSettingsRefresh}
       listEvents={async (start, end, pageToken) => {
         const result = await window.assist.listGoogleCalendarEvents(start, end, pageToken)
