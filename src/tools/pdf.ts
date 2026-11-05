@@ -1,6 +1,5 @@
 import { open, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { z } from 'zod'
 import type { ToolDef } from '../shared/types'
 import { pathContext, resolveGrantPath, ToolError } from './paths'
@@ -110,6 +109,7 @@ export async function extractPdfBuffer(source: Uint8Array, options: PdfBufferOpt
   }
   if (signal?.aborted) throw new ToolError('PDF reading was cancelled.')
 
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const loadingTask = getDocument({ data: new Uint8Array(bytes), useWorkerFetch: false, useWasm: false, stopAtErrors: true, verbosity: 0 })
   const destroyOnAbort = (): void => { void loadingTask.destroy().catch(() => undefined) }
   signal?.addEventListener('abort', destroyOnAbort, { once: true })
