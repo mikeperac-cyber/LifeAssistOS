@@ -3008,12 +3008,14 @@ function createWindow(): void {
         isQuitting
       })
     ) {
-      event.preventDefault()
       if (!systemTray) {
         systemTray = new SystemTrayManager({
           Tray,
           Menu,
           nativeImage,
+          iconPath: app.isPackaged
+            ? path.join(process.resourcesPath, 'app-icon.png')
+            : path.join(app.getAppPath(), 'resources', 'app-icon.png'),
           onOpenWindow: () => {
             if (!mainWindow || mainWindow.isDestroyed()) {
               createWindow()
@@ -3039,7 +3041,8 @@ function createWindow(): void {
           }
         })
       }
-      systemTray.ensureCreated()
+      if (!systemTray.ensureCreated()) return
+      event.preventDefault()
       mainWindow?.hide()
     }
   })

@@ -7,14 +7,11 @@ export function shouldMinimizeToTrayOnClose(options: {
   return Boolean(options.keepInBackground && !options.isQuitting)
 }
 
-// 16x16 dark cyan badge PNG data URL for the system tray
-const TRAY_ICON_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAACdJREFUOE9jZGBg+M9AAWBUgI0BowaMGjBqwKgBowYwDLoBDAwMABpOAQHot6zCAAAAAElFTkSuQmCC'
-
 export interface TrayHost {
   Tray: typeof ElectronTray
   Menu: typeof ElectronMenu
   nativeImage: typeof ElectronNativeImage
+  iconPath: string
   onOpenWindow: () => void
   onQuickCapture: () => void
   onQuitApp: () => void
@@ -25,12 +22,14 @@ export class SystemTrayManager {
 
   constructor(private readonly host: TrayHost) {}
 
-  ensureCreated(): void {
-    if (this.tray) return
+  ensureCreated(): boolean {
+    if (this.tray) return true
+    let tray: ElectronTray | null = null
     try {
-      const icon = this.host.nativeImage.createFromDataURL(TRAY_ICON_DATA_URL)
-      this.tray = new this.host.Tray(icon)
-      this.tray.setToolTip('Mike Assist')
+      const icon = this.host.nativeImage.createFromPath(this.host.iconPath)
+      if (icon.isEmpty()) throw new Error(`Tray icon could not be loaded from ${this.host.iconPath}`)
+      tray = new this.host.Tray(icon)
+      tray.setToolTip('Mike Assist')
       const menu = this.host.Menu.buildFromTemplate([
         {
           label: 'Quick capture',
@@ -46,10 +45,18 @@ export class SystemTrayManager {
           click: () => this.host.onQuitApp()
         }
       ])
-      this.tray.setContextMenu(menu)
-      this.tray.on('click', () => this.host.onOpenWindow())
+      tray.setContextMenu(menu)
+      tray.on('click', () => this.host.onOpenWindow())
+      this.tray = tray
+      return true
     } catch (error) {
+      try {
+        tray?.destroy()
+      } catch {
+        // Ignore cleanup errors after partial tray initialization.
+      }
       console.warn('[tray] could not initialize system tray', error)
+      return false
     }
   }
 

@@ -48,6 +48,10 @@
       {
         "from": "src/tools/code-runner-worker.cjs",
         "to": "code-runner-worker.cjs"
+      },
+      {
+        "from": "resources/app-icon.png",
+        "to": "app-icon.png"
       }
     ],
     "electronFuses": {
@@ -70,6 +74,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "resources/app-icon.ico",
       "target": [
         {
           "target": "nsis",
