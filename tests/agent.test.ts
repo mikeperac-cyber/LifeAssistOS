@@ -957,6 +957,36 @@ describe('Agent', () => {
     ).toBe(true)
   })
 
+  it('treats OneDrive search results as untrusted input before a later write', async () => {
+    const approvals: PermissionRequest[] = []
+    const searchOneDrive: ToolDef<{ query: string }, { files: string[] }> = {
+      name: 'microsoft_onedrive_search_files',
+      description: 'Search connected OneDrive files.',
+      risk: 'external',
+      input: z.object({ query: z.string() }),
+      run: async () => ({ files: ['A file result from OneDrive.'] })
+    }
+    const policy: PolicyConfig = {
+      ...defaultPolicy,
+      tools: { ...defaultPolicy.tools, microsoft_onedrive_search_files: 'allow' }
+    }
+    const { agent, events } = await harness(
+      [
+        toolReply('microsoft_onedrive_search_files', { query: 'guide' }),
+        toolReply('write_file', { path: 'onedrive-notes.md', content: 'A file result from OneDrive.' }),
+        textReply('I saved the result.')
+      ],
+      { extraTools: [searchOneDrive], policy, approvalRequests: approvals }
+    )
+
+    await agent.handleUserMessage('Search OneDrive and save a note with the result.')
+
+    expect(approvals).toHaveLength(1)
+    expect(approvals[0]?.tool).toBe('write_file')
+    expect(approvals[0]?.tainted).toBe(true)
+    expect(events.some((event) => event.type === 'tool_call' && event.call.name === 'write_file' && event.call.tainted)).toBe(true)
+  })
+
   it('marks direct external actions tainted after successful web results', async () => {
     const approvals: PermissionRequest[] = []
     const sendEmail: ToolDef<{ recipient: string; body: string }, { sent: boolean }> = {

@@ -64,6 +64,8 @@ export const defaultPolicy: PolicyConfig = {
     create_calendar_prep_task: 'ask',
     microsoft_mail_search_messages: 'ask',
     microsoft_mail_read_message: 'ask',
+    microsoft_onedrive_search_files: 'ask',
+    microsoft_onedrive_read_file: 'ask',
     search_vault: 'allow',
     list_today: 'allow',
     save_vault_document: 'ask',

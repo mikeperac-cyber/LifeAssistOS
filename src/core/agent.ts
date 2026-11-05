@@ -1495,7 +1495,7 @@ function sequenceContainsUntrustedTool(raw: string): boolean {
 function isUntrustedSourceTool(name: string): boolean {
   return name === 'delegate_task' || name === 'search_conversations' || name === 'web_fetch' ||
     name === 'web_search' || name.startsWith('browser_') || name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') ||
-    name.startsWith('microsoft_mail_') ||
+    name.startsWith('microsoft_mail_') || name.startsWith('microsoft_onedrive_') ||
     name.startsWith('gmail_') || name.startsWith('google_drive_') || name === 'run_command' ||
     name === EXECUTE_CODE_TOOL_NAME || name.startsWith('mcp__')
 }

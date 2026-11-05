@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings, PublicMicrosoftMailSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings, PublicMicrosoftMailSettings, PublicMicrosoftOneDriveSettings } from '../../../shared/ipc'
 import type { McpServerInfo } from '../../../shared/types'
 export { resolveIntegrationTargetView } from '../navigation'
 
@@ -28,6 +28,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'microsoft_todo', title: 'Microsoft To Do', category: 'Planning', description: 'View open tasks from a selected Microsoft To Do list and send local Today tasks into that list.', access: 'Delegated Tasks.ReadWrite · approval for every read and task send; existing read-only connections must reconnect', status: 'available', tone: 'blue' },
   { id: 'microsoft_calendar', title: 'Outlook Calendar', category: 'Planning', description: 'View Outlook events, create local prep tasks, or open a meeting-prep draft that can use approved Drive files and local notes.', access: 'Delegated Calendars.ReadBasic · approval for event pages, local tasks, and Drive access', status: 'available', tone: 'teal' },
   { id: 'microsoft_mail', title: 'Outlook Mail', category: 'Communication', description: 'Search and read selected messages in Chat, or add local follow-up tasks from Today. Sending is not available.', access: 'Delegated Mail.Read · approval for each search, message read, and local task', status: 'available', tone: 'blue' },
+  { id: 'microsoft_onedrive', title: 'Microsoft OneDrive', category: 'Work', description: 'Search and analyze selected PDF, DOCX, XLSX, and supported text files in Chat. File changes and uploads are not available.', access: 'Delegated Files.Read · approval for each search and file read', status: 'available', tone: 'teal' },
   { id: 'memory', title: 'Personal Memory', category: 'Context', description: 'Approved facts are automatically recalled when relevant, with citations.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
   { id: 'skills', title: 'User Skills', category: 'Context', description: 'Reusable plain-text guidance loaded only when relevant to a task.', access: 'Local library · no added permissions', status: 'local', tone: 'purple' },
   { id: 'finances', title: 'Finance Ledger', category: 'Life admin', description: 'Categorized local income and expenses; no bank access or transfers.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
@@ -35,7 +36,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'drafts', title: 'Draft workspace', category: 'Communication', description: 'Local unsent email and calendar drafts only.', access: 'Approved local writes', status: 'local', tone: 'blue' }
 ]
 
-export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings }: {
+export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, microsoftOneDriveSettings }: {
   onOpen: (id: string) => void
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
@@ -44,6 +45,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   microsoftMailSettings: PublicMicrosoftMailSettings | null
+  microsoftOneDriveSettings: PublicMicrosoftOneDriveSettings | null
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,9 +99,11 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const microsoftCalendarNeedsReconnect = item.id === 'microsoft_calendar' && !microsoftCalendarSettings?.connected && microsoftCalendarSettings?.tokenStored === true
           const microsoftMailConnected = item.id === 'microsoft_mail' && microsoftMailSettings?.connected === true
           const microsoftMailNeedsReconnect = item.id === 'microsoft_mail' && !microsoftMailSettings?.connected && microsoftMailSettings?.tokenStored === true
-          const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected
+          const microsoftOneDriveConnected = item.id === 'microsoft_onedrive' && microsoftOneDriveSettings?.connected === true
+          const microsoftOneDriveNeedsReconnect = item.id === 'microsoft_onedrive' && !microsoftOneDriveSettings?.connected && microsoftOneDriveSettings?.tokenStored === true
+          const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected || microsoftOneDriveConnected
           const emailSearchConnected = (item.id === 'google_gmail' && gmailConnected) || (item.id === 'microsoft_mail' && microsoftMailConnected)
-          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect
+          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect || microsoftOneDriveNeedsReconnect
           const status = connectedStatus ? 'ready' : item.status
           const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
           const actionLabel = emailSearchConnected
@@ -108,7 +112,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
             ? 'Use in Chat'
             : item.id === 'files'
               ? 'Manage folders'
-              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar', 'microsoft_mail'].includes(item.id)
+              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar', 'microsoft_mail', 'microsoft_onedrive'].includes(item.id)
                 ? 'Open settings'
                 : 'Open'
 

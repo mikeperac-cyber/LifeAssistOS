@@ -35,6 +35,7 @@ import { GoogleTasksService, GoogleTasksSettingsStore } from '../core/google-tas
 import { MicrosoftTodoService, MicrosoftTodoSettingsStore } from '../core/microsoft-todo'
 import { MicrosoftCalendarService, MicrosoftCalendarSettingsStore } from '../core/microsoft-calendar'
 import { MicrosoftMailService, MicrosoftMailSettingsStore } from '../core/microsoft-mail'
+import { MicrosoftOneDriveService, MicrosoftOneDriveSettingsStore } from '../core/microsoft-onedrive'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
@@ -75,6 +76,7 @@ import { createGoogleTasksTools } from '../tools/google-tasks'
 import { createMicrosoftTodoTools } from '../tools/microsoft-todo'
 import { createMicrosoftCalendarTools } from '../tools/microsoft-calendar'
 import { createMicrosoftMailTools } from '../tools/microsoft-mail'
+import { createMicrosoftOneDriveTools } from '../tools/microsoft-onedrive'
 import { createFinanceTools } from '../tools/finance'
 import { createMemoryTools } from '../tools/memory'
 import { createCommandCenterTools } from '../tools/command-center'
@@ -122,6 +124,8 @@ let microsoftCalendarSettings: MicrosoftCalendarSettingsStore | null = null
 let microsoftCalendar: MicrosoftCalendarService | null = null
 let microsoftMailSettings: MicrosoftMailSettingsStore | null = null
 let microsoftMail: MicrosoftMailService | null = null
+let microsoftOneDriveSettings: MicrosoftOneDriveSettingsStore | null = null
+let microsoftOneDrive: MicrosoftOneDriveService | null = null
 let conversations: ConversationStore | null = null
 let domainAllowlist: DomainAllowlistStore | null = null
 let browserAutomation: ElectronBrowserAutomation | null = null
@@ -237,7 +241,7 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
       (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
       (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady())) ||
-      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady() || microsoftCalendar?.isReady() || microsoftMail?.isReady()))
+      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady() || microsoftCalendar?.isReady() || microsoftMail?.isReady() || microsoftOneDrive?.isReady()))
   })
 }
 
@@ -526,6 +530,15 @@ async function initialize(): Promise<void> {
       data: { tokenStored: microsoftMailSettings?.public().tokenStored ?? false }
     })
   })
+  microsoftOneDriveSettings = new MicrosoftOneDriveSettingsStore(path.join(userData, 'microsoft-onedrive.json'), codec)
+  await microsoftOneDriveSettings.init()
+  microsoftOneDrive = new MicrosoftOneDriveService(microsoftOneDriveSettings, {
+    openExternal: (url) => shell.openExternal(url),
+    onConnected: async () => appendAuditAfterMutation({
+      type: 'microsoft_onedrive.connected',
+      data: { tokenStored: microsoftOneDriveSettings?.public().tokenStored ?? false }
+    })
+  })
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
@@ -584,6 +597,9 @@ async function initialize(): Promise<void> {
     registry.register(tool)
   }
   for (const tool of createMicrosoftMailTools(microsoftMail)) {
+    registry.register(tool)
+  }
+  for (const tool of createMicrosoftOneDriveTools(microsoftOneDrive)) {
     registry.register(tool)
   }
   for (const tool of createCommandCenterTools(vault, planning, () => sendToRenderer({ type: 'today_changed' }))) {
@@ -1322,6 +1338,7 @@ function registerIpc(): void {
           await microsoftTodo?.cancelConnect()
           await microsoftCalendar?.cancelConnect()
           await microsoftMail?.cancelConnect()
+          await microsoftOneDrive?.cancelConnect()
           await mcpManager?.dispose()
           conversations?.close()
           finance?.close()
@@ -1363,6 +1380,8 @@ function registerIpc(): void {
           microsoftCalendar?.clearCachedAccessToken()
           await microsoftMailSettings?.init()
           microsoftMail?.clearCachedAccessToken()
+          await microsoftOneDriveSettings?.init()
+          microsoftOneDrive?.clearCachedAccessToken()
           await audit?.init()
           if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
           else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
@@ -2556,6 +2575,77 @@ function registerIpc(): void {
     return { ok: true, message: result.output }
   })
 
+  ipcMain.handle('assist:microsoft-onedrive-settings', () =>
+    microsoftOneDriveSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+  )
+
+  ipcMain.handle('assist:microsoft-onedrive-client-id-update', async (_event, input: unknown) => {
+    if (!microsoftOneDriveSettings || !microsoftOneDrive) return { ok: false, error: 'Microsoft OneDrive services are not ready.' }
+    if (typeof input !== 'string') return { ok: false, error: 'Enter a Microsoft Entra Application (client) ID.' }
+    if (microsoftOneDrive.isConnecting()) return { ok: false, error: 'Cancel the Microsoft sign-in before changing its Application (client) ID.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
+    try {
+      const updated = await microsoftOneDriveSettings.updateClientId(input)
+      await appendAuditAfterMutation({ type: 'microsoft_onedrive.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-onedrive-connect-begin', async () => {
+    if (!microsoftOneDrive) return { ok: false, error: 'Microsoft OneDrive services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before connecting an account.' }
+    directToolBusy = true
+    try {
+      const prompt = await microsoftOneDrive.beginConnect()
+      return {
+        ok: true,
+        settings: microsoftOneDriveSettings?.public(),
+        prompt,
+        message: 'OneDrive is read-only. Files.Read is requested; each search and file read still requires approval.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), settings: microsoftOneDriveSettings?.public() }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-onedrive-connect-status', () => {
+    if (!microsoftOneDrive) return { ok: false, error: 'Microsoft OneDrive services are not ready.' }
+    return { ok: true, status: microsoftOneDrive.connectStatus(), settings: microsoftOneDriveSettings?.public() }
+  })
+
+  ipcMain.handle('assist:microsoft-onedrive-connect-cancel', async () => {
+    if (!microsoftOneDrive) return { ok: false, error: 'Microsoft OneDrive services are not ready.' }
+    try {
+      const status = await microsoftOneDrive.cancelConnect()
+      return { ok: true, status, settings: microsoftOneDriveSettings?.public() }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), status: microsoftOneDrive.connectStatus(), settings: microsoftOneDriveSettings?.public() }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-onedrive-disconnect', async () => {
+    if (!microsoftOneDrive) return { ok: false, error: 'Microsoft OneDrive services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before disconnecting.' }
+    directToolBusy = true
+    try {
+      const updated = await microsoftOneDrive.disconnect()
+      await appendAuditAfterMutation({ type: 'microsoft_onedrive.disconnected', data: { clearedLocally: true } })
+      return {
+        ok: true,
+        settings: updated,
+        message: 'OneDrive was disconnected in Mike Assist. Its Microsoft authorization remains active; remove it in your Microsoft account if you want to revoke it.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
   ipcMain.handle('assist:settings-update', async (_event, patch: unknown) => {
     if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
     if (!patch || typeof patch !== 'object') {
@@ -2802,6 +2892,7 @@ app.on('before-quit', () => {
   void microsoftTodo?.cancelConnect()
   void microsoftCalendar?.cancelConnect()
   void microsoftMail?.cancelConnect()
+  void microsoftOneDrive?.cancelConnect()
   browserAutomation?.dispose()
   taskReminderScheduler?.stop()
   scheduledTaskScheduler?.stop()

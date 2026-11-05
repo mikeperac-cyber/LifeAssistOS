@@ -71,7 +71,7 @@ beforeEach(async () => {
   backupRoot = path.join(dir, 'backups')
   await mkdir(source, { recursive: true })
   await mkdir(backupRoot)
-  for (const name of ['settings.json', 'grants.json', 'allowed-domains.json', 'speech.json', 'workflows.json', 'skills.json', 'web-search.json', 'google-calendar.json', 'google-gmail.json', 'google-drive.json', 'google-tasks.json', 'microsoft-todo.json', 'microsoft-calendar.json', 'microsoft-mail.json', 'scheduled-tasks.json']) {
+  for (const name of ['settings.json', 'grants.json', 'allowed-domains.json', 'speech.json', 'workflows.json', 'skills.json', 'web-search.json', 'google-calendar.json', 'google-gmail.json', 'google-drive.json', 'google-tasks.json', 'microsoft-todo.json', 'microsoft-calendar.json', 'microsoft-mail.json', 'microsoft-onedrive.json', 'scheduled-tasks.json']) {
     await writeFile(path.join(source, name), '{}\n', 'utf8')
   }
   const audit = new AuditLog(path.join(source, 'audit'), 'backup-test')
@@ -114,6 +114,7 @@ describe('backup snapshot', () => {
     expect(await readFile(path.join(target, 'google-tasks.json'), 'utf8')).toBe('{}\n')
     expect(await readFile(path.join(target, 'microsoft-todo.json'), 'utf8')).toBe('{}\n')
     expect(await readFile(path.join(target, 'microsoft-mail.json'), 'utf8')).toBe('{}\n')
+    expect(await readFile(path.join(target, 'microsoft-onedrive.json'), 'utf8')).toBe('{}\n')
     expect(await readFile(path.join(target, 'scheduled-tasks.json'), 'utf8')).toBe('{}\n')
     expect(await readFile(path.join(target, 'speech.json'), 'utf8')).toBe('{}\n')
     expect(await readFile(path.join(target, 'skills.json'), 'utf8')).toBe('{}\n')
@@ -122,7 +123,7 @@ describe('backup snapshot', () => {
     expect(JSON.parse(await readFile(path.join(target, 'manifest.json'), 'utf8'))).toMatchObject({
       formatVersion: 1,
       appVersion: '0.1.0',
-      includes: expect.arrayContaining(['web-search.json', 'google-calendar.json', 'google-gmail.json', 'google-drive.json', 'google-tasks.json', 'microsoft-todo.json', 'microsoft-calendar.json', 'microsoft-mail.json', 'skills.json', 'scheduled-tasks.json'])
+      includes: expect.arrayContaining(['web-search.json', 'google-calendar.json', 'google-gmail.json', 'google-drive.json', 'google-tasks.json', 'microsoft-todo.json', 'microsoft-calendar.json', 'microsoft-mail.json', 'microsoft-onedrive.json', 'skills.json', 'scheduled-tasks.json'])
     })
 
     const backup = new ConversationStore(path.join(target, 'conversations.sqlite'))

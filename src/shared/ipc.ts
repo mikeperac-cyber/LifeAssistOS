@@ -100,6 +100,12 @@ export interface PublicMicrosoftMailSettings {
   tokenStored: boolean
 }
 
+export interface PublicMicrosoftOneDriveSettings {
+  clientId: string
+  connected: boolean
+  tokenStored: boolean
+}
+
 export interface MicrosoftTodoConnectPrompt {
   userCode: string
   verificationUri: string
@@ -133,6 +139,18 @@ export interface MicrosoftMailConnectPrompt {
 export interface MicrosoftMailConnectStatus {
   phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
   prompt?: MicrosoftMailConnectPrompt
+  error?: string
+}
+
+export interface MicrosoftOneDriveConnectPrompt {
+  userCode: string
+  verificationUri: string
+  expiresAt: number
+}
+
+export interface MicrosoftOneDriveConnectStatus {
+  phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
+  prompt?: MicrosoftOneDriveConnectPrompt
   error?: string
 }
 
@@ -344,6 +362,21 @@ export interface MicrosoftMailConnectStatusResult {
   error?: string
   status?: MicrosoftMailConnectStatus
   settings?: PublicMicrosoftMailSettings
+}
+
+export interface MicrosoftOneDriveSettingsResult {
+  ok: boolean
+  error?: string
+  message?: string
+  settings?: PublicMicrosoftOneDriveSettings
+  prompt?: MicrosoftOneDriveConnectPrompt
+}
+
+export interface MicrosoftOneDriveConnectStatusResult {
+  ok: boolean
+  error?: string
+  status?: MicrosoftOneDriveConnectStatus
+  settings?: PublicMicrosoftOneDriveSettings
 }
 
 export interface MicrosoftMailSearchResult {
@@ -661,6 +694,13 @@ export interface AssistApi {
   disconnectMicrosoftMail(): Promise<MicrosoftMailSettingsResult>
   searchMicrosoftMail(query: string, pageToken?: string): Promise<MicrosoftMailSearchResult>
   readMicrosoftMailMessage(messageId: string): Promise<MicrosoftMailReadResult>
+
+  getMicrosoftOneDriveSettings(): Promise<PublicMicrosoftOneDriveSettings>
+  updateMicrosoftOneDriveClientId(clientId: string): Promise<MicrosoftOneDriveSettingsResult>
+  beginMicrosoftOneDriveConnect(): Promise<MicrosoftOneDriveSettingsResult>
+  getMicrosoftOneDriveConnectStatus(): Promise<MicrosoftOneDriveConnectStatusResult>
+  cancelMicrosoftOneDriveConnect(): Promise<MicrosoftOneDriveConnectStatusResult>
+  disconnectMicrosoftOneDrive(): Promise<MicrosoftOneDriveSettingsResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

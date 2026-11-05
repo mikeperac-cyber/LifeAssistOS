@@ -45,6 +45,7 @@ import type {
   PublicMicrosoftTodoSettings,
   PublicMicrosoftCalendarSettings,
   PublicMicrosoftMailSettings,
+  PublicMicrosoftOneDriveSettings,
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
@@ -57,7 +58,9 @@ import type {
   MicrosoftCalendarSettingsResult,
   MicrosoftCalendarConnectStatusResult,
   MicrosoftMailSettingsResult,
-  MicrosoftMailConnectStatusResult
+  MicrosoftMailConnectStatusResult,
+  MicrosoftOneDriveSettingsResult,
+  MicrosoftOneDriveConnectStatusResult
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
@@ -102,6 +105,7 @@ type StartupLoadKey =
   | 'microsoftTodo'
   | 'microsoftCalendar'
   | 'microsoftMail'
+  | 'microsoftOneDrive'
   | 'speech'
   | 'workflows'
   | 'scheduledTasks'
@@ -125,6 +129,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   microsoftTodo: 'Microsoft To Do settings',
   microsoftCalendar: 'Outlook Calendar settings',
   microsoftMail: 'Outlook Mail settings',
+  microsoftOneDrive: 'OneDrive settings',
   speech: 'Speech settings',
   workflows: 'Workflows',
   scheduledTasks: 'Scheduled tasks',
@@ -132,7 +137,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -140,7 +145,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive']
 const EMAIL_STARTUP_KEYS: StartupLoadKey[] = ['gmail', 'microsoftMail']
 
 let localSequence = 0
@@ -265,6 +270,7 @@ export default function App(): React.JSX.Element {
   const [microsoftTodoSettings, setMicrosoftTodoSettings] = useState<PublicMicrosoftTodoSettings | null>(null)
   const [microsoftCalendarSettings, setMicrosoftCalendarSettings] = useState<PublicMicrosoftCalendarSettings | null>(null)
   const [microsoftMailSettings, setMicrosoftMailSettings] = useState<PublicMicrosoftMailSettings | null>(null)
+  const [microsoftOneDriveSettings, setMicrosoftOneDriveSettings] = useState<PublicMicrosoftOneDriveSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
@@ -436,6 +442,7 @@ export default function App(): React.JSX.Element {
     loadInitial('microsoftTodo', () => window.assist.getMicrosoftTodoSettings(), setMicrosoftTodoSettings)
     loadInitial('microsoftCalendar', () => window.assist.getMicrosoftCalendarSettings(), setMicrosoftCalendarSettings)
     loadInitial('microsoftMail', () => window.assist.getMicrosoftMailSettings(), setMicrosoftMailSettings)
+    loadInitial('microsoftOneDrive', () => window.assist.getMicrosoftOneDriveSettings(), setMicrosoftOneDriveSettings)
     loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
     loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
     loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
@@ -1228,6 +1235,36 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateMicrosoftOneDriveClientId = useCallback(async (clientId: string): Promise<MicrosoftOneDriveSettingsResult> => {
+    const result = await window.assist.updateMicrosoftOneDriveClientId(clientId)
+    if (result.ok && result.settings) setMicrosoftOneDriveSettings(result.settings)
+    return result
+  }, [])
+
+  const beginMicrosoftOneDriveConnect = useCallback(async (): Promise<MicrosoftOneDriveSettingsResult> => {
+    const result = await window.assist.beginMicrosoftOneDriveConnect()
+    if (result.ok && result.settings) setMicrosoftOneDriveSettings(result.settings)
+    return result
+  }, [])
+
+  const getMicrosoftOneDriveConnectStatus = useCallback(async (): Promise<MicrosoftOneDriveConnectStatusResult> => {
+    const result = await window.assist.getMicrosoftOneDriveConnectStatus()
+    if (result.ok && result.settings) setMicrosoftOneDriveSettings(result.settings)
+    return result
+  }, [])
+
+  const cancelMicrosoftOneDriveConnect = useCallback(async (): Promise<MicrosoftOneDriveConnectStatusResult> => {
+    const result = await window.assist.cancelMicrosoftOneDriveConnect()
+    if (result.ok && result.settings) setMicrosoftOneDriveSettings(result.settings)
+    return result
+  }, [])
+
+  const disconnectMicrosoftOneDrive = useCallback(async (): Promise<MicrosoftOneDriveSettingsResult> => {
+    const result = await window.assist.disconnectMicrosoftOneDrive()
+    if (result.ok && result.settings) setMicrosoftOneDriveSettings(result.settings)
+    return result
+  }, [])
+
   const testProvider = useCallback((): Promise<ProviderStatus> => {
     return window.assist.testProvider()
   }, [])
@@ -1265,6 +1302,8 @@ export default function App(): React.JSX.Element {
         window.assist.getGoogleTasksSettings().then(setGoogleTasksSettings),
         window.assist.getMicrosoftTodoSettings().then(setMicrosoftTodoSettings),
         window.assist.getMicrosoftCalendarSettings().then(setMicrosoftCalendarSettings),
+        window.assist.getMicrosoftMailSettings().then(setMicrosoftMailSettings),
+        window.assist.getMicrosoftOneDriveSettings().then(setMicrosoftOneDriveSettings),
         window.assist.getAudit().then(setAudit),
         window.assist.getAuditIntegrity().then(setAuditIntegrity)
       ]).catch((error: unknown) => {
@@ -1673,7 +1712,7 @@ export default function App(): React.JSX.Element {
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView initialDocument={pendingVaultDocument} onInitialDocumentConsumed={clearPendingVaultDocument} />}
@@ -1752,6 +1791,7 @@ export default function App(): React.JSX.Element {
               microsoftTodoSettings={microsoftTodoSettings}
               microsoftCalendarSettings={microsoftCalendarSettings}
               microsoftMailSettings={microsoftMailSettings}
+              microsoftOneDriveSettings={microsoftOneDriveSettings}
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
@@ -1782,6 +1822,11 @@ export default function App(): React.JSX.Element {
               onGetMicrosoftMailConnectStatus={getMicrosoftMailConnectStatus}
               onCancelMicrosoftMailConnect={cancelMicrosoftMailConnect}
               onDisconnectMicrosoftMail={disconnectMicrosoftMail}
+              onUpdateMicrosoftOneDriveClientId={updateMicrosoftOneDriveClientId}
+              onBeginMicrosoftOneDriveConnect={beginMicrosoftOneDriveConnect}
+              onGetMicrosoftOneDriveConnectStatus={getMicrosoftOneDriveConnectStatus}
+              onCancelMicrosoftOneDriveConnect={cancelMicrosoftOneDriveConnect}
+              onDisconnectMicrosoftOneDrive={disconnectMicrosoftOneDrive}
               onTest={testProvider}
               onAddGrant={addGrant}
               onRemoveGrant={removeGrant}

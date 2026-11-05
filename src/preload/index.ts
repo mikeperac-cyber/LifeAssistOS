@@ -162,6 +162,12 @@ const api: AssistApi = {
     ipcRenderer.invoke('assist:microsoft-mail-search', query, pageToken),
   readMicrosoftMailMessage: (messageId: string) =>
     ipcRenderer.invoke('assist:microsoft-mail-read-message', messageId),
+  getMicrosoftOneDriveSettings: () => ipcRenderer.invoke('assist:microsoft-onedrive-settings'),
+  updateMicrosoftOneDriveClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-onedrive-client-id-update', clientId),
+  beginMicrosoftOneDriveConnect: () => ipcRenderer.invoke('assist:microsoft-onedrive-connect-begin'),
+  getMicrosoftOneDriveConnectStatus: () => ipcRenderer.invoke('assist:microsoft-onedrive-connect-status'),
+  cancelMicrosoftOneDriveConnect: () => ipcRenderer.invoke('assist:microsoft-onedrive-connect-cancel'),
+  disconnectMicrosoftOneDrive: () => ipcRenderer.invoke('assist:microsoft-onedrive-disconnect'),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)

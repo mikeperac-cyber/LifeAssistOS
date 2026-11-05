@@ -66,6 +66,7 @@ export function AuditView({
           event.type.startsWith('microsoft_todo.') ||
           event.type.startsWith('microsoft_calendar.') ||
           event.type.startsWith('microsoft_mail.') ||
+          event.type.startsWith('microsoft_onedrive.') ||
           event.type === 'skill.changed' ||
           event.type === 'settings.changed'
       )
@@ -268,6 +269,12 @@ export function summarizeEvent(event: AuditEvent): string {
       return 'Outlook Mail OAuth connected'
     case 'microsoft_mail.disconnected':
       return 'Outlook Mail disconnected locally'
+    case 'microsoft_onedrive.settings_changed':
+      return 'Microsoft OneDrive settings updated'
+    case 'microsoft_onedrive.connected':
+      return 'Microsoft OneDrive connected'
+    case 'microsoft_onedrive.disconnected':
+      return 'Microsoft OneDrive disconnected locally'
     case 'domain.added':
       return `${String(data.host ?? 'domain')} · allowed`
     case 'domain.removed':

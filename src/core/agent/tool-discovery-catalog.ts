@@ -14,7 +14,7 @@ export type OptionalToolDomain = 'email' | 'calendar' | 'drive' | 'finance' | 'm
 const DOMAIN_SIGNALS: Record<Exclude<OptionalToolDomain, 'mcp'>, RegExp> = {
   email: /\b(email|mail|gmail|outlook|inbox|draft|send|reply|recipient|message|eposta|posta|taslak|gonder|yanit|alici|mesaj|gelen\s+kutusu)\w*\b/i,
   calendar: /\b(calendar|event|meeting|appointment|invite|availability|schedule|takvim|etkinlik|toplanti|randevu|musaitlik|ajanda|program)\w*\b/i,
-  drive: /\b(drive|google\s+(drive|docs|sheets|slides)|document|docs|spreadsheet|sheets|slides|file|folder|proposal|contract|report|dokuman|belge|dosya|klasor|teklif|sozlesme|sunum|tablo|rapor)\w*\b/i,
+  drive: /\b(drive|google\s+(drive|docs|sheets|slides)|microsoft\s+onedrive|onedrive|one\s+drive|sharepoint|document|docs|spreadsheet|sheets|slides|file|folder|proposal|contract|report|dokuman|belge|dosya|klasor|teklif|sozlesme|sunum|tablo|rapor)\w*\b/i,
   finance: /\b(finance|financial|money|expense|spend|income|budget|transaction|cost|profit|revenue|ledger|finans|para|harcama|masraf|gider|gelir|butce|maliyet|kazanc|ciro|fatura|odeme)\w*\b/i,
   memory: /\b(memory|remember|recall|forget|preference|saved\s+fact|bellek|hafiza|hatirla|unutma|tercih|kaydedilen|animsat)\w*\b/i,
   coaching: /\b(coach|goal|journal|reflection|habit|personal|business|lb\s+english|ielts|teaching|koc|kocluk|hedef|gunluk|yansima|aliskanlik|kisisel|yasam|motivasyon|isletme|is\s+plani|egitim|ogretim|ogretmen|ders)\w*\b/i,
@@ -45,7 +45,7 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('mcp__')) return 'mcp'
   if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft' || name === 'create_email_followup_task') return 'email'
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event' || name === 'create_calendar_prep_task') return 'calendar'
-  if (name.startsWith('google_drive_')) return 'drive'
+  if (name.startsWith('google_drive_') || name.startsWith('microsoft_onedrive_')) return 'drive'
   if (name.startsWith('google_tasks_') || name.startsWith('microsoft_todo_')) return 'planning'
   if (name.startsWith('finance_') || name === 'record_transaction') return 'finance'
   if (name.includes('memory') || name === 'recall_memory') return 'memory'

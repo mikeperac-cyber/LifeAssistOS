@@ -13,6 +13,7 @@ import type {
   PublicMicrosoftTodoSettings,
   PublicMicrosoftCalendarSettings,
   PublicMicrosoftMailSettings,
+  PublicMicrosoftOneDriveSettings,
   LocalApiResult,
   LocalApiStatus,
   SettingsPatch,
@@ -27,12 +28,15 @@ import type {
   MicrosoftCalendarSettingsResult,
   MicrosoftCalendarConnectStatusResult,
   MicrosoftMailSettingsResult,
-  MicrosoftMailConnectStatusResult
+  MicrosoftMailConnectStatusResult,
+  MicrosoftOneDriveSettingsResult,
+  MicrosoftOneDriveConnectStatusResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
 import { APP_THEMES, type AppTheme } from '../theme'
 import { MicrosoftMailSettingsCard } from './MicrosoftMailSettingsCard'
+import { MicrosoftOneDriveSettingsCard } from './MicrosoftOneDriveSettingsCard'
 
 type Access = 'read' | 'read-write'
 
@@ -61,6 +65,7 @@ export interface SettingsViewProps {
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   microsoftMailSettings: PublicMicrosoftMailSettings | null
+  microsoftOneDriveSettings: PublicMicrosoftOneDriveSettings | null
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
@@ -91,6 +96,11 @@ export interface SettingsViewProps {
   onGetMicrosoftMailConnectStatus: () => Promise<MicrosoftMailConnectStatusResult>
   onCancelMicrosoftMailConnect: () => Promise<MicrosoftMailConnectStatusResult>
   onDisconnectMicrosoftMail: () => Promise<MicrosoftMailSettingsResult>
+  onUpdateMicrosoftOneDriveClientId: (clientId: string) => Promise<MicrosoftOneDriveSettingsResult>
+  onBeginMicrosoftOneDriveConnect: () => Promise<MicrosoftOneDriveSettingsResult>
+  onGetMicrosoftOneDriveConnectStatus: () => Promise<MicrosoftOneDriveConnectStatusResult>
+  onCancelMicrosoftOneDriveConnect: () => Promise<MicrosoftOneDriveConnectStatusResult>
+  onDisconnectMicrosoftOneDrive: () => Promise<MicrosoftOneDriveSettingsResult>
   onTest: () => Promise<ProviderStatus>
   onAddGrant: (access: Access) => Promise<GrantMutationResult>
   onRemoveGrant: (id: string) => Promise<GrantMutationResult>
@@ -118,6 +128,7 @@ export function SettingsView({
   microsoftTodoSettings,
   microsoftCalendarSettings,
   microsoftMailSettings,
+  microsoftOneDriveSettings,
   grants,
   onSave,
   onUpdateWebSearchApiKey,
@@ -148,6 +159,11 @@ export function SettingsView({
   onGetMicrosoftMailConnectStatus,
   onCancelMicrosoftMailConnect,
   onDisconnectMicrosoftMail,
+  onUpdateMicrosoftOneDriveClientId,
+  onBeginMicrosoftOneDriveConnect,
+  onGetMicrosoftOneDriveConnectStatus,
+  onCancelMicrosoftOneDriveConnect,
+  onDisconnectMicrosoftOneDrive,
   onTest,
   onAddGrant,
   onRemoveGrant,
@@ -1678,6 +1694,14 @@ export function SettingsView({
         onCancelConnect={onCancelMicrosoftMailConnect}
         onDisconnect={onDisconnectMicrosoftMail}
       />
+      <MicrosoftOneDriveSettingsCard
+        settings={microsoftOneDriveSettings}
+        onUpdateClientId={onUpdateMicrosoftOneDriveClientId}
+        onBeginConnect={onBeginMicrosoftOneDriveConnect}
+        onGetConnectStatus={onGetMicrosoftOneDriveConnectStatus}
+        onCancelConnect={onCancelMicrosoftOneDriveConnect}
+        onDisconnect={onDisconnectMicrosoftOneDrive}
+      />
       <McpPanel />
 
       <section className="settings-section">
@@ -1686,7 +1710,7 @@ export function SettingsView({
           <p>
             Create or restore a consistent snapshot of chats, finance records, memory facts, research, vault documents, Today plans,
             saved workflows and Skills, coaching profile and journal, voice settings, provider settings, folder grants, allowed domains,
-            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do, Outlook Calendar and Outlook Mail connection settings, and the audit log. Optionally provide a
+            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do, Outlook Calendar, Outlook Mail, and OneDrive connection settings, and the audit log. Optionally provide a
             passphrase to encrypt the snapshot with AES-256-GCM.
           </p>
         </div>

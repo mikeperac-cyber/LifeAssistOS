@@ -200,6 +200,9 @@ export type AuditType =
   | 'microsoft_mail.settings_changed'
   | 'microsoft_mail.connected'
   | 'microsoft_mail.disconnected'
+  | 'microsoft_onedrive.settings_changed'
+  | 'microsoft_onedrive.connected'
+  | 'microsoft_onedrive.disconnected'
   | 'domain.added'
   | 'domain.removed'
   | 'backup.created'
@@ -303,6 +306,15 @@ export interface MicrosoftCalendarEvent {
   isAllDay: boolean
   location?: string
   showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown'
+}
+
+export interface MicrosoftOneDriveFile {
+  id: string
+  name: string
+  mimeType: string
+  size?: number
+  modifiedTime?: string
+  parentPath?: string
 }
 
 export interface GoogleCalendarEvent {

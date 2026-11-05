@@ -72,6 +72,19 @@ describe('tool discovery', () => {
     expect(optionalToolDomain('microsoft_calendar_list_events')).toBe('calendar')
   })
 
+  it('finds Microsoft OneDrive search and read tools from natural-language file requests', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('microsoft_onedrive_search_files', 'Search the connected Microsoft OneDrive files.'))
+      .register(catalogTool('microsoft_onedrive_read_file', 'Read a selected OneDrive file.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const result = await discovery.run(
+      { query: 'find my OneDrive files', limit: 4 },
+      { kind: 'none', signal: new AbortController().signal }
+    ) as { tools: Array<{ name: string }> }
+    expect(result.tools.map((tool) => tool.name)).toContain('microsoft_onedrive_search_files')
+    expect(optionalToolDomain('microsoft_onedrive_read_file')).toBe('drive')
+  })
+
   it('finds the approval-gated email follow-up task for email task requests', async () => {
     const registry = new ToolRegistry()
       .register(catalogTool('create_email_followup_task', 'Create a local Today task from a selected Gmail or Outlook email after approval.'))
