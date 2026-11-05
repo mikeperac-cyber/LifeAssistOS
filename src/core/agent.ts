@@ -16,6 +16,7 @@ import type {
   ToolCall,
   ToolResult
 } from '../shared/types'
+import { MAX_CHAT_MESSAGE_CHARS } from '../shared/types'
 import type { AuditLog } from './audit/log'
 import type { ConversationStore } from './conversations'
 import type { Gateway } from './gateway/gateway'
@@ -91,7 +92,6 @@ export interface AgentOptions {
 }
 
 const MAX_TOOL_RESULT_CHARS = 8_000
-const MAX_MESSAGE_CHARS = 12_000
 const MAX_SEQUENCE_STEPS = 8
 const MAX_SEQUENCE_TOTAL_OUTPUT_CHARS = 6_000
 const MAX_SEQUENCE_SINGLE_STEP_OUTPUT_CHARS = 5_000
@@ -1186,7 +1186,7 @@ function splitTurns(history: ProviderMessage[]): ProviderMessage[][] {
 }
 
 function clampMessage(entry: ProviderMessage): ProviderMessage {
-  const limit = entry.role === 'tool' ? MAX_TOOL_RESULT_CHARS : MAX_MESSAGE_CHARS
+  const limit = entry.role === 'tool' ? MAX_TOOL_RESULT_CHARS : MAX_CHAT_MESSAGE_CHARS
   const content =
     entry.content.length > limit
       ? `${entry.content.slice(0, limit)}\n… truncated to fit the context window`

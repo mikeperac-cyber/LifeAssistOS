@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { MAX_CHAT_MESSAGE_CHARS } from '../../shared/types'
 import type {
   AuditEvent,
   AuditIntegrity,
@@ -741,6 +742,17 @@ export default function App(): React.JSX.Element {
     setInput((current) => current.trim() ? `${current.trimEnd()}\n\n${prompt}` : prompt)
     setView('chat')
   }, [])
+
+  const prepareCloudFileChat = useCallback((prompt: string): boolean => {
+    if (busyRef.current || queueRunningRef.current || directWorkflowRunningRef.current) return false
+    const currentDraft = input.trimEnd()
+    const separator = currentDraft ? '\n\n' : ''
+    if (currentDraft.length + separator.length + prompt.length > MAX_CHAT_MESSAGE_CHARS) return false
+    setChatMode('assistant')
+    setInput(currentDraft ? `${currentDraft}${separator}${prompt}` : prompt)
+    setView('chat')
+    return true
+  }, [input])
 
   const startCoachingChat = useCallback(async (area: CoachArea, prompt: string) => {
     if (busyRef.current || queueRunningRef.current || directWorkflowRunningRef.current) return
@@ -1705,6 +1717,8 @@ export default function App(): React.JSX.Element {
               microsoftOneDriveSettings={microsoftOneDriveSettings}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
               onOpenSettings={() => setView('settings')}
+              chatDraftLength={input.trimEnd().length}
+              onPrepareChat={prepareCloudFileChat}
             />
           ))}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (

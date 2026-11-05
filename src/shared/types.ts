@@ -374,6 +374,7 @@ export const CHAT_IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp'] a
 export const MAX_CHAT_IMAGE_ATTACHMENTS = 4
 export const MAX_CHAT_IMAGE_BYTES = 8 * 1024 * 1024
 export const MAX_CHAT_IMAGE_TOTAL_BYTES = 16 * 1024 * 1024
+export const MAX_CHAT_MESSAGE_CHARS = 12_000
 
 export interface ChatImageAttachment {
   id: string
