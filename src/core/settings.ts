@@ -94,10 +94,11 @@ export class SettingsStore {
         const parsed = providerSchema.safeParse(loaded.provider)
         if (parsed.success) {
           const safeBaseUrl = safeProviderEndpointForDisplay(parsed.data.baseUrl)
+          const provider = migrateRetiredAnthropicModels(parsed.data)
           if (safeBaseUrl !== parsed.data.baseUrl) {
             console.warn('[settings] removed credentials or query data from the provider URL')
           }
-          next.provider = { ...parsed.data, baseUrl: safeBaseUrl }
+          next.provider = { ...provider, baseUrl: safeBaseUrl }
         } else {
           console.warn('[settings] ignoring invalid settings file')
         }
@@ -254,4 +255,38 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
     }
   }
   return result
+}
+
+const RETIRED_ANTHROPIC_MODEL_REPLACEMENTS: Record<string, string> = {
+  'claude-3-5-sonnet-latest': 'claude-sonnet-5',
+  'claude-3-5-sonnet-20240620': 'claude-sonnet-5',
+  'claude-3-7-sonnet-latest': 'claude-sonnet-5',
+  'claude-3-7-sonnet-20250219': 'claude-sonnet-5',
+  'claude-sonnet-4-20250514': 'claude-sonnet-5',
+  'claude-3-5-haiku-latest': 'claude-haiku-4-5-20251001',
+  'claude-3-5-haiku-20241022': 'claude-haiku-4-5-20251001',
+  'claude-3-haiku-20240307': 'claude-haiku-4-5-20251001',
+  'claude-3-opus-latest': 'claude-opus-5',
+  'claude-3-opus-20240229': 'claude-opus-5',
+  'claude-opus-4-20250514': 'claude-opus-5',
+  'claude-opus-4-1-20250805': 'claude-opus-5'
+}
+
+function migrateRetiredAnthropicModels(
+  provider: z.infer<typeof providerSchema>
+): z.infer<typeof providerSchema> {
+  if (provider.preset !== 'anthropic') return provider
+  const replace = (model: string | undefined): string | undefined => {
+    if (!model) return model
+    return Object.prototype.hasOwnProperty.call(RETIRED_ANTHROPIC_MODEL_REPLACEMENTS, model)
+      ? RETIRED_ANTHROPIC_MODEL_REPLACEMENTS[model]
+      : model
+  }
+  const model = replace(provider.model) ?? provider.model
+  const fastModel = replace(provider.fastModel)
+  const visionModel = replace(provider.visionModel)
+  if (model !== provider.model || fastModel !== provider.fastModel || visionModel !== provider.visionModel) {
+    console.info('[settings] replaced retired Anthropic model IDs with current model IDs')
+  }
+  return { ...provider, model, fastModel, visionModel }
 }

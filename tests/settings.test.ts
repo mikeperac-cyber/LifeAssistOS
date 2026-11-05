@@ -25,7 +25,7 @@ afterEach(async () => {
 })
 
 describe('SettingsStore', () => {
-  it('starts from the Ollama defaults', async () => {
+  it('starts from the hosted provider defaults', async () => {
     const store = new SettingsStore(file)
     await store.init()
 
@@ -67,6 +67,36 @@ describe('SettingsStore', () => {
       contextLength: 16384,
       temperature: 0.5,
       maxSteps: 4
+    })
+  })
+
+  it('migrates retired Anthropic model IDs on load and persists the replacements', async () => {
+    await writeFile(file, JSON.stringify({
+      version: 1,
+      provider: {
+        ...DEFAULT_PROVIDER_SETTINGS,
+        preset: 'anthropic',
+        baseUrl: 'https://api.anthropic.com/v1',
+        model: 'claude-3-5-sonnet-latest',
+        fastModel: 'claude-3-5-haiku-latest',
+        visionModel: 'claude-3-7-sonnet-latest'
+      }
+    }), 'utf8')
+
+    const store = new SettingsStore(file)
+    await store.init()
+
+    expect(store.get().provider).toMatchObject({
+      preset: 'anthropic',
+      model: 'claude-sonnet-5',
+      fastModel: 'claude-haiku-4-5-20251001',
+      visionModel: 'claude-sonnet-5'
+    })
+    const persisted = JSON.parse(await readFile(file, 'utf8')) as { provider: Record<string, unknown> }
+    expect(persisted.provider).toMatchObject({
+      model: 'claude-sonnet-5',
+      fastModel: 'claude-haiku-4-5-20251001',
+      visionModel: 'claude-sonnet-5'
     })
   })
 

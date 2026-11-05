@@ -22,7 +22,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: 'anthropic',
     label: 'Anthropic',
     baseUrl: 'https://api.anthropic.com/v1',
-    model: 'claude-3-5-sonnet-latest',
+    model: 'claude-sonnet-5',
     needsKey: true,
     hint: 'Requests leave this computer and use Anthropic’s Messages API. Enter an Anthropic API key below.'
   },

@@ -94,8 +94,10 @@ export function filterNavigationGroups(query: string): Array<{ label: string; it
   const normalizedQuery = query.trim().toLocaleLowerCase()
   const directMatches = new Set(NAV_GROUPS.flatMap((group) => group.items.filter((item) => {
     const label = VIEW_META[item].label === 'Assistant' ? 'Chat' : VIEW_META[item].label
-    return label.toLocaleLowerCase().includes(normalizedQuery) ||
-      VIEW_META[item].label.toLocaleLowerCase().includes(normalizedQuery)
+    const aliases = item === 'today' ? ['Tasks'] : []
+    return [label, VIEW_META[item].label, ...aliases].some((candidate) =>
+      candidate.toLocaleLowerCase().includes(normalizedQuery)
+    )
   })))
 
   return NAV_GROUPS.map((group) => ({

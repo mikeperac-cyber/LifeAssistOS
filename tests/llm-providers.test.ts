@@ -90,6 +90,7 @@ describe('Provider presets & settings schema', () => {
     expect(ids).toContain('anthropic')
     expect(ids).toContain('gemini')
     expect(presetFor('anthropic').baseUrl).toBe('https://api.anthropic.com/v1')
+    expect(presetFor('anthropic').model).toBe('claude-sonnet-5')
     expect(presetFor('gemini').baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai')
   })
 
@@ -132,9 +133,9 @@ describe('Provider presets & settings schema', () => {
     await store.update({
       preset: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      model: 'claude-3-5-sonnet-latest',
-      fastModel: 'claude-3-5-haiku-latest',
-      visionModel: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
+      fastModel: 'claude-haiku-4-5-20251001',
+      visionModel: 'claude-sonnet-5',
       keepInBackground: true
     })
 
@@ -143,9 +144,9 @@ describe('Provider presets & settings schema', () => {
     expect(reloaded.get().provider).toMatchObject({
       preset: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      model: 'claude-3-5-sonnet-latest',
-      fastModel: 'claude-3-5-haiku-latest',
-      visionModel: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
+      fastModel: 'claude-haiku-4-5-20251001',
+      visionModel: 'claude-sonnet-5',
       keepInBackground: true
     })
   })
@@ -181,7 +182,7 @@ describe('Anthropic native provider', () => {
     const deltas: string[] = []
     const provider = createAnthropicProvider({
       baseUrl: server.baseUrl,
-      model: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
       apiKey: 'sk-ant-test'
     })
 
@@ -230,6 +231,8 @@ describe('Anthropic native provider', () => {
     expect(req.headers['anthropic-version']).toBe('2023-06-01')
 
     const body = req.body as Record<string, unknown>
+    expect(body.model).toBe('claude-sonnet-5')
+    expect(body.temperature).toBeUndefined()
     expect(body.system).toBe('You are Mike Assist.')
     expect(body.tools).toEqual([
       {
@@ -278,6 +281,46 @@ describe('Anthropic native provider', () => {
       promptTokens: 145,
       completionTokens: 32
     })
+  })
+
+  it('offers active model IDs when the Anthropic model list endpoint is unavailable', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(404)
+      res.end()
+    })
+    const provider = createAnthropicProvider({
+      baseUrl: server.baseUrl,
+      model: 'claude-sonnet-5',
+      apiKey: 'sk-ant-test'
+    })
+
+    await expect(provider.listModels()).resolves.toEqual([
+      'claude-haiku-4-5-20251001',
+      'claude-sonnet-5',
+      'claude-opus-5'
+    ])
+  })
+
+  it('keeps temperature for Anthropic models that still support sampling controls', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        id: 'msg_02',
+        type: 'message',
+        role: 'assistant',
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'ok' }]
+      }))
+    })
+    const provider = createAnthropicProvider({
+      baseUrl: server.baseUrl,
+      model: 'claude-haiku-4-5-20251001',
+      temperature: 0.7,
+      apiKey: 'sk-ant-test'
+    })
+
+    await provider.chat({ messages: [{ role: 'user', content: 'hi' }] })
+    expect((server.requests[0].body as Record<string, unknown>).temperature).toBe(0.7)
   })
 
   it('streams Anthropic SSE events including text deltas, tool input_json_delta, and token usage', async () => {
@@ -336,7 +379,7 @@ describe('Anthropic native provider', () => {
     const deltas: string[] = []
     const provider = createAnthropicProvider({
       baseUrl: server.baseUrl,
-      model: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
       apiKey: 'sk-ant-stream'
     })
 
@@ -426,7 +469,7 @@ describe('Provider factory & role routing', () => {
     const anthropicProvider = createProviderForSettings({
       preset: 'anthropic',
       baseUrl: 'https://api.anthropic.com/v1',
-      model: 'claude-3-5-sonnet-latest',
+      model: 'claude-sonnet-5',
       contextLength: 8192,
       temperature: 0.2,
       maxSteps: 8

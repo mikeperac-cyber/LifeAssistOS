@@ -43,6 +43,10 @@ describe('navigation', () => {
     expect(filterNavigationGroups('workspace').flatMap((group) => group.items)).toEqual(['chat', 'today', 'work', 'coach'])
   })
 
+  it('finds Tasks by the name used in quick access', () => {
+    expect(filterNavigationGroups('tasks').flatMap((group) => group.items)).toEqual(['today'])
+  })
+
   it('keeps the global navigation shortcut out of editors and dialogs', () => {
     expect(shouldHandleNavigationShortcut(shortcut)).toBe(true)
     expect(shouldHandleNavigationShortcut({ ...shortcut, metaKey: true, ctrlKey: false })).toBe(true)

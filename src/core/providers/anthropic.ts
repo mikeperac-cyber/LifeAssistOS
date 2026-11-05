@@ -99,9 +99,9 @@ class AnthropicProvider implements Provider {
 
       if (response.status === 404) {
         return [
-          'claude-3-5-haiku-latest',
-          'claude-3-5-sonnet-latest',
-          'claude-3-7-sonnet-latest'
+          'claude-haiku-4-5-20251001',
+          'claude-sonnet-5',
+          'claude-opus-5'
         ]
       }
 
@@ -154,8 +154,10 @@ class AnthropicProvider implements Provider {
       model: this.model,
       max_tokens: request.maxTokens ?? this.defaultMaxTokens,
       messages,
-      stream: true,
-      temperature: request.temperature ?? this.temperature
+      stream: true
+    }
+    if (!anthropicModelRejectsSamplingParameters(this.model)) {
+      body.temperature = request.temperature ?? this.temperature
     }
     if (system) body.system = system
     if (request.tools && request.tools.length > 0) {
@@ -458,6 +460,13 @@ class AnthropicProvider implements Provider {
     if (this.apiKey) headers['x-api-key'] = this.apiKey
     return headers
   }
+}
+
+function anthropicModelRejectsSamplingParameters(model: string): boolean {
+  const normalized = model.toLocaleLowerCase()
+  return /^claude-sonnet-(?:4-6|5)(?:-|$)/.test(normalized) ||
+    /^claude-opus-(?:4-[7-9]|5)(?:-|$)/.test(normalized) ||
+    /^claude-mythos(?:-|$)/.test(normalized)
 }
 
 function serializeAnthropicMessages(messages: ProviderMessage[]): {
