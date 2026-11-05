@@ -6,6 +6,7 @@ const PRIVATE_READ_TOOLS = new Set([
   'finance_report',
   'get_coaching_context',
   'google_calendar_list_events',
+  'microsoft_calendar_list_events',
   'list_today',
   'load_skill',
   'recall_memory'

@@ -31,6 +31,7 @@ import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gma
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
 import { GoogleTasksService, GoogleTasksSettingsStore } from '../core/google-tasks'
 import { MicrosoftTodoService, MicrosoftTodoSettingsStore } from '../core/microsoft-todo'
+import { MicrosoftCalendarService, MicrosoftCalendarSettingsStore } from '../core/microsoft-calendar'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
@@ -68,6 +69,7 @@ import { createGoogleGmailTools } from '../tools/google-gmail'
 import { createGoogleDriveTools } from '../tools/google-drive'
 import { createGoogleTasksTools } from '../tools/google-tasks'
 import { createMicrosoftTodoTools } from '../tools/microsoft-todo'
+import { createMicrosoftCalendarTools } from '../tools/microsoft-calendar'
 import { createFinanceTools } from '../tools/finance'
 import { createMemoryTools } from '../tools/memory'
 import { createCommandCenterTools } from '../tools/command-center'
@@ -111,6 +113,8 @@ let googleTasksSettings: GoogleTasksSettingsStore | null = null
 let googleTasks: GoogleTasksService | null = null
 let microsoftTodoSettings: MicrosoftTodoSettingsStore | null = null
 let microsoftTodo: MicrosoftTodoService | null = null
+let microsoftCalendarSettings: MicrosoftCalendarSettingsStore | null = null
+let microsoftCalendar: MicrosoftCalendarService | null = null
 let conversations: ConversationStore | null = null
 let domainAllowlist: DomainAllowlistStore | null = null
 let browserAutomation: ElectronBrowserAutomation | null = null
@@ -208,7 +212,7 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
       (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
       (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady())) ||
-      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady()))
+      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady() || microsoftCalendar?.isReady()))
   })
 }
 
@@ -479,6 +483,15 @@ async function initialize(): Promise<void> {
       data: { tokenStored: microsoftTodoSettings?.public().tokenStored ?? false }
     })
   })
+  microsoftCalendarSettings = new MicrosoftCalendarSettingsStore(path.join(userData, 'microsoft-calendar.json'), codec)
+  await microsoftCalendarSettings.init()
+  microsoftCalendar = new MicrosoftCalendarService(microsoftCalendarSettings, {
+    openExternal: (url) => shell.openExternal(url),
+    onConnected: async () => appendAuditAfterMutation({
+      type: 'microsoft_calendar.connected',
+      data: { tokenStored: microsoftCalendarSettings?.public().tokenStored ?? false }
+    })
+  })
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
@@ -531,6 +544,9 @@ async function initialize(): Promise<void> {
     registry.register(tool)
   }
   for (const tool of createMicrosoftTodoTools(microsoftTodo)) {
+    registry.register(tool)
+  }
+  for (const tool of createMicrosoftCalendarTools(microsoftCalendar)) {
     registry.register(tool)
   }
   for (const tool of createCommandCenterTools(vault, planning)) {
@@ -1267,6 +1283,7 @@ function registerIpc(): void {
         passphrase: typeof passphrase === 'string' && passphrase.trim() ? passphrase.trim() : undefined,
         closeStores: async () => {
           await microsoftTodo?.cancelConnect()
+          await microsoftCalendar?.cancelConnect()
           await mcpManager?.dispose()
           conversations?.close()
           finance?.close()
@@ -1304,6 +1321,8 @@ function registerIpc(): void {
           googleTasks?.clearCachedAccessToken()
           await microsoftTodoSettings?.init()
           microsoftTodo?.clearCachedAccessToken()
+          await microsoftCalendarSettings?.init()
+          microsoftCalendar?.clearCachedAccessToken()
           await audit?.init()
           if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
           else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
@@ -2070,6 +2089,127 @@ function registerIpc(): void {
     return { ok: true, tasks: output.tasks, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
   })
 
+  ipcMain.handle('assist:microsoft-calendar-settings', () =>
+    microsoftCalendarSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+  )
+
+  ipcMain.handle('assist:microsoft-calendar-client-id-update', async (_event, input: unknown) => {
+    if (!microsoftCalendarSettings || !microsoftCalendar) return { ok: false, error: 'Outlook Calendar services are not ready.' }
+    if (typeof input !== 'string') return { ok: false, error: 'Enter a Microsoft Entra Application (client) ID.' }
+    if (microsoftCalendar.isConnecting()) return { ok: false, error: 'Cancel the Microsoft sign-in before changing its Application (client) ID.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
+    try {
+      const updated = await microsoftCalendarSettings.updateClientId(input)
+      await appendAuditAfterMutation({ type: 'microsoft_calendar.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-calendar-connect-begin', async () => {
+    if (!microsoftCalendar) return { ok: false, error: 'Outlook Calendar services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before connecting an account.' }
+    directToolBusy = true
+    try {
+      const prompt = await microsoftCalendar.beginConnect()
+      return {
+        ok: true,
+        settings: microsoftCalendarSettings?.public(),
+        prompt,
+        message: 'Enter the displayed code on Microsoft’s sign-in page. Only the read-only Calendars.ReadBasic permission is requested.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), settings: microsoftCalendarSettings?.public() }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-calendar-connect-status', () => {
+    if (!microsoftCalendar) return { ok: false, error: 'Outlook Calendar services are not ready.' }
+    return { ok: true, status: microsoftCalendar.connectStatus(), settings: microsoftCalendarSettings?.public() }
+  })
+
+  ipcMain.handle('assist:microsoft-calendar-connect-cancel', async () => {
+    if (!microsoftCalendar) return { ok: false, error: 'Outlook Calendar services are not ready.' }
+    try {
+      const status = await microsoftCalendar.cancelConnect()
+      return { ok: true, status, settings: microsoftCalendarSettings?.public() }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), status: microsoftCalendar.connectStatus(), settings: microsoftCalendarSettings?.public() }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-calendar-disconnect', async () => {
+    if (!microsoftCalendar) return { ok: false, error: 'Outlook Calendar services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before disconnecting.' }
+    directToolBusy = true
+    try {
+      const updated = await microsoftCalendar.disconnect()
+      await appendAuditAfterMutation({ type: 'microsoft_calendar.disconnected', data: { clearedLocally: true } })
+      return {
+        ok: true,
+        settings: updated,
+        message: 'Outlook Calendar was disconnected in Mike Assist. Its Microsoft authorization remains active; remove it in your Microsoft account if you want to revoke it.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  const readMicrosoftCalendarWithApproval = async (
+    args: { startDateTime?: string; endDateTime?: string; pageToken?: string },
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !microsoftCalendar?.isReady()) return { ok: false, error: 'Connect Outlook Calendar in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name: 'microsoft_calendar_list_events', args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Outlook Calendar events could not be loaded.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[microsoft-calendar] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:microsoft-calendar-list-events', async (_event, startDateTime: unknown, endDateTime: unknown, pageToken: unknown) => {
+    if ((startDateTime !== undefined && typeof startDateTime !== 'string') ||
+        (endDateTime !== undefined && typeof endDateTime !== 'string') ||
+        (pageToken !== undefined && typeof pageToken !== 'string') ||
+        (typeof startDateTime === 'string' && (startDateTime.length > 48 || /[\u0000-\u001f\u007f]/.test(startDateTime))) ||
+        (typeof endDateTime === 'string' && (endDateTime.length > 48 || /[\u0000-\u001f\u007f]/.test(endDateTime))) ||
+        (typeof pageToken === 'string' && (pageToken.length > 8_192 || /[\u0000-\u001f\u007f]/.test(pageToken)))) {
+      return { ok: false, error: 'Invalid Outlook Calendar time range or page token.' }
+    }
+    const args = {
+      ...(typeof startDateTime === 'string' ? { startDateTime } : {}),
+      ...(typeof endDateTime === 'string' ? { endDateTime } : {}),
+      ...(typeof pageToken === 'string' ? { pageToken } : {})
+    }
+    const summary = startDateTime === undefined && endDateTime === undefined
+      ? 'Load today’s Outlook Calendar events in Today'
+      : 'Load Outlook Calendar events for the selected time range in Today'
+    const result = await readMicrosoftCalendarWithApproval(args, summary)
+    if (!result.ok) return { ok: false, error: result.error, ...(microsoftCalendarSettings ? { settings: microsoftCalendarSettings.public() } : {}) }
+    const output = result.output as { events?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.events)) return {
+      ok: false,
+      error: 'Outlook Calendar returned an unexpected events response.',
+      ...(microsoftCalendarSettings ? { settings: microsoftCalendarSettings.public() } : {})
+    }
+    return { ok: true, events: output.events, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
+  })
+
   ipcMain.handle('assist:settings-update', async (_event, patch: unknown) => {
     if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
     if (!patch || typeof patch !== 'object') {
@@ -2313,6 +2453,8 @@ app.on('before-quit', () => {
   broker?.denyAll()
   localApiAgent?.cancel()
   void localApiServer?.stop()
+  void microsoftTodo?.cancelConnect()
+  void microsoftCalendar?.cancelConnect()
   browserAutomation?.dispose()
   taskReminderScheduler?.stop()
   scheduledTaskScheduler?.stop()

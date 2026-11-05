@@ -41,6 +41,7 @@ import type {
   PublicGoogleDriveSettings,
   PublicGoogleTasksSettings,
   PublicMicrosoftTodoSettings,
+  PublicMicrosoftCalendarSettings,
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
@@ -49,7 +50,9 @@ import type {
   GoogleDriveSettingsResult,
   GoogleTasksSettingsResult,
   MicrosoftTodoSettingsResult,
-  MicrosoftTodoConnectStatusResult
+  MicrosoftTodoConnectStatusResult,
+  MicrosoftCalendarSettingsResult,
+  MicrosoftCalendarConnectStatusResult
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
@@ -88,6 +91,7 @@ type StartupLoadKey =
   | 'drive'
   | 'tasks'
   | 'microsoftTodo'
+  | 'microsoftCalendar'
   | 'speech'
   | 'workflows'
   | 'scheduledTasks'
@@ -109,6 +113,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   drive: 'Google Drive settings',
   tasks: 'Google Tasks settings',
   microsoftTodo: 'Microsoft To Do settings',
+  microsoftCalendar: 'Outlook Calendar settings',
   speech: 'Speech settings',
   workflows: 'Workflows',
   scheduledTasks: 'Scheduled tasks',
@@ -116,7 +121,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -124,7 +129,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar']
 
 let localSequence = 0
 
@@ -238,6 +243,7 @@ export default function App(): React.JSX.Element {
   const [googleDriveSettings, setGoogleDriveSettings] = useState<PublicGoogleDriveSettings | null>(null)
   const [googleTasksSettings, setGoogleTasksSettings] = useState<PublicGoogleTasksSettings | null>(null)
   const [microsoftTodoSettings, setMicrosoftTodoSettings] = useState<PublicMicrosoftTodoSettings | null>(null)
+  const [microsoftCalendarSettings, setMicrosoftCalendarSettings] = useState<PublicMicrosoftCalendarSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
@@ -373,6 +379,7 @@ export default function App(): React.JSX.Element {
     loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
     loadInitial('tasks', () => window.assist.getGoogleTasksSettings(), setGoogleTasksSettings)
     loadInitial('microsoftTodo', () => window.assist.getMicrosoftTodoSettings(), setMicrosoftTodoSettings)
+    loadInitial('microsoftCalendar', () => window.assist.getMicrosoftCalendarSettings(), setMicrosoftCalendarSettings)
     loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
     loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
     loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
@@ -1041,6 +1048,36 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateMicrosoftCalendarClientId = useCallback(async (clientId: string): Promise<MicrosoftCalendarSettingsResult> => {
+    const result = await window.assist.updateMicrosoftCalendarClientId(clientId)
+    if (result.ok && result.settings) setMicrosoftCalendarSettings(result.settings)
+    return result
+  }, [])
+
+  const beginMicrosoftCalendarConnect = useCallback(async (): Promise<MicrosoftCalendarSettingsResult> => {
+    const result = await window.assist.beginMicrosoftCalendarConnect()
+    if (result.ok && result.settings) setMicrosoftCalendarSettings(result.settings)
+    return result
+  }, [])
+
+  const getMicrosoftCalendarConnectStatus = useCallback(async (): Promise<MicrosoftCalendarConnectStatusResult> => {
+    const result = await window.assist.getMicrosoftCalendarConnectStatus()
+    if (result.ok && result.settings) setMicrosoftCalendarSettings(result.settings)
+    return result
+  }, [])
+
+  const cancelMicrosoftCalendarConnect = useCallback(async (): Promise<MicrosoftCalendarConnectStatusResult> => {
+    const result = await window.assist.cancelMicrosoftCalendarConnect()
+    if (result.ok && result.settings) setMicrosoftCalendarSettings(result.settings)
+    return result
+  }, [])
+
+  const disconnectMicrosoftCalendar = useCallback(async (): Promise<MicrosoftCalendarSettingsResult> => {
+    const result = await window.assist.disconnectMicrosoftCalendar()
+    if (result.ok && result.settings) setMicrosoftCalendarSettings(result.settings)
+    return result
+  }, [])
+
   const testProvider = useCallback((): Promise<ProviderStatus> => {
     return window.assist.testProvider()
   }, [])
@@ -1076,6 +1113,8 @@ export default function App(): React.JSX.Element {
         window.assist.getScheduledTasks().then(setScheduledTasks),
         window.assist.getSkills().then(setSkills),
         window.assist.getGoogleTasksSettings().then(setGoogleTasksSettings),
+        window.assist.getMicrosoftTodoSettings().then(setMicrosoftTodoSettings),
+        window.assist.getMicrosoftCalendarSettings().then(setMicrosoftCalendarSettings),
         window.assist.getAudit().then(setAudit),
         window.assist.getAuditIntegrity().then(setAuditIntegrity)
       ]).catch((error: unknown) => {
@@ -1425,10 +1464,12 @@ export default function App(): React.JSX.Element {
           {view === 'today' && <TodayView
             googleTasksSettings={googleTasksSettings}
             microsoftTodoSettings={microsoftTodoSettings}
+            microsoftCalendarSettings={microsoftCalendarSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
             onOpenSettings={() => setView('settings')}
             onSettingsRefresh={setGoogleTasksSettings}
             onMicrosoftTodoSettingsRefresh={setMicrosoftTodoSettings}
+            onMicrosoftCalendarSettingsRefresh={setMicrosoftCalendarSettings}
           />}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
@@ -1442,7 +1483,7 @@ export default function App(): React.JSX.Element {
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView />}
@@ -1512,6 +1553,7 @@ export default function App(): React.JSX.Element {
               googleDriveSettings={googleDriveSettings}
               googleTasksSettings={googleTasksSettings}
               microsoftTodoSettings={microsoftTodoSettings}
+              microsoftCalendarSettings={microsoftCalendarSettings}
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
@@ -1532,6 +1574,11 @@ export default function App(): React.JSX.Element {
               onGetMicrosoftTodoConnectStatus={getMicrosoftTodoConnectStatus}
               onCancelMicrosoftTodoConnect={cancelMicrosoftTodoConnect}
               onDisconnectMicrosoftTodo={disconnectMicrosoftTodo}
+              onUpdateMicrosoftCalendarClientId={updateMicrosoftCalendarClientId}
+              onBeginMicrosoftCalendarConnect={beginMicrosoftCalendarConnect}
+              onGetMicrosoftCalendarConnectStatus={getMicrosoftCalendarConnectStatus}
+              onCancelMicrosoftCalendarConnect={cancelMicrosoftCalendarConnect}
+              onDisconnectMicrosoftCalendar={disconnectMicrosoftCalendar}
               onTest={testProvider}
               onAddGrant={addGrant}
               onRemoveGrant={removeGrant}

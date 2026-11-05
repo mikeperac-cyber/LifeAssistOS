@@ -11,6 +11,7 @@ import type {
   PublicGoogleDriveSettings,
   PublicGoogleTasksSettings,
   PublicMicrosoftTodoSettings,
+  PublicMicrosoftCalendarSettings,
   LocalApiResult,
   LocalApiStatus,
   SettingsPatch,
@@ -21,7 +22,9 @@ import type {
   GoogleDriveSettingsResult,
   GoogleTasksSettingsResult,
   MicrosoftTodoSettingsResult,
-  MicrosoftTodoConnectStatusResult
+  MicrosoftTodoConnectStatusResult,
+  MicrosoftCalendarSettingsResult,
+  MicrosoftCalendarConnectStatusResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
@@ -52,6 +55,7 @@ export interface SettingsViewProps {
   googleDriveSettings: PublicGoogleDriveSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
+  microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
@@ -72,6 +76,11 @@ export interface SettingsViewProps {
   onGetMicrosoftTodoConnectStatus: () => Promise<MicrosoftTodoConnectStatusResult>
   onCancelMicrosoftTodoConnect: () => Promise<MicrosoftTodoConnectStatusResult>
   onDisconnectMicrosoftTodo: () => Promise<MicrosoftTodoSettingsResult>
+  onUpdateMicrosoftCalendarClientId: (clientId: string) => Promise<MicrosoftCalendarSettingsResult>
+  onBeginMicrosoftCalendarConnect: () => Promise<MicrosoftCalendarSettingsResult>
+  onGetMicrosoftCalendarConnectStatus: () => Promise<MicrosoftCalendarConnectStatusResult>
+  onCancelMicrosoftCalendarConnect: () => Promise<MicrosoftCalendarConnectStatusResult>
+  onDisconnectMicrosoftCalendar: () => Promise<MicrosoftCalendarSettingsResult>
   onTest: () => Promise<ProviderStatus>
   onAddGrant: (access: Access) => Promise<GrantMutationResult>
   onRemoveGrant: (id: string) => Promise<GrantMutationResult>
@@ -97,6 +106,7 @@ export function SettingsView({
   googleDriveSettings,
   googleTasksSettings,
   microsoftTodoSettings,
+  microsoftCalendarSettings,
   grants,
   onSave,
   onUpdateWebSearchApiKey,
@@ -117,6 +127,11 @@ export function SettingsView({
   onGetMicrosoftTodoConnectStatus,
   onCancelMicrosoftTodoConnect,
   onDisconnectMicrosoftTodo,
+  onUpdateMicrosoftCalendarClientId,
+  onBeginMicrosoftCalendarConnect,
+  onGetMicrosoftCalendarConnectStatus,
+  onCancelMicrosoftCalendarConnect,
+  onDisconnectMicrosoftCalendar,
   onTest,
   onAddGrant,
   onRemoveGrant,
@@ -174,6 +189,12 @@ export function SettingsView({
   const [microsoftTodoConnectStatus, setMicrosoftTodoConnectStatus] = useState<MicrosoftTodoConnectStatusResult['status']>({ phase: 'idle' })
   const microsoftTodoStatusPollBusy = useRef(false)
   const microsoftTodoStatusVersion = useRef(0)
+  const [microsoftCalendarClientId, setMicrosoftCalendarClientId] = useState(microsoftCalendarSettings?.clientId ?? '')
+  const [microsoftCalendarBusy, setMicrosoftCalendarBusy] = useState(false)
+  const [microsoftCalendarMessage, setMicrosoftCalendarMessage] = useState('')
+  const [microsoftCalendarConnectStatus, setMicrosoftCalendarConnectStatus] = useState<MicrosoftCalendarConnectStatusResult['status']>({ phase: 'idle' })
+  const microsoftCalendarStatusPollBusy = useRef(false)
+  const microsoftCalendarStatusVersion = useRef(0)
   const [localApiBusy, setLocalApiBusy] = useState(false)
   const [localApiMessage, setLocalApiMessage] = useState('')
 
@@ -208,6 +229,10 @@ export function SettingsView({
   }, [microsoftTodoSettings])
 
   useEffect(() => {
+    if (microsoftCalendarSettings) setMicrosoftCalendarClientId(microsoftCalendarSettings.clientId)
+  }, [microsoftCalendarSettings])
+
+  useEffect(() => {
     let active = true
     const version = microsoftTodoStatusVersion.current
     void onGetMicrosoftTodoConnectStatus().then((result) => {
@@ -239,6 +264,39 @@ export function SettingsView({
     const timer = window.setInterval(() => { void poll() }, 1_000)
     return () => { active = false; window.clearInterval(timer) }
   }, [microsoftTodoConnectStatus?.phase, onGetMicrosoftTodoConnectStatus])
+
+  useEffect(() => {
+    let active = true
+    const version = microsoftCalendarStatusVersion.current
+    void onGetMicrosoftCalendarConnectStatus().then((result) => {
+      if (active && microsoftCalendarStatusVersion.current === version && result.ok && result.status) setMicrosoftCalendarConnectStatus(result.status)
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [onGetMicrosoftCalendarConnectStatus])
+
+  useEffect(() => {
+    if (microsoftCalendarConnectStatus?.phase !== 'pending' && microsoftCalendarConnectStatus?.phase !== 'starting') return
+    let active = true
+    const version = microsoftCalendarStatusVersion.current
+    const poll = async (): Promise<void> => {
+      if (!active || microsoftCalendarStatusVersion.current !== version || microsoftCalendarStatusPollBusy.current) return
+      microsoftCalendarStatusPollBusy.current = true
+      try {
+        const result = await onGetMicrosoftCalendarConnectStatus()
+        if (!active || microsoftCalendarStatusVersion.current !== version || !result.ok || !result.status) return
+        setMicrosoftCalendarConnectStatus(result.status)
+        if (result.status.phase === 'connected') setMicrosoftCalendarMessage('Outlook Calendar connected. Event pages still ask for approval.')
+        else if (result.status.phase === 'failed') setMicrosoftCalendarMessage(result.status.error ?? 'Microsoft sign-in failed.')
+        else if (result.status.phase === 'cancelled') setMicrosoftCalendarMessage('Microsoft sign-in cancelled.')
+      } catch (error) {
+        if (active) setMicrosoftCalendarMessage(errorText(error))
+      } finally {
+        microsoftCalendarStatusPollBusy.current = false
+      }
+    }
+    const timer = window.setInterval(() => { void poll() }, 1_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [microsoftCalendarConnectStatus?.phase, onGetMicrosoftCalendarConnectStatus])
 
   const preset = presetFor(form.preset)
 
@@ -748,6 +806,66 @@ export function SettingsView({
       setMicrosoftTodoMessage(errorText(error))
     } finally {
       setMicrosoftTodoBusy(false)
+    }
+  }
+
+  async function connectMicrosoftCalendar(): Promise<void> {
+    microsoftCalendarStatusVersion.current += 1
+    const clientId = microsoftCalendarClientId.trim()
+    if (!clientId) {
+      setMicrosoftCalendarMessage('Enter a Microsoft Entra Application (client) ID first.')
+      return
+    }
+    setMicrosoftCalendarBusy(true)
+    setMicrosoftCalendarMessage('Starting Microsoft sign-in…')
+    try {
+      const saved = await onUpdateMicrosoftCalendarClientId(clientId)
+      if (!saved.ok) {
+        setMicrosoftCalendarMessage(saved.error ?? 'Could not save the Microsoft Application ID.')
+        return
+      }
+      const result = await onBeginMicrosoftCalendarConnect()
+      if (!result.ok || !result.prompt) {
+        setMicrosoftCalendarMessage(result.error ?? 'Could not start Microsoft sign-in.')
+        return
+      }
+      setMicrosoftCalendarConnectStatus({ phase: 'pending', prompt: result.prompt })
+      setMicrosoftCalendarMessage('Enter the displayed code on the Microsoft sign-in page to approve this connection.')
+    } catch (error) {
+      setMicrosoftCalendarMessage(errorText(error))
+    } finally {
+      setMicrosoftCalendarBusy(false)
+    }
+  }
+
+  async function cancelMicrosoftCalendarSignIn(): Promise<void> {
+    microsoftCalendarStatusVersion.current += 1
+    setMicrosoftCalendarBusy(true)
+    try {
+      const result = await onCancelMicrosoftCalendarConnect()
+      if (result.status) setMicrosoftCalendarConnectStatus(result.status)
+      setMicrosoftCalendarMessage(result.ok ? 'Microsoft sign-in cancelled.' : result.error ?? 'Could not cancel sign-in.')
+    } catch (error) {
+      setMicrosoftCalendarMessage(errorText(error))
+    } finally {
+      setMicrosoftCalendarBusy(false)
+    }
+  }
+
+  async function disconnectMicrosoftCalendar(): Promise<void> {
+    microsoftCalendarStatusVersion.current += 1
+    setMicrosoftCalendarBusy(true)
+    setMicrosoftCalendarMessage('')
+    try {
+      const result = await onDisconnectMicrosoftCalendar()
+      setMicrosoftCalendarMessage(result.ok
+        ? result.message ?? 'Outlook Calendar disconnected in Mike Assist.'
+        : result.error ?? 'Could not disconnect Outlook Calendar.')
+      if (result.ok) setMicrosoftCalendarConnectStatus({ phase: 'idle' })
+    } catch (error) {
+      setMicrosoftCalendarMessage(errorText(error))
+    } finally {
+      setMicrosoftCalendarBusy(false)
     }
   }
 
@@ -1459,6 +1577,77 @@ export function SettingsView({
           <p className="muted">Loading Microsoft To Do settings…</p>
         )}
       </section>
+      <section className="settings-section">
+        <div className="section-head">
+          <h2>Outlook Calendar</h2>
+          <p>
+            Connect Outlook Calendar with the delegated read-only <code>Calendars.ReadBasic</code> permission. Mike Assist only lists events in a bounded time range; it cannot create, edit, or delete events. Each event page asks for approval. Today displays approved events locally. In Chat, approved event details may be sent to your configured model provider and saved with chat history.
+          </p>
+        </div>
+        {microsoftCalendarSettings ? (
+          <div className="web-search-settings">
+            <label className="field field-wide">
+              <span className="field-label">
+                Microsoft Entra Application (client) ID
+                {microsoftCalendarSettings.connected
+                  ? <span className="field-tag">{microsoftCalendarSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}</span>
+                  : microsoftCalendarSettings.tokenStored
+                    ? <span className="field-tag">saved token unavailable</span>
+                    : null}
+              </span>
+              <input
+                value={microsoftCalendarClientId}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={microsoftCalendarSettings.connected || microsoftCalendarSettings.tokenStored || microsoftCalendarBusy || microsoftCalendarConnectStatus?.phase === 'pending'}
+                onChange={(event) => setMicrosoftCalendarClientId(event.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+              />
+              <span className="field-hint">
+                Register a public-client app supporting personal and work or school accounts, enable public-client flows, and add delegated Microsoft Graph <code>Calendars.ReadBasic</code>. Mike Assist uses device-code sign-in and does not need a client secret. See Microsoft's <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code" target="_blank" rel="noreferrer">device-code guide</a>, <a href="https://learn.microsoft.com/en-us/graph/api/user-list-calendarview?view=graph-rest-1.0" target="_blank" rel="noreferrer">calendar-view API</a>, and <a href="https://entra.microsoft.com/" target="_blank" rel="noreferrer">Entra admin center</a>.
+              </span>
+              {microsoftCalendarSettings.tokenStored && !microsoftCalendarSettings.connected && (
+                <span className="field-hint">Mike Assist could not unlock this saved token. Reconnect with this Application ID, or clear the saved connection and connect again.</span>
+              )}
+            </label>
+            {microsoftCalendarConnectStatus?.phase === 'pending' && microsoftCalendarConnectStatus.prompt && (
+              <div className="today-google-tasks-empty" role="status" aria-live="polite">
+                <strong>Finish sign-in in your browser</strong>
+                <span>Open {microsoftCalendarConnectStatus.prompt.verificationUri} and enter this one-time code:</span>
+                <code className="microsoft-todo-user-code">{microsoftCalendarConnectStatus.prompt.userCode}</code>
+                <span>Code expires at {new Date(microsoftCalendarConnectStatus.prompt.expiresAt).toLocaleTimeString()}.</span>
+              </div>
+            )}
+            <div className="settings-actions">
+              {microsoftCalendarSettings.connected ? (
+                <button className="danger-button" type="button" onClick={() => void disconnectMicrosoftCalendar()} disabled={microsoftCalendarBusy}>
+                  {microsoftCalendarBusy ? 'Disconnecting…' : 'Disconnect in Mike Assist'}
+                </button>
+              ) : microsoftCalendarConnectStatus?.phase === 'pending' ? (
+                <button className="danger-button" type="button" onClick={() => void cancelMicrosoftCalendarSignIn()} disabled={microsoftCalendarBusy}>
+                  {microsoftCalendarBusy ? 'Cancelling…' : 'Cancel sign-in'}
+                </button>
+              ) : microsoftCalendarSettings.tokenStored ? (
+                <>
+                  <button className="primary-button" type="button" onClick={() => void connectMicrosoftCalendar()} disabled={microsoftCalendarBusy || !microsoftCalendarClientId.trim()}>
+                    {microsoftCalendarBusy ? 'Starting sign-in…' : 'Reconnect Outlook Calendar'}
+                  </button>
+                  <button className="danger-button" type="button" onClick={() => void disconnectMicrosoftCalendar()} disabled={microsoftCalendarBusy}>
+                    {microsoftCalendarBusy ? 'Clearing…' : 'Clear saved connection'}
+                  </button>
+                </>
+              ) : (
+                <button className="primary-button" type="button" onClick={() => void connectMicrosoftCalendar()} disabled={microsoftCalendarBusy || !microsoftCalendarClientId.trim()}>
+                  {microsoftCalendarBusy ? 'Starting sign-in…' : 'Connect Outlook Calendar'}
+                </button>
+              )}
+              {microsoftCalendarMessage && <span className="settings-status" role="status">{microsoftCalendarMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading Outlook Calendar settings…</p>
+        )}
+      </section>
       <McpPanel />
 
       <section className="settings-section">
@@ -1467,7 +1656,7 @@ export function SettingsView({
           <p>
             Create or restore a consistent snapshot of chats, finance records, memory facts, research, vault documents, Today plans,
             saved workflows and Skills, coaching profile and journal, voice settings, provider settings, folder grants, allowed domains,
-            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do connection settings, and the audit log. Optionally provide a
+            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do, Outlook Calendar connection settings, and the audit log. Optionally provide a
             passphrase to encrypt the snapshot with AES-256-GCM.
           </p>
         </div>

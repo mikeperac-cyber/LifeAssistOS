@@ -28,6 +28,7 @@ describe('delegation tools', () => {
     registry.register(tool('search_vault', 'read'))
     registry.register(tool('gmail_read_message', 'external'))
     registry.register(tool('google_calendar_list_events', 'external'))
+    registry.register(tool('microsoft_calendar_list_events', 'external'))
     registry.register(tool('web_search', 'external'))
     registry.register(tool('web_fetch', 'external'))
     registry.register(tool('delegate_tasks', 'external'))

@@ -39,6 +39,7 @@ import type {
   ToolResult,
   GoogleTask,
   GoogleTaskList,
+  MicrosoftCalendarEvent,
   MicrosoftTodoTask,
   MicrosoftTodoTaskList
 } from './types'
@@ -78,6 +79,12 @@ export interface PublicMicrosoftTodoSettings {
   tokenStored: boolean
 }
 
+export interface PublicMicrosoftCalendarSettings {
+  clientId: string
+  connected: boolean
+  tokenStored: boolean
+}
+
 export interface MicrosoftTodoConnectPrompt {
   userCode: string
   verificationUri: string
@@ -87,6 +94,18 @@ export interface MicrosoftTodoConnectPrompt {
 export interface MicrosoftTodoConnectStatus {
   phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
   prompt?: MicrosoftTodoConnectPrompt
+  error?: string
+}
+
+export interface MicrosoftCalendarConnectPrompt {
+  userCode: string
+  verificationUri: string
+  expiresAt: number
+}
+
+export interface MicrosoftCalendarConnectStatus {
+  phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
+  prompt?: MicrosoftCalendarConnectPrompt
   error?: string
 }
 
@@ -220,6 +239,29 @@ export interface MicrosoftTodoTasksReadResult {
   tasks?: MicrosoftTodoTask[]
   nextPageToken?: string
   settings?: PublicMicrosoftTodoSettings
+}
+
+export interface MicrosoftCalendarSettingsResult {
+  ok: boolean
+  error?: string
+  message?: string
+  settings?: PublicMicrosoftCalendarSettings
+  prompt?: MicrosoftCalendarConnectPrompt
+}
+
+export interface MicrosoftCalendarConnectStatusResult {
+  ok: boolean
+  error?: string
+  status?: MicrosoftCalendarConnectStatus
+  settings?: PublicMicrosoftCalendarSettings
+}
+
+export interface MicrosoftCalendarEventsReadResult {
+  ok: boolean
+  error?: string
+  events?: MicrosoftCalendarEvent[]
+  nextPageToken?: string
+  settings?: PublicMicrosoftCalendarSettings
 }
 
 export interface ChatState {
@@ -481,6 +523,14 @@ export interface AssistApi {
   disconnectMicrosoftTodo(): Promise<MicrosoftTodoSettingsResult>
   listMicrosoftTodoTaskLists(pageToken?: string): Promise<MicrosoftTodoTaskListsReadResult>
   listMicrosoftTodoTasks(taskListId: string, pageToken?: string): Promise<MicrosoftTodoTasksReadResult>
+
+  getMicrosoftCalendarSettings(): Promise<PublicMicrosoftCalendarSettings>
+  updateMicrosoftCalendarClientId(clientId: string): Promise<MicrosoftCalendarSettingsResult>
+  beginMicrosoftCalendarConnect(): Promise<MicrosoftCalendarSettingsResult>
+  getMicrosoftCalendarConnectStatus(): Promise<MicrosoftCalendarConnectStatusResult>
+  cancelMicrosoftCalendarConnect(): Promise<MicrosoftCalendarConnectStatusResult>
+  disconnectMicrosoftCalendar(): Promise<MicrosoftCalendarSettingsResult>
+  listMicrosoftCalendarEvents(startDateTime?: string, endDateTime?: string, pageToken?: string): Promise<MicrosoftCalendarEventsReadResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

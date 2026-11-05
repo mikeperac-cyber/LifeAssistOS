@@ -133,6 +133,14 @@ const api: AssistApi = {
   disconnectMicrosoftTodo: () => ipcRenderer.invoke('assist:microsoft-todo-disconnect'),
   listMicrosoftTodoTaskLists: (pageToken?: string) => ipcRenderer.invoke('assist:microsoft-todo-list-lists', pageToken),
   listMicrosoftTodoTasks: (taskListId: string, pageToken?: string) => ipcRenderer.invoke('assist:microsoft-todo-list-tasks', taskListId, pageToken),
+  getMicrosoftCalendarSettings: () => ipcRenderer.invoke('assist:microsoft-calendar-settings'),
+  updateMicrosoftCalendarClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-calendar-client-id-update', clientId),
+  beginMicrosoftCalendarConnect: () => ipcRenderer.invoke('assist:microsoft-calendar-connect-begin'),
+  getMicrosoftCalendarConnectStatus: () => ipcRenderer.invoke('assist:microsoft-calendar-connect-status'),
+  cancelMicrosoftCalendarConnect: () => ipcRenderer.invoke('assist:microsoft-calendar-connect-cancel'),
+  disconnectMicrosoftCalendar: () => ipcRenderer.invoke('assist:microsoft-calendar-disconnect'),
+  listMicrosoftCalendarEvents: (startDateTime?: string, endDateTime?: string, pageToken?: string) =>
+    ipcRenderer.invoke('assist:microsoft-calendar-list-events', startDateTime, endDateTime, pageToken),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)

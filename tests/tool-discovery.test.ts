@@ -59,4 +59,16 @@ describe('tool discovery', () => {
     expect(result.tools.map((tool) => tool.name)).toContain('google_tasks_list_tasks')
     expect(optionalToolDomain('google_tasks_list_task_lists')).toBe('planning')
   })
+
+  it('finds Outlook Calendar events from natural language calendar requests', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('microsoft_calendar_list_events', 'List events from the connected Outlook Calendar.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const result = await discovery.run(
+      { query: 'show my Outlook meetings', limit: 4 },
+      { kind: 'none', signal: new AbortController().signal }
+    ) as { tools: Array<{ name: string }> }
+    expect(result.tools.map((tool) => tool.name)).toContain('microsoft_calendar_list_events')
+    expect(optionalToolDomain('microsoft_calendar_list_events')).toBe('calendar')
+  })
 })

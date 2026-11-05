@@ -30,6 +30,7 @@ const OPTIONAL_DATA_FILES = [
   'google-drive.json',
   'google-tasks.json',
   'microsoft-todo.json',
+  'microsoft-calendar.json',
   'scheduled-tasks.json'
 ]
 const OPTIONAL_DATABASE_FILES = [

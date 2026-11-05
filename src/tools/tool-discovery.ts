@@ -66,8 +66,8 @@ function aliasesForTool(name: string): string {
   if (name.startsWith('gmail_') || name === 'create_email_draft') {
     return 'eposta mail gelen kutusu taslak gonder yanit alici'
   }
-  if (name.startsWith('google_calendar_') || name === 'create_calendar_event') {
-    return 'takvim etkinlik toplanti randevu musaitlik ajanda'
+  if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') {
+    return 'outlook calendar event meeting appointment agenda availability takvim etkinlik toplanti randevu musaitlik ajanda'
   }
   if (name.startsWith('google_drive_')) {
     return 'drive dokuman belge dosya klasor sunum tablo rapor teklif sozlesme'

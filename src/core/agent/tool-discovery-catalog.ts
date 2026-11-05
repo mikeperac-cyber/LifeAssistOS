@@ -44,7 +44,7 @@ export function selectToolSpecsForTurn(tools: ProviderToolSpec[], prompt: string
 export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('mcp__')) return 'mcp'
   if (name.startsWith('gmail_') || name === 'create_email_draft') return 'email'
-  if (name.startsWith('google_calendar_') || name === 'create_calendar_event') return 'calendar'
+  if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') return 'calendar'
   if (name.startsWith('google_drive_')) return 'drive'
   if (name.startsWith('google_tasks_')) return 'planning'
   if (name.startsWith('finance_') || name === 'record_transaction') return 'finance'

@@ -63,6 +63,8 @@ export function AuditView({
           event.type.startsWith('google_gmail.') ||
           event.type.startsWith('google_drive.') ||
           event.type.startsWith('google_tasks.') ||
+          event.type.startsWith('microsoft_todo.') ||
+          event.type.startsWith('microsoft_calendar.') ||
           event.type === 'skill.changed' ||
           event.type === 'settings.changed'
       )
@@ -247,6 +249,18 @@ export function summarizeEvent(event: AuditEvent): string {
       return 'Google Tasks OAuth connected'
     case 'google_tasks.disconnected':
       return 'Google Tasks disconnected locally'
+    case 'microsoft_todo.settings_changed':
+      return 'Microsoft To Do settings updated'
+    case 'microsoft_todo.connected':
+      return 'Microsoft To Do connected'
+    case 'microsoft_todo.disconnected':
+      return 'Microsoft To Do disconnected locally'
+    case 'microsoft_calendar.settings_changed':
+      return 'Outlook Calendar settings updated'
+    case 'microsoft_calendar.connected':
+      return 'Outlook Calendar connected'
+    case 'microsoft_calendar.disconnected':
+      return 'Outlook Calendar disconnected locally'
     case 'domain.added':
       return `${String(data.host ?? 'domain')} · allowed`
     case 'domain.removed':

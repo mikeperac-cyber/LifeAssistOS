@@ -173,6 +173,18 @@ export function describeEvent(event: AuditEvent): string {
       return 'Google Tasks connected'
     case 'google_tasks.disconnected':
       return 'Google Tasks disconnected'
+    case 'microsoft_todo.settings_changed':
+      return 'Microsoft To Do settings updated'
+    case 'microsoft_todo.connected':
+      return 'Microsoft To Do connected'
+    case 'microsoft_todo.disconnected':
+      return 'Microsoft To Do disconnected locally'
+    case 'microsoft_calendar.settings_changed':
+      return 'Outlook Calendar settings updated'
+    case 'microsoft_calendar.connected':
+      return 'Outlook Calendar connected'
+    case 'microsoft_calendar.disconnected':
+      return 'Outlook Calendar disconnected locally'
     case 'domain.added':
       return 'Web domain allowed'
     case 'domain.removed':

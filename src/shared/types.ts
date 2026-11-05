@@ -194,6 +194,9 @@ export type AuditType =
     | 'microsoft_todo.settings_changed'
     | 'microsoft_todo.connected'
     | 'microsoft_todo.disconnected'
+  | 'microsoft_calendar.settings_changed'
+  | 'microsoft_calendar.connected'
+  | 'microsoft_calendar.disconnected'
   | 'domain.added'
   | 'domain.removed'
   | 'backup.created'
@@ -284,6 +287,16 @@ export interface MicrosoftTodoTask {
   due?: string
   status: 'notStarted' | 'inProgress' | 'completed' | 'waitingOnOthers' | 'deferred'
   updated?: string
+}
+
+export interface MicrosoftCalendarEvent {
+  id: string
+  title: string
+  start: string
+  end: string
+  isAllDay: boolean
+  location?: string
+  showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown'
 }
 
 export interface AuditIntegrity {

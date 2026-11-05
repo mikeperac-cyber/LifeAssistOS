@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
-import type { PublicGoogleTasksSettings, PublicMicrosoftTodoSettings } from '../../../shared/ipc'
+import type { PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
+import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
 
-export function TodayView({ googleTasksSettings, microsoftTodoSettings, disabled, onOpenSettings, onSettingsRefresh, onMicrosoftTodoSettingsRefresh }: {
+export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, disabled, onOpenSettings, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh }: {
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
+  microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   disabled: boolean
   onOpenSettings: () => void
   onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
   onMicrosoftTodoSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
+  onMicrosoftCalendarSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<TodaySnapshot>({ date: '', tasks: [], inbox: [] })
   const [capture, setCapture] = useState('')
@@ -338,6 +341,12 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, disabled
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
+      />
+      <MicrosoftCalendarPanel
+        settings={microsoftCalendarSettings}
+        disabled={disabled}
+        onOpenSettings={onOpenSettings}
+        onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}
       />
       {error && <p className="status-error today-error" role="alert">{error}</p>}
       </>}
