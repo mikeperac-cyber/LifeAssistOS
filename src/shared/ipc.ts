@@ -19,6 +19,7 @@ import type {
   ResearchProject,
   ResearchSource,
   VaultDocument,
+  VaultQuickSearchResult,
   VaultSearchResult,
   PlanTask,
   InboxItem,
@@ -578,6 +579,8 @@ export interface AssistApi {
   addResearchSource(input: { projectId: string; url: string }): Promise<ResearchMutationResult>
   removeResearchSource(id: string): Promise<ResearchMutationResult>
   getVaultDocuments(query?: string): Promise<VaultSearchResult[]>
+  searchVaultSummaries(query: string, limit?: number): Promise<VaultQuickSearchResult[]>
+  getVaultDocument(id: string): Promise<VaultMutationResult>
   createVaultDocument(input: { title: string; body: string; tags?: string[]; sourceType?: string; sourceRef?: string }): Promise<VaultMutationResult>
   updateVaultDocument(id: string, patch: { title?: string; body?: string; tags?: string[] }): Promise<VaultMutationResult>
   deleteVaultDocument(id: string): Promise<VaultMutationResult>

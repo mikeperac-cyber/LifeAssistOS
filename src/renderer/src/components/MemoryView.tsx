@@ -12,7 +12,10 @@ const DELETE_TOKEN = 'DELETE'
 export function MemoryView({
   disabled,
   version,
-  onChanged
+  onChanged,
+  selectedFact,
+  selectedQuery,
+  onSelectedFactConsumed
 }: {
   /** True while the agent or a direct tool call owns the queue. */
   disabled: boolean
@@ -20,6 +23,9 @@ export function MemoryView({
   version: number
   /** Called after any successful local change so App can refresh counts. */
   onChanged: () => void
+  selectedFact?: MemoryFact | null
+  selectedQuery?: string
+  onSelectedFactConsumed?: () => void
 }): React.JSX.Element {
   const [facts, setFacts] = useState<MemoryFact[]>([])
   const [archived, setArchived] = useState<MemoryFact[]>([])
@@ -64,6 +70,13 @@ export function MemoryView({
   useEffect(() => {
     void refresh()
   }, [refresh, version])
+
+  useEffect(() => {
+    if (!selectedFact) return
+    setSearch((selectedQuery ?? selectedFact.text).slice(0, 200))
+    setMatches([selectedFact])
+    onSelectedFactConsumed?.()
+  }, [selectedFact, selectedQuery, onSelectedFactConsumed])
 
   const addFact = useCallback(async (): Promise<void> => {
     const text = draftText.trim()

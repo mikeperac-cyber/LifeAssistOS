@@ -3,7 +3,7 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { VaultDocument, VaultSearchResult, VaultSourceType } from '../shared/types'
+import type { VaultDocument, VaultQuickSearchResult, VaultSearchResult, VaultSourceType } from '../shared/types'
 
 interface DocumentRow {
   id: string
@@ -14,6 +14,15 @@ interface DocumentRow {
   source_ref: string | null
   created_at: string
   updated_at: string
+}
+
+interface QuickSearchRow {
+  id: string
+  title: string
+  tags: string
+  source_type: VaultSourceType
+  updated_at: string
+  snippet: string
 }
 
 /** FTS5-backed local knowledge vault. The index contains no remote service metadata. */
@@ -106,6 +115,30 @@ export class VaultStore {
       LIMIT ?
     `).all(match, Math.max(1, Math.min(100, limit))) as unknown as DocumentRow[]
     return rows.map((row) => ({ document: fromRow(row), snippet: snippetFor(row.body, clean) }))
+  }
+
+  searchSummaries(query: string, limit = 8): VaultQuickSearchResult[] {
+    const clean = query.trim()
+    const safeLimit = Math.max(1, Math.min(20, Math.floor(limit)))
+    if (!clean) {
+      const rows = this.db.prepare(`
+        SELECT id, title, tags, source_type, updated_at, substr(body, 1, 220) AS snippet
+        FROM documents ORDER BY updated_at DESC LIMIT ?
+      `).all(safeLimit) as unknown as QuickSearchRow[]
+      return rows.map(fromQuickSearchRow)
+    }
+    const match = clean.split(/\s+/).map((token) => token.replace(/[^\p{L}\p{N}_-]/gu, '')).filter(Boolean).map((token) => `"${token.replace(/"/g, '""')}"*`).join(' AND ')
+    if (!match) return []
+    const rows = this.db.prepare(`
+      SELECT d.id, d.title, d.tags, d.source_type, d.updated_at,
+        snippet(documents_fts, 2, '', '', '…', 32) AS snippet
+      FROM documents_fts f
+      JOIN documents d ON d.id = f.id
+      WHERE documents_fts MATCH ?
+      ORDER BY rank
+      LIMIT ?
+    `).all(match, safeLimit) as unknown as QuickSearchRow[]
+    return rows.map(fromQuickSearchRow)
   }
 
   create(input: { title: string; body: string; tags?: string[]; sourceType?: VaultSourceType; sourceRef?: string }): VaultDocument {
@@ -215,6 +248,24 @@ function fromRow(row: DocumentRow): VaultDocument {
     sourceRef: row.source_ref ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  }
+}
+
+function fromQuickSearchRow(row: QuickSearchRow): VaultQuickSearchResult {
+  let tags: string[] = []
+  try {
+    const parsed = JSON.parse(row.tags) as unknown
+    if (Array.isArray(parsed)) tags = parsed.filter((tag): tag is string => typeof tag === 'string')
+  } catch {
+    tags = row.tags.split(/\s+/).filter(Boolean)
+  }
+  return {
+    id: row.id,
+    title: row.title,
+    tags,
+    sourceType: row.source_type,
+    updatedAt: row.updated_at,
+    snippet: row.snippet
   }
 }
 

@@ -81,6 +81,8 @@ const api: AssistApi = {
   removeResearchSource: (id: string) => ipcRenderer.invoke('assist:research-source-remove', id),
 
   getVaultDocuments: (query?: string) => ipcRenderer.invoke('assist:vault-search', query),
+  searchVaultSummaries: (query: string, limit?: number) => ipcRenderer.invoke('assist:vault-search-summaries', { query, limit }),
+  getVaultDocument: (id: string) => ipcRenderer.invoke('assist:vault-get', id),
   createVaultDocument: (input) => ipcRenderer.invoke('assist:vault-create', input),
   updateVaultDocument: (id: string, patch) => ipcRenderer.invoke('assist:vault-update', { id, patch }),
   deleteVaultDocument: (id: string) => ipcRenderer.invoke('assist:vault-delete', id),

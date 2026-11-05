@@ -53,12 +53,16 @@ const STARTERS: Array<Draft & { shortLabel: string }> = [
 export function SkillsView({
   skills,
   disabled,
+  searchTargetId,
+  onSearchTargetConsumed,
   onSave,
   onToggle,
   onDelete
 }: {
   skills: AssistantSkill[]
   disabled: boolean
+  searchTargetId?: string | null
+  onSearchTargetConsumed?: () => void
   onSave: (input: AssistantSkillInput) => Promise<SkillMutationResult>
   onToggle: (id: string, enabled: boolean) => Promise<SkillMutationResult>
   onDelete: (id: string) => Promise<SkillMutationResult>
@@ -70,6 +74,20 @@ export function SkillsView({
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   useEffect(() => {
+    if (!searchTargetId) return
+    const targetSkill = skills.find((skill) => skill.id === searchTargetId)
+    if (targetSkill) select(targetSkill)
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(`global-search-skill-${searchTargetId}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    const timeout = window.setTimeout(() => onSearchTargetConsumed?.(), 4500)
+    return () => { cancelAnimationFrame(frame); window.clearTimeout(timeout) }
+  }, [searchTargetId, skills, onSearchTargetConsumed])
+
+  useEffect(() => {
+    if (searchTargetId) return
     if (selectedId === 'new') return
     const selected = skills.find((skill) => skill.id === selectedId)
     if (selected) {
@@ -79,7 +97,7 @@ export function SkillsView({
     } else if (skills.length > 0) {
       setSelectedId(skills[0].id)
     }
-  }, [skills, selectedId])
+  }, [skills, selectedId, searchTargetId])
 
   const selected = skills.find((skill) => skill.id === selectedId)
   const isNew = selectedId === 'new'
@@ -176,7 +194,15 @@ export function SkillsView({
       <div className="skills-layout">
         <aside className="skills-list" aria-label="Saved skills">
           {skills.map((skill) => (
-            <button key={skill.id} type="button" aria-pressed={selectedId === skill.id} className={`skill-list-item ${selectedId === skill.id ? 'active' : ''}`} onClick={() => select(skill)} disabled={disabled || busy}>
+            <button
+              id={`global-search-skill-${skill.id}`}
+              key={skill.id}
+              type="button"
+              aria-pressed={selectedId === skill.id}
+              className={`skill-list-item ${selectedId === skill.id ? 'active' : ''} ${searchTargetId === skill.id ? 'is-global-search-target' : ''}`}
+              onClick={() => select(skill)}
+              disabled={disabled || busy}
+            >
               <span className="skill-list-name">{skill.name}</span>
               <span className="skill-list-meta">{SCOPE_LABELS[skill.scope]} · {skill.enabled ? 'enabled' : 'disabled'}</span>
               <span className="skill-list-description">{skill.description}</span>

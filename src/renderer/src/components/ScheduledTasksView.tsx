@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ChatMode, ScheduledAgentTask, ScheduledTaskSchedule } from '../../../shared/types'
 import type { ScheduledTaskMutationResult, ScheduledTaskRunResult } from '../../../shared/ipc'
 
@@ -88,6 +88,8 @@ function errorText(error: unknown): string {
 export function ScheduledTasksView({
   tasks,
   disabled,
+  searchTargetId,
+  onSearchTargetConsumed,
   onCreate,
   onSetEnabled,
   onRemove,
@@ -95,6 +97,8 @@ export function ScheduledTasksView({
 }: {
   tasks: ScheduledAgentTask[]
   disabled: boolean
+  searchTargetId?: string | null
+  onSearchTargetConsumed?: () => void
   onCreate: (input: { name: string; prompt: string; mode: ChatMode; schedule: ScheduledTaskSchedule }) => Promise<ScheduledTaskMutationResult>
   onSetEnabled: (id: string, enabled: boolean) => Promise<ScheduledTaskMutationResult>
   onRemove: (id: string) => Promise<ScheduledTaskMutationResult>
@@ -111,6 +115,17 @@ export function ScheduledTasksView({
   const [busy, setBusy] = useState(false)
   const [runningId, setRunningId] = useState<string | null>(null)
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!searchTargetId) return
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(`global-search-scheduled-${searchTargetId}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    const timeout = window.setTimeout(() => onSearchTargetConsumed?.(), 4500)
+    return () => { cancelAnimationFrame(frame); window.clearTimeout(timeout) }
+  }, [searchTargetId, onSearchTargetConsumed])
 
   function applyStarter(starter: ScheduledTaskStarter): void {
     setName(starter.name)
@@ -291,7 +306,12 @@ export function ScheduledTasksView({
             const completedOnce = task.schedule.kind === 'once' && !task.enabled && task.nextRunAt === null && task.runCount > 0
             const stateLabel = completedOnce ? (task.lastOutcome === 'failed' ? 'Failed' : 'Done') : task.enabled ? 'Active' : 'Paused'
             return (
-              <article className="scheduled-card" key={task.id}>
+              <article
+                id={`global-search-scheduled-${task.id}`}
+                className={`scheduled-card ${searchTargetId === task.id ? 'is-global-search-target' : ''}`}
+                key={task.id}
+                tabIndex={searchTargetId === task.id ? -1 : undefined}
+              >
               <div className="scheduled-card-head">
                 <div>
                   <h3>{task.name}</h3>

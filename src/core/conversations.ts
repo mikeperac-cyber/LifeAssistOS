@@ -355,8 +355,25 @@ export class ConversationStore {
     const lower = trimmed.toLocaleLowerCase()
     const all = this.listSessions()
     const matchedIds = new Set<string>()
+    const allowedModes: ChatMode[] = mode === 'coach_personal'
+      ? ['coach_personal']
+      : mode === 'coach_business'
+        ? ['coach_business']
+        : ['assistant', 'brainstorm', 'software', 'review']
+    const modePlaceholders = allowedModes.map(() => '?').join(', ')
+    const titleSearchableIds = new Set((this.db.prepare(`
+      SELECT s.id FROM chat_sessions s
+      WHERE NOT EXISTS (
+        SELECT 1 FROM chat_messages existing
+        WHERE existing.session_id = s.id AND existing.role IN ('user', 'assistant')
+      ) OR EXISTS (
+        SELECT 1 FROM chat_messages visible_message
+        WHERE visible_message.session_id = s.id AND visible_message.role IN ('user', 'assistant')
+          AND (visible_message.mode IN (${modePlaceholders}) OR visible_message.mode IS NULL)
+      )
+    `).all(...allowedModes) as Array<{ id: string }>).map((row) => row.id))
     for (const session of all) {
-      if (session.title.toLocaleLowerCase().includes(lower)) {
+      if (titleSearchableIds.has(session.id) && session.title.toLocaleLowerCase().includes(lower)) {
         matchedIds.add(session.id)
       }
     }
@@ -365,13 +382,6 @@ export class ConversationStore {
       .slice(0, 8)
     if (terms.length > 0) {
       const ftsQuery = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(' AND ')
-      const allowedModes: ChatMode[] =
-        mode === 'coach_personal'
-          ? ['coach_personal']
-          : mode === 'coach_business'
-            ? ['coach_business']
-            : ['assistant', 'brainstorm', 'software', 'review']
-      const placeholders = allowedModes.map(() => '?').join(', ')
       const ftsRows = this.db
         .prepare(
           `SELECT DISTINCT m.session_id AS sessionId
@@ -379,7 +389,7 @@ export class ConversationStore {
            JOIN chat_messages m ON m.rowid = chat_messages_fts.rowid
            WHERE chat_messages_fts MATCH ?
              AND m.role IN ('user', 'assistant')
-             AND (m.mode IN (${placeholders}) OR m.mode IS NULL)
+             AND (m.mode IN (${modePlaceholders}) OR m.mode IS NULL)
            LIMIT 50`
         )
         .all(ftsQuery, ...allowedModes) as unknown as Array<{ sessionId: string }>

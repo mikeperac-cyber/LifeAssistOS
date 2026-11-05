@@ -164,6 +164,27 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
     return vault.search(typeof query === 'string' ? query : '')
   })
 
+  ipcMain.handle('assist:vault-search-summaries', (_event, input: unknown) => {
+    const vault = ctx.getVault()
+    if (!vault) return []
+    if (!input || typeof input !== 'object') return []
+    const value = input as { query?: unknown; limit?: unknown }
+    return vault.searchSummaries(
+      typeof value.query === 'string' ? value.query : '',
+      typeof value.limit === 'number' && Number.isFinite(value.limit) ? value.limit : 8
+    )
+  })
+
+  ipcMain.handle('assist:vault-get', (_event, id: unknown) => {
+    const vault = ctx.getVault()
+    if (!vault || typeof id !== 'string') return { ok: false, error: 'Invalid vault document.' }
+    try {
+      return { ok: true, document: vault.get(id) }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
   ipcMain.handle('assist:vault-create', async (_event, input: unknown) => {
     const vault = ctx.getVault()
     if (!vault) return { ok: false, error: 'Vault storage is not ready.' }

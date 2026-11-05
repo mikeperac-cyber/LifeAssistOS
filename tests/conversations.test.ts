@@ -363,4 +363,17 @@ describe('ConversationStore', () => {
     expect(store.searchSessions('Denizli', 'assistant').map((s) => s.id)).toContain(id)
     expect(store.searchSessions('utilities', 'assistant').map((s) => s.id)).toContain(id)
   })
+
+  it('does not match a coaching-only session title from the ordinary chat search', () => {
+    store.createSession()
+    const personalId = store.activeSessionId()!
+    store.renameSession(personalId, 'Private reflection about a job change')
+    store.appendMessage(personalId, {
+      id: 'private-reflection', role: 'user', text: 'I may change jobs next year.',
+      at: '2026-11-05T12:00:00.000Z', mode: 'coach_personal'
+    })
+
+    expect(store.searchSessions('private reflection', 'assistant').map((session) => session.id)).not.toContain(personalId)
+    expect(store.searchSessions('private reflection', 'coach_personal').map((session) => session.id)).toContain(personalId)
+  })
 })

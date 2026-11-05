@@ -17,7 +17,9 @@ import type {
   AssistantSkillInput,
   FolderGrant,
   PermissionRequest,
-  ProviderStatus
+  ProviderStatus,
+  MemoryFact,
+  VaultDocument
 } from '../../shared/types'
 import type { CoachArea } from '../../shared/types'
 import type { TeachingPack } from '../../shared/teaching'
@@ -62,7 +64,8 @@ import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
 import { Sidebar } from './components/Sidebar'
-import { resolveIntegrationTargetView, shouldHandleQuickCaptureShortcut, VIEW_META, type View } from './navigation'
+import { resolveIntegrationTargetView, shouldHandleNavigationShortcut, shouldHandleQuickCaptureShortcut, VIEW_META, type View } from './navigation'
+import type { GlobalSearchSelection, TodaySearchTarget } from './global-search'
 import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
 import { statusFor, type TimelineItem } from './types'
 
@@ -80,6 +83,7 @@ const TeachingView = lazy(() => import('./components/TeachingView').then((module
 const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
 const QuickCaptureDialog = lazy(() => import('./components/QuickCaptureDialog').then((module) => ({ default: module.QuickCaptureDialog })))
+const GlobalSearchDialog = lazy(() => import('./components/GlobalSearchDialog').then((module) => ({ default: module.GlobalSearchDialog })))
 
 type StartupLoadKey =
   | 'audit'
@@ -235,6 +239,13 @@ export default function App(): React.JSX.Element {
   })
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false)
+  const [todaySearchTarget, setTodaySearchTarget] = useState<TodaySearchTarget | null>(null)
+  const [pendingVaultDocument, setPendingVaultDocument] = useState<VaultDocument | null>(null)
+  const [selectedMemoryResult, setSelectedMemoryResult] = useState<{ fact: MemoryFact; query: string } | null>(null)
+  const [workflowSearchTarget, setWorkflowSearchTarget] = useState<string | null>(null)
+  const [scheduledSearchTarget, setScheduledSearchTarget] = useState<string | null>(null)
+  const [skillSearchTarget, setSkillSearchTarget] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [appWarning, setAppWarning] = useState('')
   const [startupLoads, setStartupLoads] = useState<Partial<Record<StartupLoadKey, StartupLoadState>>>({})
@@ -300,8 +311,30 @@ export default function App(): React.JSX.Element {
   const queueCompletionRef = useRef<(() => void) | null>(null)
   const directWorkflowRunningRef = useRef(false)
   const toolNamesByCallId = useRef(new Map<string, string>())
+  const globalSearchSelectionRef = useRef(0)
+  const previousViewRef = useRef(view)
   const voiceChatRef = useRef(voiceChatEnabled)
   const chatModeRef = useRef<ChatMode>(chatMode)
+
+  useEffect(() => {
+    if (previousViewRef.current === 'vault' && view !== 'vault') {
+      globalSearchSelectionRef.current += 1
+      setPendingVaultDocument(null)
+    }
+    previousViewRef.current = view
+  }, [view])
+
+  useEffect(() => {
+    const handleGlobalSearchShortcut = (event: KeyboardEvent): void => {
+      const target = event.target instanceof Element ? event.target : null
+      const focusIsProtected = target !== null && target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog') !== null
+      if (!shouldHandleNavigationShortcut(event, focusIsProtected)) return
+      event.preventDefault()
+      setGlobalSearchOpen(true)
+    }
+    window.addEventListener('keydown', handleGlobalSearchShortcut)
+    return () => window.removeEventListener('keydown', handleGlobalSearchShortcut)
+  }, [])
 
   useEffect(() => {
     applyAppTheme(document.documentElement, appTheme)
@@ -822,7 +855,7 @@ export default function App(): React.JSX.Element {
     setVoiceChatEnabled((enabled) => !enabled)
   }, [])
 
-  const changeChat = useCallback(async (sessionId?: string): Promise<void> => {
+  const changeChat = useCallback(async (sessionId?: string, mode: ChatMode = 'assistant'): Promise<void> => {
     if (busy || queueRunning || workflowRunningId) return
     try {
       const result = sessionId
@@ -841,7 +874,8 @@ export default function App(): React.JSX.Element {
       setActiveSessionId(result.state.activeSessionId)
       setTimeline(timelineFor(result.state.messages))
       setPermission(null)
-      setChatMode('assistant')
+      setChatMode(mode)
+      setSessionSearch('')
       setRenamingSession(false)
     } catch (error) {
       setTimeline((previous) => [
@@ -853,6 +887,63 @@ export default function App(): React.JSX.Element {
       ])
     }
   }, [busy, queueRunning, workflowRunningId])
+
+  const handleGlobalSearchSelection = useCallback(async (selection: GlobalSearchSelection): Promise<void> => {
+    const requestId = ++globalSearchSelectionRef.current
+    setGlobalSearchOpen(false)
+    setAppWarning('')
+    if ((selection.kind === 'chat' || (selection.kind === 'action' && selection.action === 'new-chat')) && (busy || queueRunning || workflowRunningId)) {
+      setAppWarning('Finish the active task before switching conversations.')
+      return
+    }
+    if (selection.kind === 'view') {
+      setView(selection.view)
+    } else if (selection.kind === 'action') {
+      if (selection.action === 'new-chat') {
+        setView('chat')
+        void changeChat()
+      } else {
+        setQuickCaptureOpen(true)
+      }
+    } else if (selection.kind === 'chat') {
+      setView('chat')
+      void changeChat(selection.sessionId, selection.mode)
+    } else if (selection.kind === 'vault') {
+      setView('vault')
+      setPendingVaultDocument(null)
+      try {
+        const result = await window.assist.getVaultDocument(selection.document.id)
+        if (requestId !== globalSearchSelectionRef.current) return
+        if (!result.ok || !result.document) throw new Error(result.error ?? 'That vault note is no longer available.')
+        setPendingVaultDocument(result.document)
+      } catch (error) {
+        if (requestId !== globalSearchSelectionRef.current) return
+        setAppWarning(`Could not open that note: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    } else if (selection.kind === 'today-task' || selection.kind === 'today-inbox') {
+      setTodaySearchTarget(selection)
+      setView('today')
+    } else if (selection.kind === 'memory') {
+      setSelectedMemoryResult({ fact: selection.fact, query: selection.query })
+      setView('memory')
+    } else if (selection.kind === 'workflow') {
+      setWorkflowSearchTarget(selection.id)
+      setView('workflows')
+    } else if (selection.kind === 'scheduled') {
+      setScheduledSearchTarget(selection.id)
+      setView('scheduled')
+    } else if (selection.kind === 'skill') {
+      setSkillSearchTarget(selection.id)
+      setView('skills')
+    }
+  }, [busy, changeChat, queueRunning, workflowRunningId])
+
+  const clearTodaySearchTarget = useCallback((): void => setTodaySearchTarget(null), [])
+  const clearPendingVaultDocument = useCallback((): void => setPendingVaultDocument(null), [])
+  const clearSelectedMemoryFact = useCallback((): void => setSelectedMemoryResult(null), [])
+  const clearWorkflowSearchTarget = useCallback((): void => setWorkflowSearchTarget(null), [])
+  const clearScheduledSearchTarget = useCallback((): void => setScheduledSearchTarget(null), [])
+  const clearSkillSearchTarget = useCallback((): void => setSkillSearchTarget(null), [])
 
   useEffect(() => {
     const q = sessionSearch.trim()
@@ -1363,6 +1454,7 @@ export default function App(): React.JSX.Element {
       <Sidebar
         view={view}
         onChange={setView}
+        onGlobalSearch={() => setGlobalSearchOpen(true)}
         onQuickCapture={() => setQuickCaptureOpen(true)}
         auditCount={audit.length}
         grants={grants}
@@ -1372,6 +1464,18 @@ export default function App(): React.JSX.Element {
       {quickCaptureOpen && (
         <Suspense fallback={<div className="quick-capture-loading" role="status">Opening quick capture…</div>}>
           <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} />
+        </Suspense>
+      )}
+      {globalSearchOpen && (
+        <Suspense fallback={<div className="global-search-loading" role="status">Opening local search…</div>}>
+          <GlobalSearchDialog
+            open={globalSearchOpen}
+            workflows={workflows}
+            scheduledTasks={scheduledTasks}
+            skills={skills}
+            onClose={() => setGlobalSearchOpen(false)}
+            onSelect={(selection) => void handleGlobalSearchSelection(selection)}
+          />
         </Suspense>
       )}
 
@@ -1525,6 +1629,8 @@ export default function App(): React.JSX.Element {
           ))}
 
           {view === 'today' && <TodayView
+            searchTarget={todaySearchTarget}
+            onSearchTargetConsumed={clearTodaySearchTarget}
             googleCalendarSettings={googleCalendarSettings}
             googleGmailSettings={googleGmailSettings}
             googleTasksSettings={googleTasksSettings}
@@ -1544,6 +1650,8 @@ export default function App(): React.JSX.Element {
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
               tasks={scheduledTasks}
+              searchTargetId={scheduledSearchTarget}
+              onSearchTargetConsumed={clearScheduledSearchTarget}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
               onCreate={createScheduledTask}
               onSetEnabled={setScheduledTaskEnabled}
@@ -1556,7 +1664,7 @@ export default function App(): React.JSX.Element {
             <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
-          {view === 'vault' && <VaultView />}
+          {view === 'vault' && <VaultView initialDocument={pendingVaultDocument} onInitialDocumentConsumed={clearPendingVaultDocument} />}
           {view === 'teaching' && <TeachingView onStart={startTeachingPack} />}
 
           {view === 'finances' && (
@@ -1582,6 +1690,8 @@ export default function App(): React.JSX.Element {
           {view === 'workflows' && gateStartupView(['workflows'], 'saved workflows', (
             <WorkflowsView
               workflows={workflows}
+              searchTargetId={workflowSearchTarget}
+              onSearchTargetConsumed={clearWorkflowSearchTarget}
               runningId={workflowRunningId}
               disabled={busy || queueRunning || financeEntryBusy}
               onRun={runWorkflow}
@@ -1593,6 +1703,8 @@ export default function App(): React.JSX.Element {
           {view === 'skills' && gateStartupView(['skills'], 'saved skills', (
             <SkillsView
               skills={skills}
+              searchTargetId={skillSearchTarget}
+              onSearchTargetConsumed={clearSkillSearchTarget}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
               onSave={saveSkill}
               onToggle={setSkillEnabled}
@@ -1604,6 +1716,9 @@ export default function App(): React.JSX.Element {
             <MemoryView
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
               version={memoryVersion}
+              selectedFact={selectedMemoryResult?.fact}
+              selectedQuery={selectedMemoryResult?.query}
+              onSelectedFactConsumed={clearSelectedMemoryFact}
               onChanged={() => setMemoryVersion((version) => version + 1)}
             />
           )}

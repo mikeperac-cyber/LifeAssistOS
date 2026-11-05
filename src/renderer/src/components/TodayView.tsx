@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
 import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleTasksSettings, PublicMicrosoftMailSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
+import type { TodaySearchTarget } from '../global-search'
 import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
 import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
 import { GoogleCalendarPanel } from './GoogleCalendarPanel'
 import { GoogleGmailFollowupPanel, OutlookMailFollowupPanel } from './EmailFollowupPanel'
 import { TaskExportControl } from './TaskExportControl'
 
-export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onPrepareMeeting, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh }: {
+export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onPrepareMeeting, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh, searchTarget, onSearchTargetConsumed }: {
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
@@ -23,6 +24,8 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
   onMicrosoftTodoSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
   onMicrosoftCalendarSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
   onMicrosoftMailSettingsRefresh: (settings: PublicMicrosoftMailSettings) => void
+  searchTarget?: TodaySearchTarget | null
+  onSearchTargetConsumed?: () => void
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<TodaySnapshot>({ date: '', tasks: [], inbox: [] })
   const [capture, setCapture] = useState('')
@@ -44,6 +47,38 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
   const [googleTasksReadBusy, setGoogleTasksReadBusy] = useState(false)
   const [googleTasksError, setGoogleTasksError] = useState('')
   const googleTasksReadBusyRef = useRef(false)
+  const [retainedSearchTarget, setRetainedSearchTarget] = useState<TodaySearchTarget | null>(searchTarget ?? null)
+  const [highlightedSearchKey, setHighlightedSearchKey] = useState('')
+  const searchTargetRef = useRef<HTMLDivElement>(null)
+  const activeSearchTarget = searchTarget ?? retainedSearchTarget
+
+  useEffect(() => {
+    if (!searchTarget || loading || loadFailed) return
+    setRetainedSearchTarget(searchTarget)
+    const key = searchTarget.kind === 'today-task' ? `task:${searchTarget.task.id}` : `inbox:${searchTarget.item.id}`
+    setHighlightedSearchKey(key)
+    const frame = requestAnimationFrame(() => {
+      searchTargetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      searchTargetRef.current?.focus({ preventScroll: true })
+    })
+    const timeout = window.setTimeout(() => {
+      setHighlightedSearchKey((current) => current === key ? '' : current)
+      onSearchTargetConsumed?.()
+    }, 4500)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [searchTarget, loading, loadFailed, onSearchTargetConsumed])
+
+  const visibleTasks = activeSearchTarget?.kind === 'today-task' &&
+    !snapshot.tasks.some((item) => item.id === activeSearchTarget.task.id)
+    ? [...snapshot.tasks, activeSearchTarget.task]
+    : snapshot.tasks
+  const visibleInbox = activeSearchTarget?.kind === 'today-inbox' &&
+    !snapshot.inbox.some((item) => item.id === activeSearchTarget.item.id)
+    ? [...snapshot.inbox, activeSearchTarget.item]
+    : snapshot.inbox
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -225,7 +260,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
       ) : <>
       <div className="today-grid">
         <section className="today-card today-tasks">
-          <div className="today-card-head"><h3>Next actions</h3><span>{snapshot.tasks.length}</span></div>
+          <div className="today-card-head"><h3>Next actions</h3><span>{visibleTasks.length}</span></div>
           <div className="task-add">
             <input value={task} onChange={(event) => setTask(event.target.value)} placeholder="Add a task…" aria-label="Task title" onKeyDown={(event) => { if (event.key === 'Enter') void addTask() }} />
             <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="Task due date" />
@@ -236,8 +271,17 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
             <button className="primary-button" type="button" disabled={!task.trim()} onClick={() => void addTask()}>Add</button>
           </div>
           <div className="today-task-list">
-            {snapshot.tasks.map((item) => (
-              <div className={`today-task priority-${item.priority}`} key={item.id}>
+            {visibleTasks.map((item) => {
+              const searchKey = `task:${item.id}`
+              const isSearchTarget = activeSearchTarget?.kind === 'today-task' && activeSearchTarget.task.id === item.id
+              return (
+              <div
+                ref={isSearchTarget && highlightedSearchKey === searchKey ? searchTargetRef : undefined}
+                className={`today-task priority-${item.priority} ${highlightedSearchKey === searchKey ? 'is-global-search-target' : ''}`}
+                key={item.id}
+                tabIndex={isSearchTarget ? -1 : undefined}
+                data-global-search-target={isSearchTarget ? 'task' : undefined}
+              >
                 <button type="button" className="task-check" onClick={() => void complete(item.id)} aria-label={`Complete ${item.title}`}>○</button>
                 <div className="today-task-copy">
                   <strong>{item.title}</strong>
@@ -266,25 +310,34 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
                   }}>{item.remindAt ? 'Edit reminder' : 'Remind me'}</button>
                 )}
               </div>
-            ))}
-            {snapshot.tasks.length === 0 && <p className="muted">No open tasks due today. Add one when it becomes real.</p>}
+            )})}
+            {visibleTasks.length === 0 && <p className="muted">No open tasks due today. Add one when it becomes real.</p>}
           </div>
         </section>
 
         <section className="today-card today-inbox">
-          <div className="today-card-head"><h3>Inbox</h3><span>{snapshot.inbox.length}</span></div>
+          <div className="today-card-head"><h3>Inbox</h3><span>{visibleInbox.length}</span></div>
           <div className="inbox-add">
             <input value={capture} onChange={(event) => setCapture(event.target.value)} placeholder="Capture a thought…" aria-label="Inbox capture" onKeyDown={(event) => { if (event.key === 'Enter') void addCapture() }} />
             <button className="ghost-button" type="button" disabled={!capture.trim()} onClick={() => void addCapture()}>Capture</button>
           </div>
           <div className="inbox-list">
-            {snapshot.inbox.map((item) => (
-              <div className="inbox-item" key={item.id}>
+            {visibleInbox.map((item) => {
+              const searchKey = `inbox:${item.id}`
+              const isSearchTarget = activeSearchTarget?.kind === 'today-inbox' && activeSearchTarget.item.id === item.id
+              return (
+              <div
+                ref={isSearchTarget && highlightedSearchKey === searchKey ? searchTargetRef : undefined}
+                className={`inbox-item ${highlightedSearchKey === searchKey ? 'is-global-search-target' : ''}`}
+                key={item.id}
+                tabIndex={isSearchTarget ? -1 : undefined}
+                data-global-search-target={isSearchTarget ? 'inbox' : undefined}
+              >
                 <p>{item.text}</p>
                 <div><button className="ghost-button" type="button" onClick={() => void convert(item.id)}>Make task</button><button className="danger-button" type="button" onClick={() => void dismiss(item.id)}>Dismiss</button></div>
               </div>
-            ))}
-            {snapshot.inbox.length === 0 && <p className="muted">The inbox is clear.</p>}
+            )})}
+            {visibleInbox.length === 0 && <p className="muted">The inbox is clear.</p>}
           </div>
         </section>
       </div>

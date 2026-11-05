@@ -661,6 +661,16 @@ export interface VaultSearchResult {
   snippet: string
 }
 
+/** Small on-device search result for palettes and switchers. It never includes a document body. */
+export interface VaultQuickSearchResult {
+  id: string
+  title: string
+  tags: string[]
+  sourceType: VaultSourceType
+  updatedAt: string
+  snippet: string
+}
+
 /* ---------- Plans / Today / inbox ---------- */
 
 export type PlanTaskStatus = 'open' | 'done' | 'cancelled'

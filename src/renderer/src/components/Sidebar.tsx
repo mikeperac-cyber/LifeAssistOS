@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import type { FolderGrant } from '../../../shared/types'
-import { NAV_GROUPS, shouldHandleNavigationShortcut, VIEW_META, type View } from '../navigation'
+import { NAV_GROUPS, VIEW_META, type View } from '../navigation'
 
 export type { View } from '../navigation'
 
@@ -11,6 +11,7 @@ export function Sidebar({
   grants,
   model,
   preset,
+  onGlobalSearch,
   onQuickCapture
 }: {
   view: View
@@ -19,10 +20,10 @@ export function Sidebar({
   grants: FolderGrant[]
   model: string
   preset: string
+  onGlobalSearch: () => void
   onQuickCapture: () => void
 }): React.JSX.Element {
   const [navQuery, setNavQuery] = useState('')
-  const navSearchRef = useRef<HTMLInputElement>(null)
   const normalizedQuery = navQuery.trim().toLocaleLowerCase()
   const visibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
@@ -35,21 +36,6 @@ export function Sidebar({
     })
   })).filter((group) => group.items.length > 0)
   const firstVisibleView = visibleGroups[0]?.items[0]
-
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent): void => {
-      const target = event.target instanceof Element ? event.target : null
-      const focusIsProtected = target !== null && target !== navSearchRef.current &&
-        target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog') !== null
-      if (!shouldHandleNavigationShortcut(event, focusIsProtected)) return
-
-      event.preventDefault()
-      setNavQuery('')
-      navSearchRef.current?.focus()
-    }
-    window.addEventListener('keydown', handleShortcut)
-    return () => window.removeEventListener('keydown', handleShortcut)
-  }, [])
 
   return (
     <aside className="sidebar">
@@ -64,12 +50,10 @@ export function Sidebar({
       <div className="nav-search-wrap" role="search">
         <SearchIcon />
         <input
-          ref={navSearchRef}
           type="search"
           value={navQuery}
           placeholder="Find a section"
           aria-label="Find a section"
-          aria-keyshortcuts="Control+K Meta+K"
           onChange={(event) => setNavQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && navQuery) {
@@ -84,7 +68,9 @@ export function Sidebar({
             }
           }}
         />
-        <kbd className="nav-shortcut">Ctrl K</kbd>
+        <button className="nav-shortcut-button" type="button" onClick={onGlobalSearch} aria-label="Search Mike Assist, Ctrl K" title="Search everything">
+          <kbd className="nav-shortcut">Ctrl K</kbd>
+        </button>
       </div>
 
       <button

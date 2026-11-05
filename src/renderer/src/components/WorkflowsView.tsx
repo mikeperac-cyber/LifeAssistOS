@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { WorkflowRecord } from '../../../shared/types'
 import type { WorkflowRunResult } from '../../../shared/ipc'
 import { extractWorkflowParameters } from '../../../shared/workflow-params'
@@ -7,15 +7,28 @@ interface WorkflowsViewProps {
   workflows: WorkflowRecord[]
   runningId: string | null
   disabled: boolean
+  searchTargetId?: string | null
+  onSearchTargetConsumed?: () => void
   onRun: (id: string, params?: Record<string, string>) => Promise<WorkflowRunResult>
   onRemove: (id: string) => Promise<{ ok: boolean; error?: string }>
   onCancel: () => void
 }
 
-export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove, onCancel }: WorkflowsViewProps): React.JSX.Element {
+export function WorkflowsView({ workflows, runningId, disabled, searchTargetId, onSearchTargetConsumed, onRun, onRemove, onCancel }: WorkflowsViewProps): React.JSX.Element {
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [paramValues, setParamValues] = useState<Record<string, Record<string, string>>>({})
+
+  useEffect(() => {
+    if (!searchTargetId) return
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(`global-search-workflow-${searchTargetId}`)
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      target?.focus({ preventScroll: true })
+    })
+    const timeout = window.setTimeout(() => onSearchTargetConsumed?.(), 4500)
+    return () => { cancelAnimationFrame(frame); window.clearTimeout(timeout) }
+  }, [searchTargetId, onSearchTargetConsumed])
 
   function setParam(workflowId: string, key: string, value: string): void {
     setParamValues((current) => ({
@@ -79,7 +92,12 @@ export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove,
           {workflows.map((workflow) => {
             const params = extractWorkflowParameters(workflow.steps)
             return (
-              <article className="workflow-card" key={workflow.id}>
+              <article
+                id={`global-search-workflow-${workflow.id}`}
+                className={`workflow-card ${searchTargetId === workflow.id ? 'is-global-search-target' : ''}`}
+                key={workflow.id}
+                tabIndex={searchTargetId === workflow.id ? -1 : undefined}
+              >
                 <div className="workflow-card-head">
                   <div>
                     <h3>{workflow.name}</h3>

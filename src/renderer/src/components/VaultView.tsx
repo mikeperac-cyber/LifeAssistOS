@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { VaultDocument, VaultSearchResult } from '../../../shared/types'
 
-export function VaultView(): React.JSX.Element {
+export function VaultView({ initialDocument, onInitialDocumentConsumed }: { initialDocument?: VaultDocument | null; onInitialDocumentConsumed?: () => void }): React.JSX.Element {
   const [results, setResults] = useState<VaultSearchResult[]>([])
   const [query, setQuery] = useState('')
   const [searchedQuery, setSearchedQuery] = useState('')
@@ -39,6 +39,12 @@ export function VaultView(): React.JSX.Element {
     setError('')
     setNotice('')
   }
+
+  useEffect(() => {
+    if (!initialDocument) return
+    open(initialDocument)
+    onInitialDocumentConsumed?.()
+  }, [initialDocument, onInitialDocumentConsumed])
 
   const reset = (): void => {
     setSelected(null)

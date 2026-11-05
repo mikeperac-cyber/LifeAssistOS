@@ -57,6 +57,23 @@ describe('FTS5 knowledge vault', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('returns bounded quick-search summaries without document bodies', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-vault-summary-'))
+    const store = new VaultStore(path.join(dir, 'vault.sqlite'))
+    await store.init()
+    const document = store.create({ title: 'Search palette notes', body: 'The searchable passage contains a unique phrase for quick switcher results.', tags: ['palette'] })
+
+    const results = store.searchSummaries('switcher', 1)
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({ id: document.id, title: document.title, tags: ['palette'] })
+    expect(results[0]?.snippet).toContain('switcher')
+    expect(results[0]).not.toHaveProperty('body')
+    expect(store.searchSummaries('switcher', 100)).toHaveLength(1)
+
+    store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('repairs a partially populated search index after restart', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-vault-repair-'))
     const file = path.join(dir, 'vault.sqlite')
