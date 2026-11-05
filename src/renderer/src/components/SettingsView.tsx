@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FolderGrant, ProviderStatus } from '../../../shared/types'
 import type {
   GrantMutationResult,
@@ -10,6 +10,7 @@ import type {
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
   PublicGoogleTasksSettings,
+  PublicMicrosoftTodoSettings,
   LocalApiResult,
   LocalApiStatus,
   SettingsPatch,
@@ -18,7 +19,9 @@ import type {
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
-  GoogleTasksSettingsResult
+  GoogleTasksSettingsResult,
+  MicrosoftTodoSettingsResult,
+  MicrosoftTodoConnectStatusResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
@@ -48,6 +51,7 @@ export interface SettingsViewProps {
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleDriveSettings: PublicGoogleDriveSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
+  microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
@@ -63,6 +67,11 @@ export interface SettingsViewProps {
   onUpdateGoogleTasksClientId: (clientId: string) => Promise<GoogleTasksSettingsResult>
   onConnectGoogleTasks: () => Promise<GoogleTasksSettingsResult>
   onDisconnectGoogleTasks: () => Promise<GoogleTasksSettingsResult>
+  onUpdateMicrosoftTodoClientId: (clientId: string) => Promise<MicrosoftTodoSettingsResult>
+  onBeginMicrosoftTodoConnect: () => Promise<MicrosoftTodoSettingsResult>
+  onGetMicrosoftTodoConnectStatus: () => Promise<MicrosoftTodoConnectStatusResult>
+  onCancelMicrosoftTodoConnect: () => Promise<MicrosoftTodoConnectStatusResult>
+  onDisconnectMicrosoftTodo: () => Promise<MicrosoftTodoSettingsResult>
   onTest: () => Promise<ProviderStatus>
   onAddGrant: (access: Access) => Promise<GrantMutationResult>
   onRemoveGrant: (id: string) => Promise<GrantMutationResult>
@@ -87,6 +96,7 @@ export function SettingsView({
   googleGmailSettings,
   googleDriveSettings,
   googleTasksSettings,
+  microsoftTodoSettings,
   grants,
   onSave,
   onUpdateWebSearchApiKey,
@@ -102,6 +112,11 @@ export function SettingsView({
   onUpdateGoogleTasksClientId,
   onConnectGoogleTasks,
   onDisconnectGoogleTasks,
+  onUpdateMicrosoftTodoClientId,
+  onBeginMicrosoftTodoConnect,
+  onGetMicrosoftTodoConnectStatus,
+  onCancelMicrosoftTodoConnect,
+  onDisconnectMicrosoftTodo,
   onTest,
   onAddGrant,
   onRemoveGrant,
@@ -153,6 +168,12 @@ export function SettingsView({
   )
   const [googleTasksBusy, setGoogleTasksBusy] = useState(false)
   const [googleTasksMessage, setGoogleTasksMessage] = useState('')
+  const [microsoftTodoClientId, setMicrosoftTodoClientId] = useState(microsoftTodoSettings?.clientId ?? '')
+  const [microsoftTodoBusy, setMicrosoftTodoBusy] = useState(false)
+  const [microsoftTodoMessage, setMicrosoftTodoMessage] = useState('')
+  const [microsoftTodoConnectStatus, setMicrosoftTodoConnectStatus] = useState<MicrosoftTodoConnectStatusResult['status']>({ phase: 'idle' })
+  const microsoftTodoStatusPollBusy = useRef(false)
+  const microsoftTodoStatusVersion = useRef(0)
   const [localApiBusy, setLocalApiBusy] = useState(false)
   const [localApiMessage, setLocalApiMessage] = useState('')
 
@@ -181,6 +202,43 @@ export function SettingsView({
       setGoogleTasksClientId(googleTasksSettings.clientId || googleCalendarSettings?.clientId || googleGmailSettings?.clientId || googleDriveSettings?.clientId || '')
     }
   }, [googleTasksSettings, googleCalendarSettings, googleGmailSettings, googleDriveSettings])
+
+  useEffect(() => {
+    if (microsoftTodoSettings) setMicrosoftTodoClientId(microsoftTodoSettings.clientId)
+  }, [microsoftTodoSettings])
+
+  useEffect(() => {
+    let active = true
+    const version = microsoftTodoStatusVersion.current
+    void onGetMicrosoftTodoConnectStatus().then((result) => {
+      if (active && microsoftTodoStatusVersion.current === version && result.ok && result.status) setMicrosoftTodoConnectStatus(result.status)
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [onGetMicrosoftTodoConnectStatus])
+
+  useEffect(() => {
+    if (microsoftTodoConnectStatus?.phase !== 'pending' && microsoftTodoConnectStatus?.phase !== 'starting') return
+    let active = true
+    const version = microsoftTodoStatusVersion.current
+    const poll = async (): Promise<void> => {
+      if (!active || microsoftTodoStatusVersion.current !== version || microsoftTodoStatusPollBusy.current) return
+      microsoftTodoStatusPollBusy.current = true
+      try {
+        const result = await onGetMicrosoftTodoConnectStatus()
+        if (!active || microsoftTodoStatusVersion.current !== version || !result.ok || !result.status) return
+        setMicrosoftTodoConnectStatus(result.status)
+        if (result.status.phase === 'connected') setMicrosoftTodoMessage('Microsoft To Do connected. Each list and task page still asks for approval.')
+        else if (result.status.phase === 'failed') setMicrosoftTodoMessage(result.status.error ?? 'Microsoft sign-in failed.')
+        else if (result.status.phase === 'cancelled') setMicrosoftTodoMessage('Microsoft sign-in cancelled.')
+      } catch (error) {
+        if (active) setMicrosoftTodoMessage(errorText(error))
+      } finally {
+        microsoftTodoStatusPollBusy.current = false
+      }
+    }
+    const timer = window.setInterval(() => { void poll() }, 1_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [microsoftTodoConnectStatus?.phase, onGetMicrosoftTodoConnectStatus])
 
   const preset = presetFor(form.preset)
 
@@ -630,6 +688,66 @@ export function SettingsView({
       setGoogleTasksMessage(errorText(error))
     } finally {
       setGoogleTasksBusy(false)
+    }
+  }
+
+  async function connectMicrosoftTodo(): Promise<void> {
+    microsoftTodoStatusVersion.current += 1
+    const clientId = microsoftTodoClientId.trim()
+    if (!clientId) {
+      setMicrosoftTodoMessage('Enter a Microsoft Entra Application (client) ID first.')
+      return
+    }
+    setMicrosoftTodoBusy(true)
+    setMicrosoftTodoMessage('Starting Microsoft sign-in…')
+    try {
+      const saved = await onUpdateMicrosoftTodoClientId(clientId)
+      if (!saved.ok) {
+        setMicrosoftTodoMessage(saved.error ?? 'Could not save the Microsoft Application ID.')
+        return
+      }
+      const result = await onBeginMicrosoftTodoConnect()
+      if (!result.ok || !result.prompt) {
+        setMicrosoftTodoMessage(result.error ?? 'Could not start Microsoft sign-in.')
+        return
+      }
+      setMicrosoftTodoConnectStatus({ phase: 'pending', prompt: result.prompt })
+      setMicrosoftTodoMessage('Enter the displayed code on the Microsoft sign-in page to approve this connection.')
+    } catch (error) {
+      setMicrosoftTodoMessage(errorText(error))
+    } finally {
+      setMicrosoftTodoBusy(false)
+    }
+  }
+
+  async function cancelMicrosoftTodoSignIn(): Promise<void> {
+    microsoftTodoStatusVersion.current += 1
+    setMicrosoftTodoBusy(true)
+    try {
+      const result = await onCancelMicrosoftTodoConnect()
+      if (result.status) setMicrosoftTodoConnectStatus(result.status)
+      setMicrosoftTodoMessage(result.ok ? 'Microsoft sign-in cancelled.' : result.error ?? 'Could not cancel sign-in.')
+    } catch (error) {
+      setMicrosoftTodoMessage(errorText(error))
+    } finally {
+      setMicrosoftTodoBusy(false)
+    }
+  }
+
+  async function disconnectMicrosoftTodo(): Promise<void> {
+    microsoftTodoStatusVersion.current += 1
+    setMicrosoftTodoBusy(true)
+    setMicrosoftTodoMessage('')
+    try {
+      const result = await onDisconnectMicrosoftTodo()
+      setMicrosoftTodoMessage(result.ok
+        ? result.message ?? 'Microsoft To Do disconnected in Mike Assist.'
+        : result.error ?? 'Could not disconnect Microsoft To Do.')
+      if (result.ok) setMicrosoftTodoConnectStatus({ phase: 'idle' })
+    } catch (error) {
+      setMicrosoftTodoMessage(errorText(error))
+    } finally {
+      setMicrosoftTodoBusy(false)
     }
   }
 
@@ -1270,6 +1388,77 @@ export function SettingsView({
           <p className="muted">Loading Google Tasks settings…</p>
         )}
       </section>
+      <section className="settings-section">
+        <div className="section-head">
+          <h2>Microsoft To Do</h2>
+          <p>
+            Connect Microsoft To Do with the delegated read-only <code>Tasks.Read</code> permission. Mike Assist only lists task lists and open tasks; it cannot create, edit, or complete them. Each list and task page asks for approval. Today displays the results locally. If you use these tools in Chat, approved task details may go to your configured model provider and be saved with chat history.
+          </p>
+        </div>
+        {microsoftTodoSettings ? (
+          <div className="web-search-settings">
+            <label className="field field-wide">
+              <span className="field-label">
+                Microsoft Entra Application (client) ID
+                {microsoftTodoSettings.connected
+                  ? <span className="field-tag">{microsoftTodoSettings.tokenStored ? 'connected · encrypted' : 'connected · session only'}</span>
+                  : microsoftTodoSettings.tokenStored
+                    ? <span className="field-tag">saved token unavailable</span>
+                    : null}
+              </span>
+              <input
+                value={microsoftTodoClientId}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={microsoftTodoSettings.connected || microsoftTodoSettings.tokenStored || microsoftTodoBusy || microsoftTodoConnectStatus?.phase === 'pending'}
+                onChange={(event) => setMicrosoftTodoClientId(event.target.value)}
+                placeholder="00000000-0000-4000-8000-000000000000"
+              />
+              <span className="field-hint">
+                Register a public-client app supporting personal and work or school accounts, enable public-client flows, and add delegated Microsoft Graph <code>Tasks.Read</code>. Mike Assist uses device-code sign-in and does not need a client secret. See Microsoft's <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code" target="_blank" rel="noreferrer">device-code guide</a>, <a href="https://learn.microsoft.com/en-us/graph/api/todo-list-lists?view=graph-rest-1.0" target="_blank" rel="noreferrer">task-list API</a>, and <a href="https://entra.microsoft.com/" target="_blank" rel="noreferrer">Entra admin center</a>.
+              </span>
+              {microsoftTodoSettings.tokenStored && !microsoftTodoSettings.connected && (
+                <span className="field-hint">Mike Assist could not unlock this saved token. Reconnect with this Application ID, or clear the saved connection and connect again.</span>
+              )}
+            </label>
+            {microsoftTodoConnectStatus?.phase === 'pending' && microsoftTodoConnectStatus.prompt && (
+              <div className="today-google-tasks-empty" role="status" aria-live="polite">
+                <strong>Finish sign-in in your browser</strong>
+                <span>Open {microsoftTodoConnectStatus.prompt.verificationUri} and enter this one-time code:</span>
+                <code className="microsoft-todo-user-code">{microsoftTodoConnectStatus.prompt.userCode}</code>
+                <span>Code expires at {new Date(microsoftTodoConnectStatus.prompt.expiresAt).toLocaleTimeString()}.</span>
+              </div>
+            )}
+            <div className="settings-actions">
+              {microsoftTodoSettings.connected ? (
+                <button className="danger-button" type="button" onClick={() => void disconnectMicrosoftTodo()} disabled={microsoftTodoBusy}>
+                  {microsoftTodoBusy ? 'Disconnecting…' : 'Disconnect in Mike Assist'}
+                </button>
+              ) : microsoftTodoConnectStatus?.phase === 'pending' ? (
+                <button className="danger-button" type="button" onClick={() => void cancelMicrosoftTodoSignIn()} disabled={microsoftTodoBusy}>
+                  {microsoftTodoBusy ? 'Cancelling…' : 'Cancel sign-in'}
+                </button>
+              ) : microsoftTodoSettings.tokenStored ? (
+                <>
+                  <button className="primary-button" type="button" onClick={() => void connectMicrosoftTodo()} disabled={microsoftTodoBusy || !microsoftTodoClientId.trim()}>
+                    {microsoftTodoBusy ? 'Starting sign-in…' : 'Reconnect Microsoft To Do'}
+                  </button>
+                  <button className="danger-button" type="button" onClick={() => void disconnectMicrosoftTodo()} disabled={microsoftTodoBusy}>
+                    {microsoftTodoBusy ? 'Clearing…' : 'Clear saved connection'}
+                  </button>
+                </>
+              ) : (
+                <button className="primary-button" type="button" onClick={() => void connectMicrosoftTodo()} disabled={microsoftTodoBusy || !microsoftTodoClientId.trim()}>
+                  {microsoftTodoBusy ? 'Starting sign-in…' : 'Connect Microsoft To Do'}
+                </button>
+              )}
+              {microsoftTodoMessage && <span className="settings-status" role="status">{microsoftTodoMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading Microsoft To Do settings…</p>
+        )}
+      </section>
       <McpPanel />
 
       <section className="settings-section">
@@ -1278,7 +1467,7 @@ export function SettingsView({
           <p>
             Create or restore a consistent snapshot of chats, finance records, memory facts, research, vault documents, Today plans,
             saved workflows and Skills, coaching profile and journal, voice settings, provider settings, folder grants, allowed domains,
-            MCP connections, Google Calendar, Gmail, Google Drive, and Google Tasks connection settings, and the audit log. Optionally provide a
+            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do connection settings, and the audit log. Optionally provide a
             passphrase to encrypt the snapshot with AES-256-GCM.
           </p>
         </div>

@@ -191,6 +191,9 @@ export type AuditType =
   | 'google_tasks.settings_changed'
   | 'google_tasks.connected'
   | 'google_tasks.disconnected'
+    | 'microsoft_todo.settings_changed'
+    | 'microsoft_todo.connected'
+    | 'microsoft_todo.disconnected'
   | 'domain.added'
   | 'domain.removed'
   | 'backup.created'
@@ -264,6 +267,22 @@ export interface GoogleTask {
   notesTruncated?: boolean
   due?: string
   status: 'needsAction' | 'completed'
+  updated?: string
+}
+
+export interface MicrosoftTodoTaskList {
+  id: string
+  title: string
+  updated?: string
+}
+
+export interface MicrosoftTodoTask {
+  id: string
+  title: string
+  notes?: string
+  notesTruncated?: boolean
+  due?: string
+  status: 'notStarted' | 'inProgress' | 'completed' | 'waitingOnOthers' | 'deferred'
   updated?: string
 }
 

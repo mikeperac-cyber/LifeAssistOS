@@ -40,13 +40,16 @@ import type {
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
   PublicGoogleTasksSettings,
+  PublicMicrosoftTodoSettings,
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
-  GoogleTasksSettingsResult
+  GoogleTasksSettingsResult,
+  MicrosoftTodoSettingsResult,
+  MicrosoftTodoConnectStatusResult
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
@@ -84,6 +87,7 @@ type StartupLoadKey =
   | 'gmail'
   | 'drive'
   | 'tasks'
+  | 'microsoftTodo'
   | 'speech'
   | 'workflows'
   | 'scheduledTasks'
@@ -104,6 +108,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   gmail: 'Gmail settings',
   drive: 'Google Drive settings',
   tasks: 'Google Tasks settings',
+  microsoftTodo: 'Microsoft To Do settings',
   speech: 'Speech settings',
   workflows: 'Workflows',
   scheduledTasks: 'Scheduled tasks',
@@ -111,7 +116,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -232,6 +237,7 @@ export default function App(): React.JSX.Element {
   const [googleGmailSettings, setGoogleGmailSettings] = useState<PublicGoogleGmailSettings | null>(null)
   const [googleDriveSettings, setGoogleDriveSettings] = useState<PublicGoogleDriveSettings | null>(null)
   const [googleTasksSettings, setGoogleTasksSettings] = useState<PublicGoogleTasksSettings | null>(null)
+  const [microsoftTodoSettings, setMicrosoftTodoSettings] = useState<PublicMicrosoftTodoSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
@@ -366,6 +372,7 @@ export default function App(): React.JSX.Element {
     loadInitial('gmail', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
     loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
     loadInitial('tasks', () => window.assist.getGoogleTasksSettings(), setGoogleTasksSettings)
+    loadInitial('microsoftTodo', () => window.assist.getMicrosoftTodoSettings(), setMicrosoftTodoSettings)
     loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
     loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
     loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
@@ -1004,6 +1011,36 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateMicrosoftTodoClientId = useCallback(async (clientId: string): Promise<MicrosoftTodoSettingsResult> => {
+    const result = await window.assist.updateMicrosoftTodoClientId(clientId)
+    if (result.ok && result.settings) setMicrosoftTodoSettings(result.settings)
+    return result
+  }, [])
+
+  const beginMicrosoftTodoConnect = useCallback(async (): Promise<MicrosoftTodoSettingsResult> => {
+    const result = await window.assist.beginMicrosoftTodoConnect()
+    if (result.ok && result.settings) setMicrosoftTodoSettings(result.settings)
+    return result
+  }, [])
+
+  const getMicrosoftTodoConnectStatus = useCallback(async (): Promise<MicrosoftTodoConnectStatusResult> => {
+    const result = await window.assist.getMicrosoftTodoConnectStatus()
+    if (result.ok && result.settings) setMicrosoftTodoSettings(result.settings)
+    return result
+  }, [])
+
+  const cancelMicrosoftTodoConnect = useCallback(async (): Promise<MicrosoftTodoConnectStatusResult> => {
+    const result = await window.assist.cancelMicrosoftTodoConnect()
+    if (result.ok && result.settings) setMicrosoftTodoSettings(result.settings)
+    return result
+  }, [])
+
+  const disconnectMicrosoftTodo = useCallback(async (): Promise<MicrosoftTodoSettingsResult> => {
+    const result = await window.assist.disconnectMicrosoftTodo()
+    if (result.ok && result.settings) setMicrosoftTodoSettings(result.settings)
+    return result
+  }, [])
+
   const testProvider = useCallback((): Promise<ProviderStatus> => {
     return window.assist.testProvider()
   }, [])
@@ -1387,9 +1424,11 @@ export default function App(): React.JSX.Element {
 
           {view === 'today' && <TodayView
             googleTasksSettings={googleTasksSettings}
+            microsoftTodoSettings={microsoftTodoSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
             onOpenSettings={() => setView('settings')}
             onSettingsRefresh={setGoogleTasksSettings}
+            onMicrosoftTodoSettingsRefresh={setMicrosoftTodoSettings}
           />}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
@@ -1403,7 +1442,7 @@ export default function App(): React.JSX.Element {
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView />}
@@ -1472,6 +1511,7 @@ export default function App(): React.JSX.Element {
               googleGmailSettings={googleGmailSettings}
               googleDriveSettings={googleDriveSettings}
               googleTasksSettings={googleTasksSettings}
+              microsoftTodoSettings={microsoftTodoSettings}
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
@@ -1487,6 +1527,11 @@ export default function App(): React.JSX.Element {
               onUpdateGoogleTasksClientId={updateGoogleTasksClientId}
               onConnectGoogleTasks={connectGoogleTasks}
               onDisconnectGoogleTasks={disconnectGoogleTasks}
+              onUpdateMicrosoftTodoClientId={updateMicrosoftTodoClientId}
+              onBeginMicrosoftTodoConnect={beginMicrosoftTodoConnect}
+              onGetMicrosoftTodoConnectStatus={getMicrosoftTodoConnectStatus}
+              onCancelMicrosoftTodoConnect={cancelMicrosoftTodoConnect}
+              onDisconnectMicrosoftTodo={disconnectMicrosoftTodo}
               onTest={testProvider}
               onAddGrant={addGrant}
               onRemoveGrant={removeGrant}

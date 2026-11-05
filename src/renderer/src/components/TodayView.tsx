@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
-import type { PublicGoogleTasksSettings } from '../../../shared/ipc'
+import type { PublicGoogleTasksSettings, PublicMicrosoftTodoSettings } from '../../../shared/ipc'
+import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
 
-export function TodayView({ googleTasksSettings, disabled, onOpenSettings, onSettingsRefresh }: {
+export function TodayView({ googleTasksSettings, microsoftTodoSettings, disabled, onOpenSettings, onSettingsRefresh, onMicrosoftTodoSettingsRefresh }: {
   googleTasksSettings: PublicGoogleTasksSettings | null
+  microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   disabled: boolean
   onOpenSettings: () => void
   onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
+  onMicrosoftTodoSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<TodaySnapshot>({ date: '', tasks: [], inbox: [] })
   const [capture, setCapture] = useState('')
@@ -330,6 +333,12 @@ export function TodayView({ googleTasksSettings, disabled, onOpenSettings, onSet
           </>
         )}
       </section>
+      <MicrosoftTodoPanel
+        settings={microsoftTodoSettings}
+        disabled={disabled}
+        onOpenSettings={onOpenSettings}
+        onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
+      />
       {error && <p className="status-error today-error" role="alert">{error}</p>}
       </>}
     </div>

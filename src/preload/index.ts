@@ -125,6 +125,14 @@ const api: AssistApi = {
   disconnectGoogleTasks: () => ipcRenderer.invoke('assist:google-tasks-disconnect'),
   listGoogleTaskLists: (pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-lists', pageToken),
   listGoogleTasks: (taskListId: string, pageToken?: string) => ipcRenderer.invoke('assist:google-tasks-list-tasks', taskListId, pageToken),
+  getMicrosoftTodoSettings: () => ipcRenderer.invoke('assist:microsoft-todo-settings'),
+  updateMicrosoftTodoClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-todo-client-id-update', clientId),
+  beginMicrosoftTodoConnect: () => ipcRenderer.invoke('assist:microsoft-todo-connect-begin'),
+  getMicrosoftTodoConnectStatus: () => ipcRenderer.invoke('assist:microsoft-todo-connect-status'),
+  cancelMicrosoftTodoConnect: () => ipcRenderer.invoke('assist:microsoft-todo-connect-cancel'),
+  disconnectMicrosoftTodo: () => ipcRenderer.invoke('assist:microsoft-todo-disconnect'),
+  listMicrosoftTodoTaskLists: (pageToken?: string) => ipcRenderer.invoke('assist:microsoft-todo-list-lists', pageToken),
+  listMicrosoftTodoTasks: (taskListId: string, pageToken?: string) => ipcRenderer.invoke('assist:microsoft-todo-list-tasks', taskListId, pageToken),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)

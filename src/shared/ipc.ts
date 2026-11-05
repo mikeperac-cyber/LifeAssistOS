@@ -38,7 +38,9 @@ import type {
   ProviderStatus,
   ToolResult,
   GoogleTask,
-  GoogleTaskList
+  GoogleTaskList,
+  MicrosoftTodoTask,
+  MicrosoftTodoTaskList
 } from './types'
 
 export interface PublicWebSearchSettings {
@@ -68,6 +70,24 @@ export interface PublicGoogleTasksSettings {
   clientId: string
   connected: boolean
   tokenStored: boolean
+}
+
+export interface PublicMicrosoftTodoSettings {
+  clientId: string
+  connected: boolean
+  tokenStored: boolean
+}
+
+export interface MicrosoftTodoConnectPrompt {
+  userCode: string
+  verificationUri: string
+  expiresAt: number
+}
+
+export interface MicrosoftTodoConnectStatus {
+  phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
+  prompt?: MicrosoftTodoConnectPrompt
+  error?: string
 }
 
 export interface SendResult {
@@ -169,6 +189,37 @@ export interface GoogleTasksReadResult {
   tasks?: GoogleTask[]
   nextPageToken?: string
   settings?: PublicGoogleTasksSettings
+}
+
+export interface MicrosoftTodoSettingsResult {
+  ok: boolean
+  error?: string
+  message?: string
+  settings?: PublicMicrosoftTodoSettings
+  prompt?: MicrosoftTodoConnectPrompt
+}
+
+export interface MicrosoftTodoConnectStatusResult {
+  ok: boolean
+  error?: string
+  status?: MicrosoftTodoConnectStatus
+  settings?: PublicMicrosoftTodoSettings
+}
+
+export interface MicrosoftTodoTaskListsReadResult {
+  ok: boolean
+  error?: string
+  lists?: MicrosoftTodoTaskList[]
+  nextPageToken?: string
+  settings?: PublicMicrosoftTodoSettings
+}
+
+export interface MicrosoftTodoTasksReadResult {
+  ok: boolean
+  error?: string
+  tasks?: MicrosoftTodoTask[]
+  nextPageToken?: string
+  settings?: PublicMicrosoftTodoSettings
 }
 
 export interface ChatState {
@@ -421,6 +472,15 @@ export interface AssistApi {
   disconnectGoogleTasks(): Promise<GoogleTasksSettingsResult>
   listGoogleTaskLists(pageToken?: string): Promise<GoogleTaskListsReadResult>
   listGoogleTasks(taskListId: string, pageToken?: string): Promise<GoogleTasksReadResult>
+
+  getMicrosoftTodoSettings(): Promise<PublicMicrosoftTodoSettings>
+  updateMicrosoftTodoClientId(clientId: string): Promise<MicrosoftTodoSettingsResult>
+  beginMicrosoftTodoConnect(): Promise<MicrosoftTodoSettingsResult>
+  getMicrosoftTodoConnectStatus(): Promise<MicrosoftTodoConnectStatusResult>
+  cancelMicrosoftTodoConnect(): Promise<MicrosoftTodoConnectStatusResult>
+  disconnectMicrosoftTodo(): Promise<MicrosoftTodoSettingsResult>
+  listMicrosoftTodoTaskLists(pageToken?: string): Promise<MicrosoftTodoTaskListsReadResult>
+  listMicrosoftTodoTasks(taskListId: string, pageToken?: string): Promise<MicrosoftTodoTasksReadResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

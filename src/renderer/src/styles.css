@@ -3284,6 +3284,7 @@ summary:focus-visible {
 .today-google-task-status { flex: 0 0 auto; padding: 3px 6px; border: 1px solid var(--line-soft); border-radius: 999px; }
 .today-google-tasks-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 11px; }
 .today-google-tasks-empty p { margin: 0; }
+.microsoft-todo-user-code { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font-size: 16px; font-weight: 700; letter-spacing: 0.14em; }
 .today-card { padding: 17px; border: 1px solid var(--line-soft); border-radius: 13px; background: var(--panel); }
 .today-card-head { align-items: center; margin-bottom: 13px; }
 .today-card-head h3 { margin: 0; font-size: 13px; }

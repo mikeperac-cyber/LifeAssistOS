@@ -30,6 +30,7 @@ import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/goog
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
 import { GoogleTasksService, GoogleTasksSettingsStore } from '../core/google-tasks'
+import { MicrosoftTodoService, MicrosoftTodoSettingsStore } from '../core/microsoft-todo'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
@@ -66,6 +67,7 @@ import { createGoogleCalendarTools } from '../tools/google-calendar'
 import { createGoogleGmailTools } from '../tools/google-gmail'
 import { createGoogleDriveTools } from '../tools/google-drive'
 import { createGoogleTasksTools } from '../tools/google-tasks'
+import { createMicrosoftTodoTools } from '../tools/microsoft-todo'
 import { createFinanceTools } from '../tools/finance'
 import { createMemoryTools } from '../tools/memory'
 import { createCommandCenterTools } from '../tools/command-center'
@@ -107,6 +109,8 @@ let googleDriveSettings: GoogleDriveSettingsStore | null = null
 let googleDrive: GoogleDriveService | null = null
 let googleTasksSettings: GoogleTasksSettingsStore | null = null
 let googleTasks: GoogleTasksService | null = null
+let microsoftTodoSettings: MicrosoftTodoSettingsStore | null = null
+let microsoftTodo: MicrosoftTodoService | null = null
 let conversations: ConversationStore | null = null
 let domainAllowlist: DomainAllowlistStore | null = null
 let browserAutomation: ElectronBrowserAutomation | null = null
@@ -203,7 +207,8 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleCalendar?.isReady())) ||
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
       (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
-      (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady()))
+      (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady())) ||
+      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady()))
   })
 }
 
@@ -465,6 +470,15 @@ async function initialize(): Promise<void> {
   googleTasks = new GoogleTasksService(googleTasksSettings, {
     openExternal: (url) => shell.openExternal(url)
   })
+  microsoftTodoSettings = new MicrosoftTodoSettingsStore(path.join(userData, 'microsoft-todo.json'), codec)
+  await microsoftTodoSettings.init()
+  microsoftTodo = new MicrosoftTodoService(microsoftTodoSettings, {
+    openExternal: (url) => shell.openExternal(url),
+    onConnected: async () => appendAuditAfterMutation({
+      type: 'microsoft_todo.connected',
+      data: { tokenStored: microsoftTodoSettings?.public().tokenStored ?? false }
+    })
+  })
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
@@ -514,6 +528,9 @@ async function initialize(): Promise<void> {
     registry.register(tool)
   }
   for (const tool of createGoogleTasksTools(googleTasks)) {
+    registry.register(tool)
+  }
+  for (const tool of createMicrosoftTodoTools(microsoftTodo)) {
     registry.register(tool)
   }
   for (const tool of createCommandCenterTools(vault, planning)) {
@@ -1249,6 +1266,7 @@ function registerIpc(): void {
       await restoreBackupSnapshot(backupPath, userData, {
         passphrase: typeof passphrase === 'string' && passphrase.trim() ? passphrase.trim() : undefined,
         closeStores: async () => {
+          await microsoftTodo?.cancelConnect()
           await mcpManager?.dispose()
           conversations?.close()
           finance?.close()
@@ -1284,6 +1302,8 @@ function registerIpc(): void {
           googleDrive?.clearCachedAccessToken()
           await googleTasksSettings?.init()
           googleTasks?.clearCachedAccessToken()
+          await microsoftTodoSettings?.init()
+          microsoftTodo?.clearCachedAccessToken()
           await audit?.init()
           if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
           else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
@@ -1918,6 +1938,136 @@ function registerIpc(): void {
       tasks: output.tasks,
       ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
     }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-settings', () =>
+    microsoftTodoSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+  )
+
+  ipcMain.handle('assist:microsoft-todo-client-id-update', async (_event, input: unknown) => {
+    if (!microsoftTodoSettings || !microsoftTodo) return { ok: false, error: 'Microsoft To Do services are not ready.' }
+    if (typeof input !== 'string') return { ok: false, error: 'Enter a Microsoft Entra Application (client) ID.' }
+    if (microsoftTodo.isConnecting()) return { ok: false, error: 'Cancel the Microsoft sign-in before changing its Application (client) ID.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
+    try {
+      const updated = await microsoftTodoSettings.updateClientId(input)
+      await appendAuditAfterMutation({ type: 'microsoft_todo.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-connect-begin', async () => {
+    if (!microsoftTodo) return { ok: false, error: 'Microsoft To Do services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before connecting an account.' }
+    directToolBusy = true
+    try {
+      const prompt = await microsoftTodo.beginConnect()
+      return {
+        ok: true,
+        settings: microsoftTodoSettings?.public(),
+        prompt,
+        message: 'Enter the displayed code on Microsoft’s sign-in page. Only Microsoft’s read-only Tasks.Read permission is requested.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), settings: microsoftTodoSettings?.public() }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-connect-status', () => {
+    if (!microsoftTodo) return { ok: false, error: 'Microsoft To Do services are not ready.' }
+    return { ok: true, status: microsoftTodo.connectStatus(), settings: microsoftTodoSettings?.public() }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-connect-cancel', async () => {
+    if (!microsoftTodo) return { ok: false, error: 'Microsoft To Do services are not ready.' }
+    try {
+      const status = await microsoftTodo.cancelConnect()
+      return { ok: true, status, settings: microsoftTodoSettings?.public() }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), status: microsoftTodo.connectStatus(), settings: microsoftTodoSettings?.public() }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-disconnect', async () => {
+    if (!microsoftTodo) return { ok: false, error: 'Microsoft To Do services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before disconnecting.' }
+    directToolBusy = true
+    try {
+      const updated = await microsoftTodo.disconnect()
+      await appendAuditAfterMutation({ type: 'microsoft_todo.disconnected', data: { clearedLocally: true } })
+      return {
+        ok: true,
+        settings: updated,
+        message: 'Microsoft To Do was disconnected in Mike Assist. Its Microsoft authorization remains active; remove it in your Microsoft account if you want to revoke it.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  const readMicrosoftTodoWithApproval = async (
+    name: 'microsoft_todo_list_task_lists' | 'microsoft_todo_list_tasks',
+    args: unknown,
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !microsoftTodo?.isReady()) return { ok: false, error: 'Connect Microsoft To Do in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Microsoft To Do could not be loaded.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[microsoft-todo] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:microsoft-todo-list-lists', async (_event, pageToken: unknown) => {
+    if (pageToken !== undefined && typeof pageToken !== 'string') return { ok: false, error: 'Invalid Microsoft To Do page token.' }
+    const result = await readMicrosoftTodoWithApproval(
+      'microsoft_todo_list_task_lists',
+      { ...(typeof pageToken === 'string' ? { pageToken } : {}) },
+      'Load Microsoft To Do lists in Today'
+    )
+    if (!result.ok) return { ok: false, error: result.error, ...(microsoftTodoSettings ? { settings: microsoftTodoSettings.public() } : {}) }
+    const output = result.output as { lists?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.lists)) return {
+      ok: false,
+      error: 'Microsoft To Do returned an unexpected list response.',
+      ...(microsoftTodoSettings ? { settings: microsoftTodoSettings.public() } : {})
+    }
+    return { ok: true, lists: output.lists, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
+  })
+
+  ipcMain.handle('assist:microsoft-todo-list-tasks', async (_event, taskListId: unknown, pageToken: unknown) => {
+    if (typeof taskListId !== 'string' || (pageToken !== undefined && typeof pageToken !== 'string')) {
+      return { ok: false, error: 'Invalid Microsoft To Do list or page token.' }
+    }
+    const result = await readMicrosoftTodoWithApproval(
+      'microsoft_todo_list_tasks',
+      { taskListId, ...(typeof pageToken === 'string' ? { pageToken } : {}) },
+      'Load open tasks from the selected Microsoft To Do list in Today'
+    )
+    if (!result.ok) return { ok: false, error: result.error, ...(microsoftTodoSettings ? { settings: microsoftTodoSettings.public() } : {}) }
+    const output = result.output as { tasks?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.tasks)) return {
+      ok: false,
+      error: 'Microsoft To Do returned an unexpected task response.',
+      ...(microsoftTodoSettings ? { settings: microsoftTodoSettings.public() } : {})
+    }
+    return { ok: true, tasks: output.tasks, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
   })
 
   ipcMain.handle('assist:settings-update', async (_event, patch: unknown) => {
