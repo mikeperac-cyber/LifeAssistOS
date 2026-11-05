@@ -1499,11 +1499,13 @@ export default function App(): React.JSX.Element {
           ))}
 
           {view === 'today' && <TodayView
+            googleCalendarSettings={googleCalendarSettings}
             googleTasksSettings={googleTasksSettings}
             microsoftTodoSettings={microsoftTodoSettings}
             microsoftCalendarSettings={microsoftCalendarSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
             onOpenSettings={() => setView('settings')}
+            onGoogleCalendarSettingsRefresh={setGoogleCalendarSettings}
             onSettingsRefresh={setGoogleTasksSettings}
             onMicrosoftTodoSettingsRefresh={setMicrosoftTodoSettings}
             onMicrosoftCalendarSettingsRefresh={setMicrosoftCalendarSettings}

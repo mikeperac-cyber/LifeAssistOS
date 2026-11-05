@@ -302,6 +302,17 @@ export interface MicrosoftCalendarEvent {
   showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown'
 }
 
+export interface GoogleCalendarEvent {
+  id: string
+  summary: string
+  startsAt: string
+  endsAt: string
+  isAllDay: boolean
+  description?: string
+  location?: string
+  link?: string
+}
+
 export interface MicrosoftMailMessageSummary {
   id: string
   subject: string

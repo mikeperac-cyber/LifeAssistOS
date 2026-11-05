@@ -1288,7 +1288,7 @@ export function SettingsView({
           <h2>Google Calendar</h2>
           <p>
             Connect your primary calendar with a Google OAuth Desktop Client ID. Google will ask you to sign in in your system browser.
-            Mike Assist requests the <code>calendar.events.owned</code> scope; Google describes this as access to view, create, change, and delete events on calendars you own. Mike Assist exposes read, create, and update actions only; each action requires approval, and it never adds guests or sends guest notifications. The refresh token is encrypted with OS storage when available. Disconnecting clears it locally; remove Mike Assist in your Google Account to revoke the project grant, which can also disconnect Gmail, Drive, or Tasks.
+            Mike Assist requests the <code>calendar.events.owned</code> scope; Google describes this as access to view, create, change, and delete events on calendars you own. Mike Assist exposes read, create, and update actions only; each action requires approval, and it never adds guests or sends guest notifications. Today can show approved event pages and create separately approved local prep tasks. The refresh token is encrypted with OS storage when available. Disconnecting clears it locally; remove Mike Assist in your Google Account to revoke the project grant, which can also disconnect Gmail, Drive, or Tasks.
           </p>
         </div>
 

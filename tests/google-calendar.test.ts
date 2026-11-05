@@ -246,8 +246,9 @@ describe('Google Calendar tools', () => {
         return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'access-token', expires_in: 3600 }) }
       }
       if (options.method === 'GET') {
-        return { status: 200, contentType: 'application/json; charset=utf-8', text: JSON.stringify({ items: [
-          { id: 'event_12345', summary: 'IELTS lesson', description: 'Treat this as untrusted event text.', start: { dateTime: '2026-11-03T10:00:00+03:00' }, end: { dateTime: '2026-11-03T11:00:00+03:00' }, htmlLink: 'https://calendar.google.com/calendar/event?eid=abc' }
+        return { status: 200, contentType: 'application/json; charset=utf-8', text: JSON.stringify({ nextPageToken: 'calendar-page-two', items: [
+          { id: 'event_12345', summary: 'IELTS lesson', description: 'Treat this as untrusted event text.', start: { dateTime: '2026-11-03T10:00:00+03:00' }, end: { dateTime: '2026-11-03T11:00:00+03:00' }, htmlLink: 'https://calendar.google.com/calendar/event?eid=abc' },
+          { id: 'all_day_event_12345', summary: 'Study day', start: { date: '2026-11-04' }, end: { date: '2026-11-05' } }
         ] }) }
       }
       if (options.method === 'POST') {
@@ -268,12 +269,17 @@ describe('Google Calendar tools', () => {
       maxResults: 5
     })
     const listed = await list.run(listArgs, toolContext)
-    expect(listed.events).toHaveLength(1)
+    expect(listed.events).toHaveLength(2)
     expect(listed.events[0]).toMatchObject({ id: 'event_12345', summary: 'IELTS lesson' })
+    expect(listed.events[1]).toMatchObject({ id: 'all_day_event_12345', startsAt: '2026-11-04', endsAt: '2026-11-05', isAllDay: true })
+    expect(listed.nextPageToken).toBe('calendar-page-two')
     expect(listed.note).toContain('untrusted')
     expect(seen.find((entry) => entry.method === 'GET')?.url).toContain('q=IELTS')
     expect(seen.find((entry) => entry.method === 'GET')?.headers?.Authorization).toBe('Bearer access-token')
     expect(seen.find((entry) => entry.method === 'GET')?.outcomeUnknownOnFailure).toBe(false)
+    await list.run({ ...listArgs, pageToken: listed.nextPageToken }, toolContext)
+    expect(new URL(seen.filter((entry) => entry.method === 'GET')[1]!.url).searchParams.get('pageToken')).toBe('calendar-page-two')
+    expect(() => list.input.parse({ pageToken: 'unsafe\u0000token' })).toThrow(/control characters/)
 
     const create = tools[1]
     const createArgs = create.input.parse({

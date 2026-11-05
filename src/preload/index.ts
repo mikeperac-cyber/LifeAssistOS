@@ -111,6 +111,8 @@ const api: AssistApi = {
   updateGoogleCalendarClientId: (clientId: string) => ipcRenderer.invoke('assist:google-calendar-client-id-update', clientId),
   connectGoogleCalendar: () => ipcRenderer.invoke('assist:google-calendar-connect'),
   disconnectGoogleCalendar: () => ipcRenderer.invoke('assist:google-calendar-disconnect'),
+  listGoogleCalendarEvents: (timeMin: string, timeMax: string, pageToken?: string) =>
+    ipcRenderer.invoke('assist:google-calendar-list-events', timeMin, timeMax, pageToken),
   getGoogleGmailSettings: () => ipcRenderer.invoke('assist:google-gmail-settings'),
   updateGoogleGmailClientId: (clientId: string) => ipcRenderer.invoke('assist:google-gmail-client-id-update', clientId),
   connectGoogleGmail: () => ipcRenderer.invoke('assist:google-gmail-connect'),

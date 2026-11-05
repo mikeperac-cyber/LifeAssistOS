@@ -26,6 +26,7 @@ import { FileCheckpointStore } from '../core/file-checkpoints'
 import { TaskReminderScheduler } from '../core/reminders'
 import { ScheduledTaskScheduler, ScheduledTaskStore, type ScheduledRunOutput, type ScheduledTaskRunContext } from '../core/scheduled-tasks'
 import { appendMutationAudit as appendMutationAuditSafely } from './ipc/mutation-audit'
+import { isCalendarPrepTaskInput } from '../shared/calendar-prep-input'
 import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/google-calendar'
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
@@ -58,7 +59,7 @@ import type {
   ToolCall,
   ToolContext
 } from '../shared/types'
-import type { CalendarPrepTaskInput, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type { TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import { createFileCheckpointTools, createWriteFileTool, fsTools } from '../tools/fs'
 import { readPdfTool } from '../tools/pdf'
 import { readOfficeDocumentTool } from '../tools/office-document'
@@ -177,18 +178,6 @@ function isTodayTaskExportClearInput(value: unknown): value is TodayTaskExportCl
   return (input.provider === 'google_tasks' || input.provider === 'microsoft_todo') &&
     typeof input.taskId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.taskId) &&
     typeof input.taskListId === 'string' && input.taskListId.length > 0 && input.taskListId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.taskListId)
-}
-
-function isCalendarPrepTaskInput(value: unknown): value is CalendarPrepTaskInput {
-  if (!value || typeof value !== 'object') return false
-  const input = value as Partial<CalendarPrepTaskInput>
-  const validDateTime = (date: unknown): date is string => typeof date === 'string' &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(date) && Number.isFinite(Date.parse(date))
-  return (input.provider === 'google_calendar' || input.provider === 'microsoft_calendar') &&
-    typeof input.eventId === 'string' && input.eventId.trim().length > 0 && input.eventId.length <= 512 && !/[\u0000-\u001f\u007f]/.test(input.eventId) &&
-    typeof input.eventTitle === 'string' && input.eventTitle.trim().length > 0 && input.eventTitle.length <= 500 && !/[\u0000-\u001f\u007f]/.test(input.eventTitle) &&
-    validDateTime(input.start) && validDateTime(input.end) && Date.parse(input.end) > Date.parse(input.start) &&
-    typeof input.isAllDay === 'boolean' && (input.location === undefined || (typeof input.location === 'string' && input.location.length <= 300 && !/[\u0000-\u001f\u007f]/.test(input.location)))
 }
 
 if (!hasSingleInstanceLock) {
@@ -1778,6 +1767,55 @@ function registerIpc(): void {
       return { ok: false, error: errorMessage(error) }
     } finally {
       directToolBusy = false
+    }
+  })
+
+  const readGoogleCalendarWithApproval = async (
+    args: { timeMin: string; timeMax: string; maxResults: number; pageToken?: string },
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !googleCalendar?.isReady()) return { ok: false, error: 'Connect Google Calendar in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name: 'google_calendar_list_events', args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Google Calendar events could not be loaded.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[google-calendar] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:google-calendar-list-events', async (_event, timeMin: unknown, timeMax: unknown, pageToken: unknown) => {
+    const validDateTime = (value: unknown): value is string => typeof value === 'string' &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value) && Number.isFinite(Date.parse(value))
+    if (!validDateTime(timeMin) || !validDateTime(timeMax) || Date.parse(timeMax) <= Date.parse(timeMin) ||
+        Date.parse(timeMax) - Date.parse(timeMin) > 31 * 24 * 60 * 60 * 1_000 ||
+        (pageToken !== undefined && (typeof pageToken !== 'string' || pageToken.length < 1 || pageToken.length > 8_192 || /[\u0000-\u001f\u007f]/.test(pageToken)))) {
+      return { ok: false, error: 'Choose a valid Google Calendar time range and page token.' }
+    }
+    const args = { timeMin, timeMax, maxResults: 25, ...(typeof pageToken === 'string' ? { pageToken } : {}) }
+    const summary = typeof pageToken === 'string'
+      ? 'Load the next page of Google Calendar events in Today'
+      : 'Load today’s Google Calendar events in Today'
+    const result = await readGoogleCalendarWithApproval(args, summary)
+    if (!result.ok) return { ok: false, error: result.error, ...(googleCalendarSettings ? { settings: googleCalendarSettings.public() } : {}) }
+    const output = result.output as { events?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.events)) return {
+      ok: false,
+      error: 'Google Calendar returned an unexpected events response.',
+      ...(googleCalendarSettings ? { settings: googleCalendarSettings.public() } : {})
+    }
+    return {
+      ok: true,
+      events: output.events,
+      ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
     }
   })
 

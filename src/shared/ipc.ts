@@ -39,6 +39,7 @@ import type {
   ToolResult,
   GoogleTask,
   GoogleTaskList,
+  GoogleCalendarEvent,
   MicrosoftCalendarEvent,
   MicrosoftMailMessage,
   MicrosoftMailMessageSummary,
@@ -320,6 +321,14 @@ export interface MicrosoftCalendarEventsReadResult {
   settings?: PublicMicrosoftCalendarSettings
 }
 
+export interface GoogleCalendarEventsReadResult {
+  ok: boolean
+  error?: string
+  events?: GoogleCalendarEvent[]
+  nextPageToken?: string
+  settings?: PublicGoogleCalendarSettings
+}
+
 export interface MicrosoftMailSettingsResult {
   ok: boolean
   error?: string
@@ -586,6 +595,7 @@ export interface AssistApi {
   updateGoogleCalendarClientId(clientId: string): Promise<GoogleCalendarSettingsResult>
   connectGoogleCalendar(): Promise<GoogleCalendarSettingsResult>
   disconnectGoogleCalendar(): Promise<GoogleCalendarSettingsResult>
+  listGoogleCalendarEvents(timeMin: string, timeMax: string, pageToken?: string): Promise<GoogleCalendarEventsReadResult>
   getGoogleGmailSettings(): Promise<PublicGoogleGmailSettings>
   updateGoogleGmailClientId(clientId: string): Promise<GoogleGmailSettingsResult>
   connectGoogleGmail(): Promise<GoogleGmailSettingsResult>

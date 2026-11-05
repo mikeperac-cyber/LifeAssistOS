@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
-import type { PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
 import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
+import { GoogleCalendarPanel } from './GoogleCalendarPanel'
 import { TaskExportControl } from './TaskExportControl'
 
-export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, disabled, onOpenSettings, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh }: {
+export function TodayView({ googleCalendarSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, disabled, onOpenSettings, onGoogleCalendarSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh }: {
+  googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   disabled: boolean
   onOpenSettings: () => void
+  onGoogleCalendarSettingsRefresh: (settings: PublicGoogleCalendarSettings) => void
   onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
   onMicrosoftTodoSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
   onMicrosoftCalendarSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
@@ -369,6 +372,13 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
+      />
+      <GoogleCalendarPanel
+        settings={googleCalendarSettings}
+        todayTasks={snapshot.tasks}
+        disabled={disabled}
+        onOpenSettings={onOpenSettings}
+        onSettingsRefresh={onGoogleCalendarSettingsRefresh}
       />
       <MicrosoftCalendarPanel
         settings={microsoftCalendarSettings}
