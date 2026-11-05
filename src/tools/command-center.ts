@@ -61,8 +61,9 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
 
   const createEmailFollowupTask: ToolDef<{ provider: EmailTaskProvider; messageId: string; title: string; notes?: string; dueDate?: string; remindAt?: string; priority?: 'low' | 'normal' | 'high' }, unknown> = {
     name: 'create_email_followup_task',
-    description: 'Create a local Today task based on a Gmail or Outlook email after approval. This tool does not access email. Use a message ID from an email the user has selected and approved for reading. Store only the provider and message ID as source provenance; include email content in task notes only when the user requests it, and show those notes in the approval preview. Set remindAt only when the user explicitly asks for a notification.',
+    description: 'Create one local Today follow-up task for a selected Gmail or Outlook message from an approved search or read. This tool does not access email. Store only the provider and message ID as source provenance; include email content in task notes only when the user requests it, and show those notes in the approval preview. Repeated conversions return the existing task. Set remindAt only when the user explicitly asks for a notification.',
     risk: 'write',
+    sessionApprovalAllowed: false,
     input: z.object({
       provider: z.enum(['gmail', 'outlook']),
       messageId: z.string().trim().min(1).max(512).refine((id) => !/[\u0000-\u001f\u007f]/.test(id), 'Email message IDs cannot contain control characters.'),
@@ -80,9 +81,14 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
       args.dueDate ? `Due date: ${args.dueDate}` : undefined,
       args.remindAt ? `Reminder: ${args.remindAt}` : undefined,
       `Priority: ${args.priority ?? 'normal'}`,
-      'The task stores only the email provider and message ID as provenance.'
+      'The task stores only the email provider and message ID as provenance.',
+      'If a task for this message already exists, it will be returned without changes.'
     ].filter(Boolean).join('\n'),
-    run: async ({ provider, messageId, ...task }) => { const created = planning.addTask({ ...task, emailSource: { provider, messageId } }); onTodayChanged(); return created }
+    run: async ({ provider, messageId, ...task }) => {
+      const result = planning.addEmailFollowupTask({ ...task, emailSource: { provider, messageId } })
+      if (result.created) onTodayChanged()
+      return { status: result.created ? 'created' : 'already_exists', task: result.task }
+    }
   }
 
   const createCalendarPrepTask: ToolDef<{

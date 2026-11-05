@@ -3270,6 +3270,18 @@ summary:focus-visible {
 .reminder-help { margin-top: 5px !important; color: var(--faint) !important; font-size: 10px !important; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
 .today-google-tasks { margin-top: 14px; }
+.today-email-panel { margin-top: 14px; }
+.today-email-note { max-width: 780px; margin: -3px 0 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.today-email-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.today-email-search input { flex: 1 1 260px; min-width: 140px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
+.today-email-search button { padding: 7px 10px; font-size: 10px; }
+.today-email-list { display: flex; flex-direction: column; gap: 6px; margin-top: 11px; }
+.today-email-message { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); }
+.today-email-copy { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.today-email-copy strong { color: var(--text); font-size: 11px; font-weight: 600; overflow-wrap: anywhere; }
+.today-email-copy span, .today-email-copy time { color: var(--faint); font-size: 10px; overflow-wrap: anywhere; }
+.today-email-copy p { display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.today-email-message > button { flex: 0 0 auto; padding: 6px 8px; font-size: 9px; }
 .today-google-tasks-note { max-width: 780px; margin: -3px 0 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
 .today-google-tasks-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
 .today-google-tasks-controls button, .today-google-task-list > button { padding: 7px 9px; font-size: 10px; }
@@ -3427,6 +3439,8 @@ summary:focus-visible {
   .research-source-add input, .task-add input:first-child { flex-basis: 100%; }
   .task-add input[type='date'], .task-add input[type='datetime-local'], .task-add select { flex: 1; width: auto; }
   .today-task { align-items: flex-start; }
+  .today-email-message { flex-direction: column; }
+  .today-email-message > button { align-self: flex-start; }
   .today-task-export-actions { align-items: stretch; flex-direction: column; }
   .today-task-export-actions > button { width: 100%; }
   .today-calendar-event-actions { align-items: flex-end; }

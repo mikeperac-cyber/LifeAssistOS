@@ -175,6 +175,30 @@ describe('Today planning store', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('converts a selected email into one durable follow-up task and deduplicates retries', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-email-followup-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const input = {
+      title: 'Follow up: Lesson plan',
+      emailSource: { provider: 'gmail' as const, messageId: 'gmail-message-789' }
+    }
+    const first = store.addEmailFollowupTask(input)
+    const retry = store.addEmailFollowupTask({ ...input, title: 'A different title' })
+    expect(first.created).toBe(true)
+    expect(retry.created).toBe(false)
+    expect(retry.task.id).toBe(first.task.id)
+    store.close()
+
+    const reopened = new PlanningStore(file)
+    await reopened.init()
+    expect(reopened.listTasks(true)).toHaveLength(1)
+    expect(reopened.getTask(first.task.id)).toMatchObject({ emailSource: input.emailSource })
+    reopened.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('prevents duplicate provider-task sends and leaves interrupted sends for manual review', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-export-'))
     const file = path.join(dir, 'planning.sqlite')

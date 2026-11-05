@@ -1500,15 +1500,19 @@ export default function App(): React.JSX.Element {
 
           {view === 'today' && <TodayView
             googleCalendarSettings={googleCalendarSettings}
+            googleGmailSettings={googleGmailSettings}
             googleTasksSettings={googleTasksSettings}
             microsoftTodoSettings={microsoftTodoSettings}
             microsoftCalendarSettings={microsoftCalendarSettings}
+            microsoftMailSettings={microsoftMailSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
             onOpenSettings={() => setView('settings')}
             onGoogleCalendarSettingsRefresh={setGoogleCalendarSettings}
+            onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
             onSettingsRefresh={setGoogleTasksSettings}
             onMicrosoftTodoSettingsRefresh={setMicrosoftTodoSettings}
             onMicrosoftCalendarSettingsRefresh={setMicrosoftCalendarSettings}
+            onMicrosoftMailSettingsRefresh={setMicrosoftMailSettings}
           />}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView

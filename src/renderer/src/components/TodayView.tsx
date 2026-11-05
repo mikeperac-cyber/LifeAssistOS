@@ -1,22 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GoogleTask, GoogleTaskList, PlanTask, TodaySnapshot } from '../../../shared/types'
-import type { PublicGoogleCalendarSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleTasksSettings, PublicMicrosoftMailSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
 import { MicrosoftTodoPanel } from './MicrosoftTodoPanel'
 import { MicrosoftCalendarPanel } from './MicrosoftCalendarPanel'
 import { GoogleCalendarPanel } from './GoogleCalendarPanel'
+import { GoogleGmailFollowupPanel, OutlookMailFollowupPanel } from './EmailFollowupPanel'
 import { TaskExportControl } from './TaskExportControl'
 
-export function TodayView({ googleCalendarSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, disabled, onOpenSettings, onGoogleCalendarSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh }: {
+export function TodayView({ googleCalendarSettings, googleGmailSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, disabled, onOpenSettings, onGoogleCalendarSettingsRefresh, onGoogleGmailSettingsRefresh, onSettingsRefresh, onMicrosoftTodoSettingsRefresh, onMicrosoftCalendarSettingsRefresh, onMicrosoftMailSettingsRefresh }: {
   googleCalendarSettings: PublicGoogleCalendarSettings | null
+  googleGmailSettings: PublicGoogleGmailSettings | null
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
+  microsoftMailSettings: PublicMicrosoftMailSettings | null
   disabled: boolean
   onOpenSettings: () => void
   onGoogleCalendarSettingsRefresh: (settings: PublicGoogleCalendarSettings) => void
+  onGoogleGmailSettingsRefresh: (settings: PublicGoogleGmailSettings) => void
   onSettingsRefresh: (settings: PublicGoogleTasksSettings) => void
   onMicrosoftTodoSettingsRefresh: (settings: PublicMicrosoftTodoSettings) => void
   onMicrosoftCalendarSettingsRefresh: (settings: PublicMicrosoftCalendarSettings) => void
+  onMicrosoftMailSettingsRefresh: (settings: PublicMicrosoftMailSettings) => void
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<TodaySnapshot>({ date: '', tasks: [], inbox: [] })
   const [capture, setCapture] = useState('')
@@ -386,6 +391,20 @@ export function TodayView({ googleCalendarSettings, googleTasksSettings, microso
         disabled={disabled}
         onOpenSettings={onOpenSettings}
         onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}
+      />
+      <GoogleGmailFollowupPanel
+        settings={googleGmailSettings}
+        todayTasks={snapshot.tasks}
+        disabled={disabled}
+        onOpenSettings={onOpenSettings}
+        onSettingsRefresh={onGoogleGmailSettingsRefresh}
+      />
+      <OutlookMailFollowupPanel
+        settings={microsoftMailSettings}
+        todayTasks={snapshot.tasks}
+        disabled={disabled}
+        onOpenSettings={onOpenSettings}
+        onSettingsRefresh={onMicrosoftMailSettingsRefresh}
       />
       {error && <p className="status-error today-error" role="alert">{error}</p>}
       </>}

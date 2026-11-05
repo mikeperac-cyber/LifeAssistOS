@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AssistApi, CalendarPrepTaskInput, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type { AssistApi, CalendarPrepTaskInput, EmailFollowupTaskInput, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import type { ApprovalChoice, AssistantSkillInput, MemoryFactPatch, McpServerInput } from '../shared/types'
 import type { AssistEvent } from '../shared/types'
 
@@ -117,6 +117,7 @@ const api: AssistApi = {
   updateGoogleGmailClientId: (clientId: string) => ipcRenderer.invoke('assist:google-gmail-client-id-update', clientId),
   connectGoogleGmail: () => ipcRenderer.invoke('assist:google-gmail-connect'),
   disconnectGoogleGmail: () => ipcRenderer.invoke('assist:google-gmail-disconnect'),
+  searchGoogleGmailMessages: (query: string, pageToken?: string) => ipcRenderer.invoke('assist:google-gmail-search', query, pageToken),
   getGoogleDriveSettings: () => ipcRenderer.invoke('assist:google-drive-settings'),
   updateGoogleDriveClientId: (clientId: string) => ipcRenderer.invoke('assist:google-drive-client-id-update', clientId),
   connectGoogleDrive: () => ipcRenderer.invoke('assist:google-drive-connect'),
@@ -146,6 +147,7 @@ const api: AssistApi = {
   listMicrosoftCalendarEvents: (startDateTime?: string, endDateTime?: string, pageToken?: string) =>
     ipcRenderer.invoke('assist:microsoft-calendar-list-events', startDateTime, endDateTime, pageToken),
   createCalendarPrepTask: (input: CalendarPrepTaskInput) => ipcRenderer.invoke('assist:calendar-prep-task', input),
+  createEmailFollowupTask: (input: EmailFollowupTaskInput) => ipcRenderer.invoke('assist:email-followup-task', input),
   getMicrosoftMailSettings: () => ipcRenderer.invoke('assist:microsoft-mail-settings'),
   updateMicrosoftMailClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-mail-client-id-update', clientId),
   beginMicrosoftMailConnect: () => ipcRenderer.invoke('assist:microsoft-mail-connect-begin'),

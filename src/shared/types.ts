@@ -328,6 +328,15 @@ export interface MicrosoftMailMessage extends MicrosoftMailMessageSummary {
   note: string
 }
 
+export interface GoogleGmailMessageSummary {
+  id: string
+  from: string
+  to: string
+  subject: string
+  date: string
+  snippet: string
+}
+
 export interface AuditIntegrity {
   valid: boolean
   legacyEvents: number

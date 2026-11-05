@@ -40,6 +40,7 @@ import type {
   GoogleTask,
   GoogleTaskList,
   GoogleCalendarEvent,
+  GoogleGmailMessageSummary,
   MicrosoftCalendarEvent,
   MicrosoftMailMessage,
   MicrosoftMailMessageSummary,
@@ -352,6 +353,20 @@ export interface MicrosoftMailSearchResult {
   settings?: PublicMicrosoftMailSettings
 }
 
+export interface GoogleGmailSearchResult {
+  ok: boolean
+  error?: string
+  messages?: GoogleGmailMessageSummary[]
+  nextPageToken?: string
+  settings?: PublicGoogleGmailSettings
+}
+
+export interface EmailFollowupTaskInput {
+  provider: 'gmail' | 'outlook'
+  messageId: string
+  title: string
+}
+
 export interface MicrosoftMailReadResult {
   ok: boolean
   error?: string
@@ -600,6 +615,7 @@ export interface AssistApi {
   updateGoogleGmailClientId(clientId: string): Promise<GoogleGmailSettingsResult>
   connectGoogleGmail(): Promise<GoogleGmailSettingsResult>
   disconnectGoogleGmail(): Promise<GoogleGmailSettingsResult>
+  searchGoogleGmailMessages(query: string, pageToken?: string): Promise<GoogleGmailSearchResult>
   getGoogleDriveSettings(): Promise<PublicGoogleDriveSettings>
   updateGoogleDriveClientId(clientId: string): Promise<GoogleDriveSettingsResult>
   connectGoogleDrive(): Promise<GoogleDriveSettingsResult>
@@ -630,6 +646,7 @@ export interface AssistApi {
   disconnectMicrosoftCalendar(): Promise<MicrosoftCalendarSettingsResult>
   listMicrosoftCalendarEvents(startDateTime?: string, endDateTime?: string, pageToken?: string): Promise<MicrosoftCalendarEventsReadResult>
   createCalendarPrepTask(input: CalendarPrepTaskInput): Promise<TodayTaskExportActionResult>
+  createEmailFollowupTask(input: EmailFollowupTaskInput): Promise<TodayTaskExportActionResult>
 
   getMicrosoftMailSettings(): Promise<PublicMicrosoftMailSettings>
   updateMicrosoftMailClientId(clientId: string): Promise<MicrosoftMailSettingsResult>

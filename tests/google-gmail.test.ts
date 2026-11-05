@@ -220,7 +220,7 @@ describe('Google Gmail tools', () => {
         return { status: 200, contentType: 'application/json', text: JSON.stringify({ access_token: 'gmail-access', expires_in: 3600 }) }
       }
       if (options.method === 'GET' && url.pathname.endsWith('/messages')) {
-        return { status: 200, contentType: 'application/json', text: JSON.stringify({ messages: [{ id: 'message_123' }] }) }
+        return { status: 200, contentType: 'application/json', text: JSON.stringify({ nextPageToken: 'gmail-page-two', messages: [{ id: 'message_123' }] }) }
       }
       if (options.method === 'GET' && url.searchParams.get('format') === 'metadata') {
         return { status: 200, contentType: 'application/json', text: JSON.stringify({
@@ -259,9 +259,14 @@ describe('Google Gmail tools', () => {
     const query = search.input.parse({ query: 'from:colleague@example.com is:unread', maxResults: 3 })
     const found = await search.run(query, toolContext)
     expect(found.messages).toMatchObject([{ id: 'message_123', from: 'colleague@example.com', subject: 'New timetable' }])
+    expect(found.nextPageToken).toBe('gmail-page-two')
     expect(found.note).toContain('untrusted')
     expect(new URL(seen.find((entry) => entry.url.includes('?q='))!.url).searchParams.get('q')).toBe('from:colleague@example.com is:unread')
     expect(seen.some((entry) => entry.url.includes('format=metadata'))).toBe(true)
+    await search.run(search.input.parse({ query: 'in:inbox', pageToken: found.nextPageToken }), toolContext)
+    const listRequests = seen.filter((entry) => entry.method === 'GET' && new URL(entry.url).pathname.endsWith('/messages') && new URL(entry.url).searchParams.has('q'))
+    expect(new URL(listRequests[1]!.url).searchParams.get('pageToken')).toBe('gmail-page-two')
+    expect(() => search.input.parse({ query: 'in:inbox', pageToken: 'invalid\u0000token' })).toThrow(/control characters/)
 
     const opened = await read.run(read.input.parse({ messageId: 'message_123' }), toolContext)
     expect(opened.bodyText).toBe('Please review the new timetable.\nThanks, Alex.')

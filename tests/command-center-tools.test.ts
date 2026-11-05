@@ -21,6 +21,7 @@ describe('command-center assistant tools', () => {
     expect(byName.get('save_vault_document')?.risk).toBe('write')
     expect(byName.get('create_task')?.risk).toBe('write')
     expect(byName.get('create_email_followup_task')?.risk).toBe('write')
+    expect(byName.get('create_email_followup_task')?.sessionApprovalAllowed).toBe(false)
     expect(byName.get('update_task')?.risk).toBe('write')
 
     const task = await byName.get('create_task')!.run({ title: 'Review Task 2 thesis', priority: 'high' }, { kind: 'none', signal: new AbortController().signal })
@@ -47,13 +48,18 @@ describe('command-center assistant tools', () => {
     const emailTaskPreview = createEmailTask.preview!(emailTaskArgs, { kind: 'none', signal: new AbortController().signal })
     expect(emailTaskPreview).toContain('local Today task from Outlook email message ID AQMkAGY3-selected-message')
     expect(emailTaskPreview).toContain('Notes saved to this task:\nInclude the Monday class changes.')
-    const emailTask = await createEmailTask.run(emailTaskArgs, { kind: 'none', signal: new AbortController().signal }) as { id: string }
-    expect(planning.getTask(emailTask.id)).toMatchObject({
+    expect(emailTaskPreview).toContain('If a task for this message already exists')
+    const emailTaskResult = await createEmailTask.run(emailTaskArgs, { kind: 'none', signal: new AbortController().signal }) as { status: string; task: { id: string } }
+    expect(emailTaskResult.status).toBe('created')
+    expect(planning.getTask(emailTaskResult.task.id)).toMatchObject({
       title: emailTaskArgs.title,
       notes: emailTaskArgs.notes,
       dueDate: emailTaskArgs.dueDate,
       emailSource: { provider: 'outlook', messageId: emailTaskArgs.messageId }
     })
+    const retryEmailTask = await createEmailTask.run({ ...emailTaskArgs, title: 'Another follow-up' }, { kind: 'none', signal: new AbortController().signal }) as { status: string; task: { id: string } }
+    expect(retryEmailTask).toMatchObject({ status: 'already_exists', task: { id: emailTaskResult.task.id } })
+    expect(planning.listTasks(true).filter((item) => item.emailSource?.messageId === emailTaskArgs.messageId)).toHaveLength(1)
     expect(() => createEmailTask.input.parse({ ...emailTaskArgs, messageId: 'bad\nmessage-id' })).toThrow(/control characters/)
 
     const document = await byName.get('save_vault_document')!.run({ title: 'IELTS thesis', body: 'A thesis must answer the question.', tags: ['writing'] }, { kind: 'none', signal: new AbortController().signal })

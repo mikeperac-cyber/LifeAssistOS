@@ -27,6 +27,7 @@ import { TaskReminderScheduler } from '../core/reminders'
 import { ScheduledTaskScheduler, ScheduledTaskStore, type ScheduledRunOutput, type ScheduledTaskRunContext } from '../core/scheduled-tasks'
 import { appendMutationAudit as appendMutationAuditSafely } from './ipc/mutation-audit'
 import { isCalendarPrepTaskInput } from '../shared/calendar-prep-input'
+import { isEmailFollowupTaskInput } from '../shared/email-followup-input'
 import { GoogleCalendarService, GoogleCalendarSettingsStore } from '../core/google-calendar'
 import { GoogleGmailService, GoogleGmailSettingsStore } from '../core/google-gmail'
 import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-drive'
@@ -1870,6 +1871,51 @@ function registerIpc(): void {
     }
   })
 
+  const readGoogleGmailWithApproval = async (
+    name: 'gmail_search_messages' | 'gmail_read_message',
+    args: unknown,
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !googleGmail?.isReady()) return { ok: false, error: 'Connect Gmail in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Gmail could not complete the approved search.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[google-gmail] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:google-gmail-search', async (_event, query: unknown, pageToken: unknown) => {
+    if (typeof query !== 'string' || query.trim().length < 1 || query.length > 500 || /[\u0000-\u001f\u007f]/.test(query) ||
+        (pageToken !== undefined && (typeof pageToken !== 'string' || pageToken.length < 1 || pageToken.length > 8_192 || /[\u0000-\u001f\u007f]/.test(pageToken)))) {
+      return { ok: false, error: 'Enter a valid Gmail search and page token.' }
+    }
+    const args = { query, maxResults: 8, ...(typeof pageToken === 'string' ? { pageToken } : {}) }
+    const summary = typeof pageToken === 'string' ? 'Load the next page of Gmail messages in Today' : 'Search Gmail from Today'
+    const result = await readGoogleGmailWithApproval('gmail_search_messages', args, summary)
+    if (!result.ok) return { ok: false, error: result.error, ...(googleGmailSettings ? { settings: googleGmailSettings.public() } : {}) }
+    const output = result.output as { messages?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.messages)) return {
+      ok: false,
+      error: 'Gmail returned an unexpected search response.',
+      ...(googleGmailSettings ? { settings: googleGmailSettings.public() } : {})
+    }
+    return {
+      ok: true,
+      messages: output.messages,
+      ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {})
+    }
+  })
+
   ipcMain.handle('assist:google-drive-settings', () =>
     googleDriveSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
   )
@@ -2021,7 +2067,7 @@ function registerIpc(): void {
   })
 
   const runTaskActionWithApproval = async (
-    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'create_calendar_prep_task' | 'clear_task_export_retry_guard',
+    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'create_calendar_prep_task' | 'create_email_followup_task' | 'clear_task_export_retry_guard',
     args: unknown,
     summary: string
   ): Promise<{ ok: boolean; output?: unknown; error?: string; denied?: boolean; outcomeUnknown?: boolean }> => {
@@ -2102,6 +2148,12 @@ function registerIpc(): void {
     const eventTitle = input.eventTitle.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120)
     const provider = input.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'
     return runTaskActionWithApproval('create_calendar_prep_task', input, `Create a local prep task from ${provider} event “${eventTitle}”`)
+  })
+
+  ipcMain.handle('assist:email-followup-task', async (_event, input: unknown) => {
+    if (!isEmailFollowupTaskInput(input)) return { ok: false, error: 'Choose a valid message to turn into a local follow-up task.' }
+    const provider = input.provider === 'gmail' ? 'Gmail' : 'Outlook'
+    return runTaskActionWithApproval('create_email_followup_task', input, `Create a local follow-up task from a selected ${provider} message`)
   })
 
   ipcMain.handle('assist:microsoft-todo-settings', () =>
@@ -2455,7 +2507,7 @@ function registerIpc(): void {
       return { ok: false, error: 'Enter a valid Outlook Mail search phrase and page token.' }
     }
     const args = { query, ...(typeof pageToken === 'string' ? { pageToken } : {}) }
-    const summary = 'Search Outlook Mail for "' + query.trim().slice(0, 100) + '"' + (pageToken ? ' on the next page' : '')
+    const summary = pageToken ? 'Load the next page of Outlook Mail messages in Today' : 'Search Outlook Mail from Today'
     const result = await readMicrosoftMailWithApproval('microsoft_mail_search_messages', args, summary)
     if (!result.ok) return { ok: false, error: result.error, ...(microsoftMailSettings ? { settings: microsoftMailSettings.public() } : {}) }
     const output = result.output as { messages?: unknown; nextPageToken?: unknown } | undefined

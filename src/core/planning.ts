@@ -55,6 +55,7 @@ export class PlanningStore {
     if (!columns.some((column) => column.name === 'source_goal_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_goal_id TEXT')
     if (!columns.some((column) => column.name === 'source_email_provider')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_provider TEXT')
     if (!columns.some((column) => column.name === 'source_email_message_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_message_id TEXT')
+    this.db.exec('CREATE INDEX IF NOT EXISTS tasks_email_source ON tasks(source_email_provider, source_email_message_id) WHERE source_email_message_id IS NOT NULL')
     if (!columns.some((column) => column.name === 'source_calendar_provider')) this.db.exec("ALTER TABLE tasks ADD COLUMN source_calendar_provider TEXT CHECK (source_calendar_provider IS NULL OR source_calendar_provider IN ('google_calendar', 'microsoft_calendar'))")
     if (!columns.some((column) => column.name === 'source_calendar_event_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_calendar_event_id TEXT')
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tasks_calendar_source ON tasks(source_calendar_provider, source_calendar_event_id) WHERE source_calendar_event_id IS NOT NULL')
@@ -104,6 +105,31 @@ export class PlanningStore {
         return { task: this.attachTaskExports([taskFromRow(existing)])[0]!, created: false }
       }
       const task = this.addTask({ ...input, calendarSource: source })
+      this.db.exec('COMMIT')
+      return { task, created: true }
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
+  }
+
+  addEmailFollowupTask(input: {
+    title: string
+    notes?: string
+    dueDate?: string | null
+    remindAt?: string | null
+    priority?: PlanTaskPriority
+    emailSource: EmailTaskSource
+  }): { task: PlanTask; created: boolean } {
+    const source = normalizeEmailTaskSource(input.emailSource)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const existing = this.db.prepare('SELECT * FROM tasks WHERE source_email_provider = ? AND source_email_message_id = ? ORDER BY created_at, id LIMIT 1').get(source.provider, source.messageId) as TaskRow | undefined
+      if (existing) {
+        this.db.exec('COMMIT')
+        return { task: this.attachTaskExports([taskFromRow(existing)])[0]!, created: false }
+      }
+      const task = this.addTask({ ...input, emailSource: source })
       this.db.exec('COMMIT')
       return { task, created: true }
     } catch (error) {

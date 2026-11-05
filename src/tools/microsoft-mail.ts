@@ -26,7 +26,7 @@ export function createMicrosoftMailTools(service: MicrosoftMailService): ToolDef
     sessionApprovalAllowed: false,
     input: searchSchema,
     scope: () => mailScope(service),
-    preview: (args) => 'Search Outlook Mail for "' + args.query.slice(0, 120) + '"' + (args.pageToken ? ' on the next page' : '') + '. Approved search results may be sent to your configured model provider for this session and will not be saved in chat history.',
+    preview: (args) => 'Search Outlook Mail for "' + args.query.slice(0, 120) + '"' + (args.pageToken ? ' on the next page' : '') + '. The approved result returns to the active workflow; Chat may send it to your configured model provider for this session. Today results stay in the app view.',
     async run(args, context) {
       try { return await service.searchMessages(context.signal, args.query, args.pageToken) }
       catch (error) { throw new ToolError(error instanceof Error ? error.message : 'Outlook Mail search could not be completed.') }
