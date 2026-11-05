@@ -74,6 +74,14 @@ export function shouldHandleNavigationShortcut(
     (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k'
 }
 
+export function shouldHandleQuickCaptureShortcut(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'defaultPrevented'>,
+  focusIsProtected = false
+): boolean {
+  return !focusIsProtected && !event.defaultPrevented && !event.altKey && event.shiftKey &&
+    (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 'k'
+}
+
 export function resolveIntegrationTargetView(id: string): View {
   if (id === 'helper') return 'chat'
   if (id === 'finance' || id === 'finances') return 'finances'

@@ -10,7 +10,8 @@ export function Sidebar({
   auditCount,
   grants,
   model,
-  preset
+  preset,
+  onQuickCapture
 }: {
   view: View
   onChange: (view: View) => void
@@ -18,6 +19,7 @@ export function Sidebar({
   grants: FolderGrant[]
   model: string
   preset: string
+  onQuickCapture: () => void
 }): React.JSX.Element {
   const [navQuery, setNavQuery] = useState('')
   const navSearchRef = useRef<HTMLInputElement>(null)
@@ -84,6 +86,18 @@ export function Sidebar({
         />
         <kbd className="nav-shortcut">Ctrl K</kbd>
       </div>
+
+      <button
+        type="button"
+        className="quick-capture-trigger ghost-button"
+        onClick={onQuickCapture}
+        aria-keyshortcuts="Control+Shift+K Meta+Shift+K"
+        title="Save a thought to the Today inbox"
+      >
+        <span aria-hidden="true">＋</span>
+        <span>Quick capture</span>
+        <kbd className="quick-capture-shortcut">Ctrl ⇧ K</kbd>
+      </button>
 
       <nav className="nav" aria-label="Main navigation">
         {visibleGroups.length === 0 && <p className="nav-empty" role="status">No matching sections.</p>}

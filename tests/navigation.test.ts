@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { NAV_GROUPS, shouldHandleNavigationShortcut, VIEW_META } from '../src/renderer/src/navigation'
+import { NAV_GROUPS, shouldHandleNavigationShortcut, shouldHandleQuickCaptureShortcut, VIEW_META } from '../src/renderer/src/navigation'
 
 const shortcut = {
   key: 'k',
@@ -25,5 +25,16 @@ describe('navigation', () => {
     expect(shouldHandleNavigationShortcut({ ...shortcut, shiftKey: true })).toBe(false)
     expect(shouldHandleNavigationShortcut({ ...shortcut, altKey: true })).toBe(false)
     expect(shouldHandleNavigationShortcut({ ...shortcut, key: 'x' })).toBe(false)
+  })
+
+  it('keeps quick capture on its own shortcut and out of editors and dialogs', () => {
+    const quickCapture = { ...shortcut, shiftKey: true }
+    expect(shouldHandleQuickCaptureShortcut(quickCapture)).toBe(true)
+    expect(shouldHandleQuickCaptureShortcut({ ...quickCapture, metaKey: true, ctrlKey: false })).toBe(true)
+    expect(shouldHandleQuickCaptureShortcut(quickCapture, true)).toBe(false)
+    expect(shouldHandleQuickCaptureShortcut({ ...quickCapture, defaultPrevented: true })).toBe(false)
+    expect(shouldHandleQuickCaptureShortcut({ ...quickCapture, shiftKey: false })).toBe(false)
+    expect(shouldHandleQuickCaptureShortcut({ ...quickCapture, altKey: true })).toBe(false)
+    expect(shouldHandleQuickCaptureShortcut({ ...quickCapture, key: 'x' })).toBe(false)
   })
 })

@@ -61,8 +61,9 @@ import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
+import { QuickCaptureDialog } from './components/QuickCaptureDialog'
 import { Sidebar } from './components/Sidebar'
-import { resolveIntegrationTargetView, VIEW_META, type View } from './navigation'
+import { resolveIntegrationTargetView, shouldHandleQuickCaptureShortcut, VIEW_META, type View } from './navigation'
 import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
 import { statusFor, type TimelineItem } from './types'
 
@@ -233,6 +234,7 @@ export default function App(): React.JSX.Element {
     chainedEvents: 0
   })
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
+  const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [appWarning, setAppWarning] = useState('')
   const [startupLoads, setStartupLoads] = useState<Partial<Record<StartupLoadKey, StartupLoadState>>>({})
@@ -309,6 +311,18 @@ export default function App(): React.JSX.Element {
       // The selected theme remains active for this renderer session.
     }
   }, [appTheme])
+
+  useEffect(() => {
+    const handleQuickCaptureShortcut = (event: KeyboardEvent): void => {
+      const target = event.target instanceof Element ? event.target : null
+      const focusIsProtected = target !== null && target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog') !== null
+      if (!shouldHandleQuickCaptureShortcut(event, focusIsProtected)) return
+      event.preventDefault()
+      setQuickCaptureOpen(true)
+    }
+    window.addEventListener('keydown', handleQuickCaptureShortcut)
+    return () => window.removeEventListener('keydown', handleQuickCaptureShortcut)
+  }, [])
 
   useEffect(() => {
     voiceChatRef.current = voiceChatEnabled
@@ -1349,11 +1363,13 @@ export default function App(): React.JSX.Element {
       <Sidebar
         view={view}
         onChange={setView}
+        onQuickCapture={() => setQuickCaptureOpen(true)}
         auditCount={audit.length}
         grants={grants}
         model={settings?.provider.model ?? ''}
         preset={preset?.label ?? ''}
       />
+      <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} />
 
       <main className="main">
         <header className="topbar">
