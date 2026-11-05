@@ -61,7 +61,6 @@ import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
-import { QuickCaptureDialog } from './components/QuickCaptureDialog'
 import { Sidebar } from './components/Sidebar'
 import { resolveIntegrationTargetView, shouldHandleQuickCaptureShortcut, VIEW_META, type View } from './navigation'
 import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
@@ -80,6 +79,7 @@ const TodayView = lazy(() => import('./components/TodayView').then((module) => (
 const TeachingView = lazy(() => import('./components/TeachingView').then((module) => ({ default: module.TeachingView })))
 const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
+const QuickCaptureDialog = lazy(() => import('./components/QuickCaptureDialog').then((module) => ({ default: module.QuickCaptureDialog })))
 
 type StartupLoadKey =
   | 'audit'
@@ -1369,7 +1369,11 @@ export default function App(): React.JSX.Element {
         model={settings?.provider.model ?? ''}
         preset={preset?.label ?? ''}
       />
-      <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} />
+      {quickCaptureOpen && (
+        <Suspense fallback={<div className="quick-capture-loading" role="status">Opening quick capture…</div>}>
+          <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} />
+        </Suspense>
+      )}
 
       <main className="main">
         <header className="topbar">
