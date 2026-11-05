@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { auditEmptyMessage } from '../src/renderer/src/components/AuditView'
 import { getNextCoachArea } from '../src/renderer/src/components/CoachView'
+import { SCHEDULED_TASK_STARTERS } from '../src/renderer/src/components/ScheduledTasksView'
 import { vaultEmptyMessage } from '../src/renderer/src/components/VaultView'
 
 describe('renderer view states', () => {
@@ -23,5 +24,17 @@ describe('renderer view states', () => {
     expect(getNextCoachArea('lb_english', 'Home')).toBe('personal')
     expect(getNextCoachArea('personal', 'End')).toBe('lb_english')
     expect(getNextCoachArea('personal', 'Enter')).toBeNull()
+  })
+
+  it('offers editable, read-only routine starters across personal, business, and study check-ins', () => {
+    expect(SCHEDULED_TASK_STARTERS.map((starter) => starter.id)).toEqual([
+      'morning-priorities',
+      'weekly-life-review',
+      'business-review',
+      'study-session'
+    ])
+    expect(SCHEDULED_TASK_STARTERS.every((starter) => starter.name.trim() && starter.prompt.length > 5)).toBe(true)
+    expect(SCHEDULED_TASK_STARTERS.every((starter) => /do not (change|update)/i.test(starter.prompt))).toBe(true)
+    expect(SCHEDULED_TASK_STARTERS.every((starter) => starter.kind !== 'once' && /^([01]\d|2[0-3]):[0-5]\d$/.test(starter.time))).toBe(true)
   })
 })

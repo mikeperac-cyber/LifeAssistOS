@@ -4,6 +4,60 @@ import type { ScheduledTaskMutationResult, ScheduledTaskRunResult } from '../../
 
 type ScheduleKind = ScheduledTaskSchedule['kind']
 
+interface ScheduledTaskStarter {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  mode: ChatMode
+  kind: ScheduleKind
+  time: string
+  weekday: number
+}
+
+export const SCHEDULED_TASK_STARTERS: ScheduledTaskStarter[] = [
+  {
+    id: 'morning-priorities',
+    name: 'Morning priorities',
+    description: 'Review open tasks and personal goals; suggest a realistic start.',
+    prompt: 'Review my open tasks in Today and, if available, my Personal life coaching goals. Use only information you can retrieve. Recommend up to three priorities for today, briefly explain why, and mention any due dates. Do not change tasks, goals, or other saved data.',
+    mode: 'coach_personal',
+    kind: 'weekdays',
+    time: '08:30',
+    weekday: 1
+  },
+  {
+    id: 'weekly-life-review',
+    name: 'Weekly life review',
+    description: 'Review current commitments and choose a few next steps.',
+    prompt: 'Review my open tasks in Today and my Personal life coaching goals. Identify overdue or time-sensitive commitments supported by the saved data, then suggest up to three realistic priorities for the coming week. Separate known information from assumptions. Do not change any saved data.',
+    mode: 'coach_personal',
+    kind: 'weekly',
+    time: '17:00',
+    weekday: 0
+  },
+  {
+    id: 'business-review',
+    name: 'Business review',
+    description: 'Check business goals, deadlines, and useful next actions.',
+    prompt: 'Review my Business / LB English coaching goals and open tasks in Today. Summarize the current commitments, deadlines, and dependencies supported by the saved data, then suggest up to three next actions. Separate known information from assumptions. Do not update goals or tasks, and do not send anything.',
+    mode: 'coach_business',
+    kind: 'weekly',
+    time: '09:00',
+    weekday: 1
+  },
+  {
+    id: 'study-session',
+    name: 'Study session plan',
+    description: 'Turn a saved study goal into one focused practice session.',
+    prompt: 'Review my saved study tasks and goals, if any. Suggest one focused 25–45 minute study session with a clear learning objective, active recall or practice, a short break, and a quick self-check. If my subject or level is missing, ask me rather than guessing. Do not change saved data.',
+    mode: 'coach_personal',
+    kind: 'weekdays',
+    time: '18:00',
+    weekday: 1
+  }
+]
+
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const MODE_LABELS: Record<ChatMode, string> = {
   assistant: 'Assistant',
@@ -57,6 +111,17 @@ export function ScheduledTasksView({
   const [busy, setBusy] = useState(false)
   const [runningId, setRunningId] = useState<string | null>(null)
   const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null)
+
+  function applyStarter(starter: ScheduledTaskStarter): void {
+    setName(starter.name)
+    setPrompt(starter.prompt)
+    setMode(starter.mode)
+    setKind(starter.kind)
+    setTime(starter.time)
+    setWeekday(starter.weekday)
+    setOnceAt('')
+    setStatus('Template loaded. Review the instructions and schedule, then save when ready.')
+  }
 
   function currentSchedule(): ScheduledTaskSchedule | null {
     if (kind === 'once') {
@@ -151,6 +216,20 @@ export function ScheduledTasksView({
         <div className="scheduled-form-title">
           <h3>Create a scheduled check-in</h3>
           <span>Mike Assist must be open for scheduled runs.</span>
+        </div>
+        <div className="scheduled-starters" role="group" aria-labelledby="scheduled-starters-label">
+          <div className="scheduled-starters-head">
+            <span id="scheduled-starters-label" className="field-label">Start from a routine</span>
+            <span>Templates only fill this form. Nothing is scheduled until you save.</span>
+          </div>
+          <div className="scheduled-starters-list">
+            {SCHEDULED_TASK_STARTERS.map((starter) => (
+              <button key={starter.id} className="scheduled-starter" type="button" disabled={busy || disabled} onClick={() => applyStarter(starter)}>
+                <strong>{starter.name}</strong>
+                <span>{starter.description}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <label>
           Task name

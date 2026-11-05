@@ -47,7 +47,7 @@ Mike Assist is a local-first desktop AI assistant. The model proposes actions; a
 - Research Desk for focused projects and allowlisted source capture, with one-click saving into the local Knowledge Vault.
 - SQLite FTS5 Knowledge Vault for searchable research, teaching notes, and durable personal knowledge.
 - Today view with an inbox, priorities, due dates, completion state, and gateway-backed assistant tools. Tasks can carry explicit one-time reminders delivered as local desktop notifications while Mike Assist is running.
-- Scheduled agent check-ins that run one-time, daily, weekday, or weekly prompts in isolated sessions. Each write or external action keeps its normal approval; scheduled runs cannot run commands or create nested schedules. Mike Assist must be open.
+- Scheduled agent check-ins that run one-time, daily, weekday, or weekly prompts in isolated sessions, with editable personal, business, and study routine starters. Each write or external action keeps its normal approval; scheduled runs cannot run commands or create nested schedules. Mike Assist must be open.
 - LB English teaching packs for IELTS Academic Writing, Speaking, Task 1, Turkish L1 error clinics, and realistic band-6.5 study sprints.
 - Smart coaching for Personal life and Business / LB English, with area-specific context, coaching chats, goals, private-by-default reflections, and explicit journal consent.
 - Coaching goals can be decomposed into milestones and updated or completed through approval-gated assistant actions.
