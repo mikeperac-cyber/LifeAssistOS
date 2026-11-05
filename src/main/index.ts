@@ -21,6 +21,7 @@ import { McpServerStore } from '../core/mcp/store'
 import { ResearchStore } from '../core/research'
 import { VaultStore } from '../core/vault'
 import { PlanningStore } from '../core/planning'
+import { buildTodayTasksCalendarIcs } from '../shared/today-calendar-export'
 import { CoachingStore } from '../core/coaching'
 import { FileCheckpointStore } from '../core/file-checkpoints'
 import { TaskReminderScheduler } from '../core/reminders'
@@ -860,6 +861,31 @@ function registerIpc(): void {
     try {
       await writeFile(result.filePath, finance.exportCsv(), 'utf8')
       return { ok: true, fileName: path.basename(result.filePath) }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:today-calendar-export', async () => {
+    if (!planning) return { ok: false, error: 'Today tasks are not available yet.' }
+    try {
+      const calendar = buildTodayTasksCalendarIcs(planning.snapshot().tasks)
+      if (calendar.taskCount === 0) return { ok: false, error: 'There are no open tasks with valid due dates to export.' }
+
+      const defaultName = `mike-assist-tasks-${new Date().toISOString().slice(0, 10)}.ics`
+      const options = {
+        title: 'Export Today tasks to a calendar file',
+        defaultPath: path.join(app.getPath('documents'), defaultName),
+        buttonLabel: 'Export calendar file',
+        filters: [{ name: 'iCalendar', extensions: ['ics'] }]
+      }
+      const result = mainWindow
+        ? await dialog.showSaveDialog(mainWindow, options)
+        : await dialog.showSaveDialog(options)
+      if (result.canceled || !result.filePath) return { ok: false, cancelled: true }
+
+      await writeFile(result.filePath, calendar.content, 'utf8')
+      return { ok: true, fileName: path.basename(result.filePath), taskCount: calendar.taskCount }
     } catch (error) {
       return { ok: false, error: errorMessage(error) }
     }

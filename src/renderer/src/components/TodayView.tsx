@@ -35,6 +35,9 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
   const [editingReminderId, setEditingReminderId] = useState<string | null>(null)
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [error, setError] = useState('')
+  const [calendarExportBusy, setCalendarExportBusy] = useState(false)
+  const [calendarExportMessage, setCalendarExportMessage] = useState('')
+  const [calendarExportError, setCalendarExportError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
   const [googleTaskLists, setGoogleTaskLists] = useState<GoogleTaskList[]>([])
@@ -129,6 +132,27 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
       } else setError(result.error ?? 'Could not add that task.')
     } catch (cause) {
       setError(errorText(cause, 'Could not add that task.'))
+    }
+  }
+
+  const exportCalendar = async (): Promise<void> => {
+    if (calendarExportBusy) return
+    setCalendarExportBusy(true)
+    setCalendarExportMessage('')
+    setCalendarExportError(false)
+    try {
+      const result = await window.assist.exportTodayTasksCalendar()
+      if (result.ok && result.fileName) {
+        setCalendarExportMessage(`Exported ${result.taskCount ?? 0} task(s) to ${result.fileName}. Import the file into your calendar.`)
+      } else if (!result.cancelled) {
+        setCalendarExportMessage(result.error ?? 'Could not export tasks to a calendar file.')
+        setCalendarExportError(true)
+      }
+    } catch (cause) {
+      setCalendarExportMessage(errorText(cause, 'Could not export tasks to a calendar file.'))
+      setCalendarExportError(true)
+    } finally {
+      setCalendarExportBusy(false)
     }
   }
 
@@ -260,7 +284,24 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
       ) : <>
       <div className="today-grid">
         <section className="today-card today-tasks">
-          <div className="today-card-head"><h3>Next actions</h3><span>{visibleTasks.length}</span></div>
+          <div className="today-card-head">
+            <h3>Next actions</h3>
+            <div className="today-task-card-actions">
+              <span>{visibleTasks.length}</span>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => void exportCalendar()}
+                disabled={calendarExportBusy || !snapshot.tasks.some((item) => item.status === 'open' && item.dueDate)}
+                aria-label="Export open tasks with due dates to a calendar file"
+                title="Save an iCalendar file for import into another calendar app"
+              >
+                {calendarExportBusy ? 'Exporting…' : 'Export .ics'}
+              </button>
+            </div>
+          </div>
+          <p className="today-calendar-export-help">Save open tasks with due dates as all-day calendar events. Task notes are included; choose where to save, then import the file into your calendar app.</p>
+          {calendarExportMessage && <p className={`today-calendar-export-message ${calendarExportError ? 'status-error' : 'status-success'}`} role={calendarExportError ? 'alert' : 'status'}>{calendarExportMessage}</p>}
           <div className="task-add">
             <input value={task} onChange={(event) => setTask(event.target.value)} placeholder="Add a task…" aria-label="Task title" onKeyDown={(event) => { if (event.key === 'Enter') void addTask() }} />
             <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="Task due date" />

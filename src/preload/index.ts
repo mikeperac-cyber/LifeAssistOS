@@ -89,6 +89,7 @@ const api: AssistApi = {
 
   getToday: (date?: string) => ipcRenderer.invoke('assist:today', date),
   getPlanTasks: (includeCompleted?: boolean) => ipcRenderer.invoke('assist:plan-tasks', includeCompleted),
+  exportTodayTasksCalendar: () => ipcRenderer.invoke('assist:today-calendar-export'),
   addPlanTask: (input) => ipcRenderer.invoke('assist:plan-task-add', input),
   updatePlanTask: (id: string, patch) => ipcRenderer.invoke('assist:plan-task-update', { id, patch }),
   captureInbox: (text: string) => ipcRenderer.invoke('assist:inbox-capture', text),

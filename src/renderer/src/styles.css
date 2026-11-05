@@ -3557,6 +3557,12 @@ dialog.modal::backdrop {
 .today-google-tasks-empty { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 11px; }
 .today-google-tasks-empty p { margin: 0; }
 .today-task-export-control { margin-top: 10px; padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--panel-2); }
+.today-task-card-actions { display: flex; align-items: center; gap: 8px; }
+.today-task-card-actions .ghost-button { padding: 5px 8px; font-size: 10px; }
+.today-calendar-export-help, .today-calendar-export-message { margin: 6px 0 0; font-size: 10px; line-height: 1.45; }
+.today-calendar-export-help { color: var(--faint); }
+.today-calendar-export-message.status-success { color: var(--accent); }
+.today-calendar-export-message.status-error { color: var(--red); }
 .today-task-export-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 9px; }
 .today-task-export-task-select { display: flex; flex: 1 1 250px; min-width: 180px; flex-direction: column; gap: 5px; color: var(--muted); font-size: 10px; }
 .today-task-export-task-select strong { color: var(--text); font-weight: 600; }

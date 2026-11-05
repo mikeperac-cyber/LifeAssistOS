@@ -484,6 +484,14 @@ export interface AuditExportResult {
   fileName?: string
 }
 
+export interface TodayCalendarExportResult {
+  ok: boolean
+  cancelled?: boolean
+  error?: string
+  fileName?: string
+  taskCount?: number
+}
+
 export interface BackupResult {
   ok: boolean
   cancelled?: boolean
@@ -676,6 +684,7 @@ export interface AssistApi {
   deleteVaultDocument(id: string): Promise<VaultMutationResult>
   getToday(date?: string): Promise<TodaySnapshot>
   getPlanTasks(includeCompleted?: boolean): Promise<PlanTask[]>
+  exportTodayTasksCalendar(): Promise<TodayCalendarExportResult>
   addPlanTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; sourceGoalId?: string }): Promise<PlanMutationResult>
   updatePlanTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; status?: string }): Promise<PlanMutationResult>
   captureInbox(text: string): Promise<PlanMutationResult>
