@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createAnthropicProvider } from '../src/core/providers/anthropic'
 import { createProviderForSettings } from '../src/core/providers/factory'
 import { PROVIDER_PRESETS, presetFor } from '../src/shared/presets'
-import { SettingsStore } from '../src/core/settings'
+import { DEFAULT_PROVIDER_SETTINGS, SettingsStore } from '../src/core/settings'
 import { Agent } from '../src/core/agent'
 import { AuditLog } from '../src/core/audit/log'
 import { Gateway } from '../src/core/gateway/gateway'
@@ -91,6 +91,35 @@ describe('Provider presets & settings schema', () => {
     expect(ids).toContain('gemini')
     expect(presetFor('anthropic').baseUrl).toBe('https://api.anthropic.com/v1')
     expect(presetFor('gemini').baseUrl).toBe('https://generativelanguage.googleapis.com/v1beta/openai')
+  })
+
+  it('prioritizes hosted APIs, includes new providers, and keeps both local options', () => {
+    expect(DEFAULT_PROVIDER_SETTINGS.preset).toBe('openai')
+    expect(PROVIDER_PRESETS.map((preset) => preset.id)).toEqual([
+      'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai',
+      'ollama', 'lmstudio', 'custom'
+    ])
+    expect(Object.fromEntries(PROVIDER_PRESETS.map(({ id, baseUrl }) => [id, baseUrl]))).toMatchObject({
+      openrouter: 'https://openrouter.ai/api/v1',
+      groq: 'https://api.groq.com/openai/v1',
+      deepseek: 'https://api.deepseek.com',
+      mistral: 'https://api.mistral.ai/v1',
+      xai: 'https://api.x.ai/v1',
+      ollama: 'http://127.0.0.1:11434/v1',
+      lmstudio: 'http://127.0.0.1:1234/v1'
+    })
+  })
+
+  it('accepts every hosted provider in persisted settings', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-provider-presets-'))
+    tempDirs.push(dir)
+    const store = new SettingsStore(path.join(dir, 'settings.json'))
+    await store.init()
+
+    for (const preset of PROVIDER_PRESETS.filter((item) => item.needsKey)) {
+      await store.update({ preset: preset.id, baseUrl: preset.baseUrl, model: preset.model })
+      expect(store.get().provider.preset).toBe(preset.id)
+    }
   })
 
   it('persists anthropic/gemini presets, role models, and keepInBackground in SettingsStore', async () => {
@@ -360,6 +389,30 @@ describe('Anthropic native provider', () => {
 })
 
 describe('Provider factory & role routing', () => {
+  it('routes additional hosted API presets through the shared bearer-token adapter', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }))
+    })
+
+    for (const id of ['openrouter', 'groq', 'deepseek', 'mistral', 'xai'] as const) {
+      const provider = createProviderForSettings({
+        preset: id,
+        baseUrl: server.baseUrl,
+        model: 'test-model',
+        apiKey: 'provider-test-key',
+        contextLength: 8192,
+        temperature: 0.2,
+        maxSteps: 8
+      })
+      expect(provider.name).toBe('openai-compatible')
+      await provider.chat({ messages: [{ role: 'user', content: `test ${id}` }] })
+    }
+
+    expect(server.requests).toHaveLength(5)
+    expect(server.requests.every((request) => request.headers.authorization === 'Bearer provider-test-key')).toBe(true)
+  })
+
   it('routes anthropic preset to Anthropic adapter and selects fastModel / visionModel by role', async () => {
     const server = await startServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })

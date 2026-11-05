@@ -847,7 +847,18 @@ export type AssistEvent =
 
 /** Provider connection settings, persisted outside the audit log. */
 export interface ProviderSettings {
-  preset: 'ollama' | 'lmstudio' | 'openai' | 'anthropic' | 'gemini' | 'custom'
+  preset:
+    | 'openai'
+    | 'anthropic'
+    | 'gemini'
+    | 'openrouter'
+    | 'groq'
+    | 'deepseek'
+    | 'mistral'
+    | 'xai'
+    | 'ollama'
+    | 'lmstudio'
+    | 'custom'
   baseUrl: string
   model: string
   /** Optional faster/smaller model used for isolated helper delegations. */

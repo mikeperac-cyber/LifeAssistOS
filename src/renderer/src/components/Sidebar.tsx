@@ -43,7 +43,7 @@ export function Sidebar({
         <div className="brand-mark">M</div>
         <div className="brand-text">
           <span className="brand-name">Mike Assist</span>
-          <span className="brand-sub">Local · permission-gated</span>
+          <span className="brand-sub">Your models · approval-gated</span>
         </div>
       </div>
 

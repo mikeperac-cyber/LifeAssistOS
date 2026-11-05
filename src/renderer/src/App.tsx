@@ -1650,6 +1650,16 @@ export default function App(): React.JSX.Element {
           </div>
         )}
 
+        {view === 'chat' && preset?.needsKey && !settings?.provider.hasApiKey && (
+          <div className="provider-setup-banner" role="status">
+            <div>
+              <strong>Connect {preset.label} to start chatting</strong>
+              <span>Add its API key in Settings. Ollama and LM Studio remain available as local options.</span>
+            </div>
+            <button className="primary-button" type="button" onClick={() => setView('settings')}>Add API key</button>
+          </div>
+        )}
+
         <div className="content">
           <Suspense fallback={<div className="view-loading" role="status">Loading section…</div>}>
           {view === 'chat' && gateStartupView(CHAT_STARTUP_KEYS, 'chat data', (

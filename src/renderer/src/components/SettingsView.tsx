@@ -941,19 +941,31 @@ export function SettingsView({
 
       <section className="settings-section">
         <div className="section-head">
-          <h2>Model provider</h2>
-          <p>Each request includes your message and the context the assistant uses. Loopback providers stay on this device; remote providers receive that content over the configured endpoint.</p>
+          <h2>AI providers</h2>
+          <p>Connect a hosted API with its key or choose a local model. Hosted providers receive the message and context used for each request; charges may apply under their plans.</p>
         </div>
 
         <div className="form-grid">
           <label className="field">
             <span className="field-label">Preset</span>
             <select value={form.preset} onChange={(event) => choosePreset(event.target.value as FormState['preset'])}>
-              {PROVIDER_PRESETS.map((option) => (
+              <optgroup label="API providers">
+                {PROVIDER_PRESETS.filter((option) => option.needsKey).map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Local models">
+                {PROVIDER_PRESETS.filter((option) => option.id === 'ollama' || option.id === 'lmstudio').map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Custom endpoint">
+                {PROVIDER_PRESETS.filter((option) => option.id === 'custom').map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.label}
                 </option>
-              ))}
+                ))}
+              </optgroup>
             </select>
           </label>
 
@@ -1076,9 +1088,12 @@ export function SettingsView({
               placeholder={
                 settings.provider.hasApiKey
                   ? 'Leave blank to keep the current key'
-                  : 'Only needed for remote providers'
+                  : preset.needsKey ? `Enter ${preset.label} API key` : 'Only needed for authenticated endpoints'
               }
             />
+            <span className="field-hint">
+              {preset.needsKey ? `Required by ${preset.label}; usage may be billed by the provider.` : 'Optional for local or custom endpoints.'}
+            </span>
           </label>
         </div>
 

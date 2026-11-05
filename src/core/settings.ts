@@ -14,7 +14,10 @@ export interface SecretCodec {
 }
 
 const providerSchema = z.object({
-  preset: z.enum(['ollama', 'lmstudio', 'openai', 'anthropic', 'gemini', 'custom']),
+  preset: z.enum([
+    'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai',
+    'ollama', 'lmstudio', 'custom'
+  ]),
   baseUrl: z.string().trim().min(1).max(2048),
   model: z.string().trim().min(1).max(256),
   fastModel: z.string().trim().max(256).optional(),
@@ -42,9 +45,9 @@ interface SettingsStoreState {
 }
 
 export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
-  preset: 'ollama',
-  baseUrl: 'http://127.0.0.1:11434/v1',
-  model: 'qwen2.5:3b',
+  preset: 'openai',
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'gpt-4o-mini',
   contextLength: 8192,
   temperature: 0.2,
   maxSteps: 8
