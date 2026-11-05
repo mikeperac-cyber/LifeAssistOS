@@ -65,6 +65,7 @@ export function AuditView({
           event.type.startsWith('google_tasks.') ||
           event.type.startsWith('microsoft_todo.') ||
           event.type.startsWith('microsoft_calendar.') ||
+          event.type.startsWith('microsoft_mail.') ||
           event.type === 'skill.changed' ||
           event.type === 'settings.changed'
       )
@@ -261,6 +262,12 @@ export function summarizeEvent(event: AuditEvent): string {
       return 'Outlook Calendar connected'
     case 'microsoft_calendar.disconnected':
       return 'Outlook Calendar disconnected locally'
+    case 'microsoft_mail.settings_changed':
+      return 'Outlook Mail settings updated'
+    case 'microsoft_mail.connected':
+      return 'Outlook Mail OAuth connected'
+    case 'microsoft_mail.disconnected':
+      return 'Outlook Mail disconnected locally'
     case 'domain.added':
       return `${String(data.host ?? 'domain')} · allowed`
     case 'domain.removed':

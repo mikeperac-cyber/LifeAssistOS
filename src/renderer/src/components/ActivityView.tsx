@@ -185,6 +185,12 @@ export function describeEvent(event: AuditEvent): string {
       return 'Outlook Calendar connected'
     case 'microsoft_calendar.disconnected':
       return 'Outlook Calendar disconnected locally'
+    case 'microsoft_mail.settings_changed':
+      return 'Outlook Mail settings updated'
+    case 'microsoft_mail.connected':
+      return 'Outlook Mail connected'
+    case 'microsoft_mail.disconnected':
+      return 'Outlook Mail disconnected locally'
     case 'domain.added':
       return 'Web domain allowed'
     case 'domain.removed':

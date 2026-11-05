@@ -32,6 +32,7 @@ import { GoogleDriveService, GoogleDriveSettingsStore } from '../core/google-dri
 import { GoogleTasksService, GoogleTasksSettingsStore } from '../core/google-tasks'
 import { MicrosoftTodoService, MicrosoftTodoSettingsStore } from '../core/microsoft-todo'
 import { MicrosoftCalendarService, MicrosoftCalendarSettingsStore } from '../core/microsoft-calendar'
+import { MicrosoftMailService, MicrosoftMailSettingsStore } from '../core/microsoft-mail'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
@@ -70,6 +71,7 @@ import { createGoogleDriveTools } from '../tools/google-drive'
 import { createGoogleTasksTools } from '../tools/google-tasks'
 import { createMicrosoftTodoTools } from '../tools/microsoft-todo'
 import { createMicrosoftCalendarTools } from '../tools/microsoft-calendar'
+import { createMicrosoftMailTools } from '../tools/microsoft-mail'
 import { createFinanceTools } from '../tools/finance'
 import { createMemoryTools } from '../tools/memory'
 import { createCommandCenterTools } from '../tools/command-center'
@@ -115,6 +117,8 @@ let microsoftTodoSettings: MicrosoftTodoSettingsStore | null = null
 let microsoftTodo: MicrosoftTodoService | null = null
 let microsoftCalendarSettings: MicrosoftCalendarSettingsStore | null = null
 let microsoftCalendar: MicrosoftCalendarService | null = null
+let microsoftMailSettings: MicrosoftMailSettingsStore | null = null
+let microsoftMail: MicrosoftMailService | null = null
 let conversations: ConversationStore | null = null
 let domainAllowlist: DomainAllowlistStore | null = null
 let browserAutomation: ElectronBrowserAutomation | null = null
@@ -212,7 +216,7 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
       (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
       (host.toLowerCase() === 'tasks.googleapis.com' && Boolean(googleTasks?.isReady())) ||
-      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady() || microsoftCalendar?.isReady()))
+      (host.toLowerCase() === 'graph.microsoft.com' && Boolean(microsoftTodo?.isReady() || microsoftCalendar?.isReady() || microsoftMail?.isReady()))
   })
 }
 
@@ -492,6 +496,15 @@ async function initialize(): Promise<void> {
       data: { tokenStored: microsoftCalendarSettings?.public().tokenStored ?? false }
     })
   })
+  microsoftMailSettings = new MicrosoftMailSettingsStore(path.join(userData, 'microsoft-mail.json'), codec)
+  await microsoftMailSettings.init()
+  microsoftMail = new MicrosoftMailService(microsoftMailSettings, {
+    openExternal: (url) => shell.openExternal(url),
+    onConnected: async () => appendAuditAfterMutation({
+      type: 'microsoft_mail.connected',
+      data: { tokenStored: microsoftMailSettings?.public().tokenStored ?? false }
+    })
+  })
 
   audit = new AuditLog(path.join(userData, 'audit'), randomUUID())
   await audit.init()
@@ -547,6 +560,9 @@ async function initialize(): Promise<void> {
     registry.register(tool)
   }
   for (const tool of createMicrosoftCalendarTools(microsoftCalendar)) {
+    registry.register(tool)
+  }
+  for (const tool of createMicrosoftMailTools(microsoftMail)) {
     registry.register(tool)
   }
   for (const tool of createCommandCenterTools(vault, planning)) {
@@ -1284,6 +1300,7 @@ function registerIpc(): void {
         closeStores: async () => {
           await microsoftTodo?.cancelConnect()
           await microsoftCalendar?.cancelConnect()
+          await microsoftMail?.cancelConnect()
           await mcpManager?.dispose()
           conversations?.close()
           finance?.close()
@@ -1323,6 +1340,8 @@ function registerIpc(): void {
           microsoftTodo?.clearCachedAccessToken()
           await microsoftCalendarSettings?.init()
           microsoftCalendar?.clearCachedAccessToken()
+          await microsoftMailSettings?.init()
+          microsoftMail?.clearCachedAccessToken()
           await audit?.init()
           if (audit?.getIntegrity().valid) await scheduledTasks?.recoverFromAudit(audit.list())
           else console.warn('[scheduled-tasks] audit integrity is invalid; skipping run-history recovery')
@@ -2210,6 +2229,134 @@ function registerIpc(): void {
     return { ok: true, events: output.events, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
   })
 
+  ipcMain.handle('assist:microsoft-mail-settings', () =>
+    microsoftMailSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
+  )
+
+  ipcMain.handle('assist:microsoft-mail-client-id-update', async (_event, input: unknown) => {
+    if (!microsoftMailSettings || !microsoftMail) return { ok: false, error: 'Outlook Mail services are not ready.' }
+    if (typeof input !== 'string') return { ok: false, error: 'Enter a Microsoft Entra Application (client) ID.' }
+    if (microsoftMail.isConnecting()) return { ok: false, error: 'Cancel the Microsoft sign-in before changing its Application (client) ID.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before changing account settings.' }
+    try {
+      const updated = await microsoftMailSettings.updateClientId(input)
+      await appendAuditAfterMutation({ type: 'microsoft_mail.settings_changed', data: { configured: Boolean(updated.clientId), connected: updated.connected } })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-mail-connect-begin', async () => {
+    if (!microsoftMail) return { ok: false, error: 'Outlook Mail services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before connecting an account.' }
+    directToolBusy = true
+    try {
+      const prompt = await microsoftMail.beginConnect()
+      return {
+        ok: true,
+        settings: microsoftMailSettings?.public(),
+        prompt,
+        message: 'Enter the displayed code on Microsoft’s sign-in page. Only the delegated read-only Mail.Read permission is requested.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), settings: microsoftMailSettings?.public() }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-mail-connect-status', () => {
+    if (!microsoftMail) return { ok: false, error: 'Outlook Mail services are not ready.' }
+    return { ok: true, status: microsoftMail.connectStatus(), settings: microsoftMailSettings?.public() }
+  })
+
+  ipcMain.handle('assist:microsoft-mail-connect-cancel', async () => {
+    if (!microsoftMail) return { ok: false, error: 'Outlook Mail services are not ready.' }
+    try {
+      const status = await microsoftMail.cancelConnect()
+      return { ok: true, status, settings: microsoftMailSettings?.public() }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error), status: microsoftMail.connectStatus(), settings: microsoftMailSettings?.public() }
+    }
+  })
+
+  ipcMain.handle('assist:microsoft-mail-disconnect', async () => {
+    if (!microsoftMail) return { ok: false, error: 'Outlook Mail services are not ready.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the active task to finish before disconnecting.' }
+    directToolBusy = true
+    try {
+      const updated = await microsoftMail.disconnect()
+      await appendAuditAfterMutation({ type: 'microsoft_mail.disconnected', data: { clearedLocally: true } })
+      return {
+        ok: true,
+        settings: updated,
+        message: 'Outlook Mail was disconnected in Mike Assist. Its Microsoft authorization remains active; remove it in your Microsoft account if you want to revoke it.'
+      }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+    }
+  })
+
+  const readMicrosoftMailWithApproval = async (
+    name: 'microsoft_mail_search_messages' | 'microsoft_mail_read_message',
+    args: unknown,
+    summary: string
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway || !microsoftMail?.isReady()) return { ok: false, error: 'Connect Outlook Mail in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'Outlook Mail could not complete the approved read.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[microsoft-mail] could not clear the renderer busy state', error) }
+    }
+  }
+
+  ipcMain.handle('assist:microsoft-mail-search', async (_event, query: unknown, pageToken: unknown) => {
+    if (typeof query !== 'string' || query.trim().length < 1 || query.length > 200 || /[\u0000-\u001f\u007f]/.test(query) ||
+        (pageToken !== undefined && (typeof pageToken !== 'string' || pageToken.length > 8_192 || /[\u0000-\u001f\u007f]/.test(pageToken)))) {
+      return { ok: false, error: 'Enter a valid Outlook Mail search phrase and page token.' }
+    }
+    const args = { query, ...(typeof pageToken === 'string' ? { pageToken } : {}) }
+    const summary = 'Search Outlook Mail for "' + query.trim().slice(0, 100) + '"' + (pageToken ? ' on the next page' : '')
+    const result = await readMicrosoftMailWithApproval('microsoft_mail_search_messages', args, summary)
+    if (!result.ok) return { ok: false, error: result.error, ...(microsoftMailSettings ? { settings: microsoftMailSettings.public() } : {}) }
+    const output = result.output as { messages?: unknown; nextPageToken?: unknown } | undefined
+    if (!output || !Array.isArray(output.messages)) return {
+      ok: false,
+      error: 'Outlook Mail returned an unexpected search response.',
+      ...(microsoftMailSettings ? { settings: microsoftMailSettings.public() } : {})
+    }
+    return { ok: true, messages: output.messages, ...(typeof output.nextPageToken === 'string' ? { nextPageToken: output.nextPageToken } : {}) }
+  })
+
+  ipcMain.handle('assist:microsoft-mail-read-message', async (_event, messageId: unknown) => {
+    if (typeof messageId !== 'string' || messageId.length < 1 || messageId.length > 512 || !/^[A-Za-z0-9_+/=-]+$/.test(messageId)) {
+      return { ok: false, error: 'Select a valid Outlook message from a search result.' }
+    }
+    const result = await readMicrosoftMailWithApproval(
+      'microsoft_mail_read_message',
+      { messageId },
+      'Read one selected Outlook Mail message, including its body'
+    )
+    if (!result.ok) return { ok: false, error: result.error, ...(microsoftMailSettings ? { settings: microsoftMailSettings.public() } : {}) }
+    if (!result.output || typeof result.output !== 'object' || typeof (result.output as { body?: unknown }).body !== 'string') {
+      return { ok: false, error: 'Outlook Mail returned an unexpected message response.', ...(microsoftMailSettings ? { settings: microsoftMailSettings.public() } : {}) }
+    }
+    return { ok: true, message: result.output }
+  })
+
   ipcMain.handle('assist:settings-update', async (_event, patch: unknown) => {
     if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
     if (!patch || typeof patch !== 'object') {
@@ -2455,6 +2602,7 @@ app.on('before-quit', () => {
   void localApiServer?.stop()
   void microsoftTodo?.cancelConnect()
   void microsoftCalendar?.cancelConnect()
+  void microsoftMail?.cancelConnect()
   browserAutomation?.dispose()
   taskReminderScheduler?.stop()
   scheduledTaskScheduler?.stop()

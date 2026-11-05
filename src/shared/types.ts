@@ -197,6 +197,9 @@ export type AuditType =
   | 'microsoft_calendar.settings_changed'
   | 'microsoft_calendar.connected'
   | 'microsoft_calendar.disconnected'
+  | 'microsoft_mail.settings_changed'
+  | 'microsoft_mail.connected'
+  | 'microsoft_mail.disconnected'
   | 'domain.added'
   | 'domain.removed'
   | 'backup.created'
@@ -297,6 +300,21 @@ export interface MicrosoftCalendarEvent {
   isAllDay: boolean
   location?: string
   showAs?: 'free' | 'tentative' | 'busy' | 'oof' | 'workingElsewhere' | 'unknown'
+}
+
+export interface MicrosoftMailMessageSummary {
+  id: string
+  subject: string
+  from?: string
+  receivedAt?: string
+  isRead?: boolean
+  hasAttachments?: boolean
+}
+
+export interface MicrosoftMailMessage extends MicrosoftMailMessageSummary {
+  body: string
+  bodyTruncated?: boolean
+  note: string
 }
 
 export interface AuditIntegrity {

@@ -1389,7 +1389,7 @@ describe('Agent', () => {
     }])
   })
 
-  it('keeps Gmail results and replies out of durable chat and provider history', async () => {
+  it('keeps Gmail and Outlook Mail results and replies out of durable chat and provider history', async () => {
     const conversations = new ConversationStore(path.join(auditDir, 'conversations.sqlite'))
     await conversations.init()
     const gmailRead: ToolDef<{ messageId: string }, unknown> = {
@@ -1401,34 +1401,51 @@ describe('Agent', () => {
       scope: () => ({ kind: 'none' }),
       run: async () => ({ body: 'CONFIDENTIAL_GMAIL_BODY' })
     }
+    const microsoftMailRead: ToolDef<{ messageId: string }, unknown> = {
+      name: 'microsoft_mail_read_message',
+      description: 'Read an approved Outlook Mail message.',
+      risk: 'external',
+      sessionApprovalAllowed: false,
+      input: z.object({ messageId: z.string() }),
+      scope: () => ({ kind: 'none' }),
+      run: async () => ({ body: 'CONFIDENTIAL_OUTLOOK_BODY' })
+    }
     const { agent, provider, events } = await harness(
       [
         textReply('Prior assistant answer.'),
         toolReply('gmail_read_message', { messageId: 'message-1' }),
         textReply('The email says CONFIDENTIAL_GMAIL_BODY.'),
+        toolReply('microsoft_mail_read_message', { messageId: 'message-2' }),
+        textReply('The Outlook email says CONFIDENTIAL_OUTLOOK_BODY.'),
         toolReply('execute_tool_sequence', {
-          steps: [{ tool: 'gmail_read_message', args: { messageId: 'message-2' } }]
+          steps: [{ tool: 'microsoft_mail_read_message', args: { messageId: 'message-3' } }]
         }),
-        textReply('The second email also says CONFIDENTIAL_GMAIL_BODY.')
+        textReply('The second Outlook email also says CONFIDENTIAL_OUTLOOK_BODY.')
       ],
-      { conversations, extraTools: [gmailRead] }
+      { conversations, extraTools: [gmailRead, microsoftMailRead] }
     )
 
     try {
       await agent.handleUserMessage('First, keep this ordinary exchange.')
       await agent.handleUserMessage('Read the selected message and summarize it.')
-      await agent.handleUserMessage('Use Gmail to read another selected message in a tool sequence.', 'assistant')
+      await agent.handleUserMessage('Read an Outlook message and summarize it.')
+      await agent.handleUserMessage('Use Outlook Mail to read another selected message in a tool sequence.', 'assistant')
 
       const sessionId = conversations.activeSessionId()!
       expect(provider.requests[2].messages.some((entry) => entry.role === 'tool' && entry.content.includes('CONFIDENTIAL_GMAIL_BODY'))).toBe(true)
-      expect(provider.requests[4].messages.some((entry) => entry.role === 'tool' && entry.content.includes('CONFIDENTIAL_GMAIL_BODY'))).toBe(true)
+      expect(provider.requests[4].messages.some((entry) => entry.role === 'tool' && entry.content.includes('CONFIDENTIAL_OUTLOOK_BODY'))).toBe(true)
+      expect(provider.requests[6].messages.some((entry) => entry.role === 'tool' && entry.content.includes('CONFIDENTIAL_OUTLOOK_BODY'))).toBe(true)
       expect(JSON.stringify(conversations.getProviderHistory(sessionId))).toContain('Prior assistant answer.')
       expect(JSON.stringify(conversations.getProviderHistory(sessionId))).not.toContain('CONFIDENTIAL_GMAIL_BODY')
+      expect(JSON.stringify(conversations.getProviderHistory(sessionId))).not.toContain('CONFIDENTIAL_OUTLOOK_BODY')
       expect(JSON.stringify(conversations.getProviderHistory(sessionId))).not.toContain('The email says')
+      expect(JSON.stringify(conversations.getProviderHistory(sessionId))).not.toContain('The Outlook email says')
       expect(JSON.stringify(conversations.getProviderHistory(sessionId))).not.toContain('second email')
       expect(conversations.getMessages(sessionId).some((entry) => entry.text.includes('The email says'))).toBe(false)
-      expect(conversations.getMessages(sessionId).some((entry) => entry.text.includes('second email'))).toBe(false)
+      expect(conversations.getMessages(sessionId).some((entry) => entry.text.includes('The Outlook email says'))).toBe(false)
+      expect(conversations.getMessages(sessionId).some((entry) => entry.text.includes('second Outlook email'))).toBe(false)
       expect(events.some((event) => event.type === 'assistant_message' && event.message.text.includes('The email says'))).toBe(true)
+      expect(events.some((event) => event.type === 'assistant_message' && event.message.text.includes('The Outlook email says'))).toBe(true)
     } finally {
       conversations.close()
     }

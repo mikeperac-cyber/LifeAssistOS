@@ -63,7 +63,7 @@ function tokenize(text: string): string[] {
 }
 
 function aliasesForTool(name: string): string {
-  if (name.startsWith('gmail_') || name === 'create_email_draft') {
+  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft') {
     return 'eposta mail gelen kutusu taslak gonder yanit alici'
   }
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') {

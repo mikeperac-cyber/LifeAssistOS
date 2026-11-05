@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings, PublicMicrosoftMailSettings } from '../../../shared/ipc'
 import type { McpServerInfo } from '../../../shared/types'
 export { resolveIntegrationTargetView } from '../navigation'
 
@@ -27,6 +27,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'google_tasks', title: 'Google Tasks', category: 'Planning', description: 'View open tasks from a selected Google Tasks list alongside local Today tasks.', access: 'Read-only scope · approval for each list or task page', status: 'available', tone: 'blue' },
   { id: 'microsoft_todo', title: 'Microsoft To Do', category: 'Planning', description: 'View open tasks from a selected Microsoft To Do list alongside local Today tasks.', access: 'Delegated Tasks.Read · approval for each list or task page', status: 'available', tone: 'blue' },
   { id: 'microsoft_calendar', title: 'Outlook Calendar', category: 'Planning', description: 'View events from your Outlook calendar in Today and Chat.', access: 'Delegated Calendars.ReadBasic · approval for each event page', status: 'available', tone: 'teal' },
+  { id: 'microsoft_mail', title: 'Outlook Mail', category: 'Communication', description: 'Search your Outlook mailbox and read a selected message in Chat. Sending is not available.', access: 'Delegated Mail.Read · approval for each search and message read', status: 'available', tone: 'blue' },
   { id: 'memory', title: 'Personal Memory', category: 'Context', description: 'Approved facts are automatically recalled when relevant, with citations.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
   { id: 'skills', title: 'User Skills', category: 'Context', description: 'Reusable plain-text guidance loaded only when relevant to a task.', access: 'Local library · no added permissions', status: 'local', tone: 'purple' },
   { id: 'finances', title: 'Finance Ledger', category: 'Life admin', description: 'Categorized local income and expenses; no bank access or transfers.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
@@ -34,7 +35,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'drafts', title: 'Draft workspace', category: 'Communication', description: 'Local unsent email and calendar drafts only.', access: 'Approved local writes', status: 'local', tone: 'blue' }
 ]
 
-export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings }: {
+export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings }: {
   onOpen: (id: string) => void
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
@@ -42,6 +43,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
+  microsoftMailSettings: PublicMicrosoftMailSettings | null
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,15 +95,17 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const microsoftTodoNeedsReconnect = item.id === 'microsoft_todo' && !microsoftTodoSettings?.connected && microsoftTodoSettings?.tokenStored === true
           const microsoftCalendarConnected = item.id === 'microsoft_calendar' && microsoftCalendarSettings?.connected === true
           const microsoftCalendarNeedsReconnect = item.id === 'microsoft_calendar' && !microsoftCalendarSettings?.connected && microsoftCalendarSettings?.tokenStored === true
-          const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected
-          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect
+          const microsoftMailConnected = item.id === 'microsoft_mail' && microsoftMailSettings?.connected === true
+          const microsoftMailNeedsReconnect = item.id === 'microsoft_mail' && !microsoftMailSettings?.connected && microsoftMailSettings?.tokenStored === true
+          const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected
+          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect
           const status = connectedStatus ? 'ready' : item.status
           const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
           const actionLabel = item.id === 'helper'
             ? 'Use in Chat'
             : item.id === 'files'
               ? 'Manage folders'
-              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar'].includes(item.id)
+              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar', 'microsoft_mail'].includes(item.id)
                 ? 'Open settings'
                 : 'Open'
 

@@ -40,6 +40,8 @@ import type {
   GoogleTask,
   GoogleTaskList,
   MicrosoftCalendarEvent,
+  MicrosoftMailMessage,
+  MicrosoftMailMessageSummary,
   MicrosoftTodoTask,
   MicrosoftTodoTaskList
 } from './types'
@@ -85,6 +87,12 @@ export interface PublicMicrosoftCalendarSettings {
   tokenStored: boolean
 }
 
+export interface PublicMicrosoftMailSettings {
+  clientId: string
+  connected: boolean
+  tokenStored: boolean
+}
+
 export interface MicrosoftTodoConnectPrompt {
   userCode: string
   verificationUri: string
@@ -106,6 +114,18 @@ export interface MicrosoftCalendarConnectPrompt {
 export interface MicrosoftCalendarConnectStatus {
   phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
   prompt?: MicrosoftCalendarConnectPrompt
+  error?: string
+}
+
+export interface MicrosoftMailConnectPrompt {
+  userCode: string
+  verificationUri: string
+  expiresAt: number
+}
+
+export interface MicrosoftMailConnectStatus {
+  phase: 'idle' | 'starting' | 'pending' | 'connected' | 'failed' | 'cancelled'
+  prompt?: MicrosoftMailConnectPrompt
   error?: string
 }
 
@@ -262,6 +282,36 @@ export interface MicrosoftCalendarEventsReadResult {
   events?: MicrosoftCalendarEvent[]
   nextPageToken?: string
   settings?: PublicMicrosoftCalendarSettings
+}
+
+export interface MicrosoftMailSettingsResult {
+  ok: boolean
+  error?: string
+  message?: string
+  settings?: PublicMicrosoftMailSettings
+  prompt?: MicrosoftMailConnectPrompt
+}
+
+export interface MicrosoftMailConnectStatusResult {
+  ok: boolean
+  error?: string
+  status?: MicrosoftMailConnectStatus
+  settings?: PublicMicrosoftMailSettings
+}
+
+export interface MicrosoftMailSearchResult {
+  ok: boolean
+  error?: string
+  messages?: MicrosoftMailMessageSummary[]
+  nextPageToken?: string
+  settings?: PublicMicrosoftMailSettings
+}
+
+export interface MicrosoftMailReadResult {
+  ok: boolean
+  error?: string
+  message?: MicrosoftMailMessage
+  settings?: PublicMicrosoftMailSettings
 }
 
 export interface ChatState {
@@ -531,6 +581,15 @@ export interface AssistApi {
   cancelMicrosoftCalendarConnect(): Promise<MicrosoftCalendarConnectStatusResult>
   disconnectMicrosoftCalendar(): Promise<MicrosoftCalendarSettingsResult>
   listMicrosoftCalendarEvents(startDateTime?: string, endDateTime?: string, pageToken?: string): Promise<MicrosoftCalendarEventsReadResult>
+
+  getMicrosoftMailSettings(): Promise<PublicMicrosoftMailSettings>
+  updateMicrosoftMailClientId(clientId: string): Promise<MicrosoftMailSettingsResult>
+  beginMicrosoftMailConnect(): Promise<MicrosoftMailSettingsResult>
+  getMicrosoftMailConnectStatus(): Promise<MicrosoftMailConnectStatusResult>
+  cancelMicrosoftMailConnect(): Promise<MicrosoftMailConnectStatusResult>
+  disconnectMicrosoftMail(): Promise<MicrosoftMailSettingsResult>
+  searchMicrosoftMail(query: string, pageToken?: string): Promise<MicrosoftMailSearchResult>
+  readMicrosoftMailMessage(messageId: string): Promise<MicrosoftMailReadResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

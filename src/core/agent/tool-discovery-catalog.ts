@@ -12,7 +12,7 @@ export function skillsForMode(skills: AssistantSkillSummary[], mode: ChatMode): 
 export type OptionalToolDomain = 'email' | 'calendar' | 'drive' | 'finance' | 'memory' | 'coaching' | 'planning' | 'vault' | 'mcp'
 
 const DOMAIN_SIGNALS: Record<Exclude<OptionalToolDomain, 'mcp'>, RegExp> = {
-  email: /\b(email|mail|gmail|inbox|draft|send|reply|recipient|message|eposta|posta|taslak|gonder|yanit|alici|mesaj|gelen\s+kutusu)\w*\b/i,
+  email: /\b(email|mail|gmail|outlook|inbox|draft|send|reply|recipient|message|eposta|posta|taslak|gonder|yanit|alici|mesaj|gelen\s+kutusu)\w*\b/i,
   calendar: /\b(calendar|event|meeting|appointment|invite|availability|schedule|takvim|etkinlik|toplanti|randevu|musaitlik|ajanda|program)\w*\b/i,
   drive: /\b(drive|google\s+(drive|docs|sheets|slides)|document|docs|spreadsheet|sheets|slides|file|folder|proposal|contract|report|dokuman|belge|dosya|klasor|teklif|sozlesme|sunum|tablo|rapor)\w*\b/i,
   finance: /\b(finance|financial|money|expense|spend|income|budget|transaction|cost|profit|revenue|ledger|finans|para|harcama|masraf|gider|gelir|butce|maliyet|kazanc|ciro|fatura|odeme)\w*\b/i,
@@ -43,7 +43,7 @@ export function selectToolSpecsForTurn(tools: ProviderToolSpec[], prompt: string
 
 export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('mcp__')) return 'mcp'
-  if (name.startsWith('gmail_') || name === 'create_email_draft') return 'email'
+  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft') return 'email'
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') return 'calendar'
   if (name.startsWith('google_drive_')) return 'drive'
   if (name.startsWith('google_tasks_')) return 'planning'

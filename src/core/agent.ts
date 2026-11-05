@@ -238,7 +238,7 @@ export class Agent {
 
     const turnStartHistory = this.history.slice()
     const effectiveMode = mode === 'assistant' && isBrainstormRequest(trimmed) ? 'brainstorm' : mode
-    let gmailTurn = false
+    let privateEmailTurn = false
     this.persistedHistoryLimit = null
     this.busy = true
     this.controller = new AbortController()
@@ -491,8 +491,8 @@ export class Agent {
           const outsideAgentScope = Boolean(this.options.allowedToolNames && !this.options.allowedToolNames.has(name))
           const toolLimitReached = perToolLimit !== undefined && perToolCount >= perToolLimit
 
-          if (name.startsWith('gmail_')) {
-            gmailTurn = true
+          if (isPrivateEmailToolName(name)) {
+            privateEmailTurn = true
             this.persistedHistoryLimit = turnStartHistory.length
             this.saveHistory()
           }
@@ -589,7 +589,7 @@ export class Agent {
               at: new Date().toISOString(),
               mode: effectiveMode
             }
-            if (!gmailTurn && this.options.persistConversation !== false) this.options.conversations?.appendMessage(this.sessionId, assistantMessage)
+            if (!privateEmailTurn && this.options.persistConversation !== false) this.options.conversations?.appendMessage(this.sessionId, assistantMessage)
             this.options.emit({ type: 'assistant_message', message: assistantMessage })
             await this.auditChat('assistant', text, {
               latencyMs,
@@ -673,15 +673,15 @@ export class Agent {
         }
 
         if (response.toolCalls.some((call) =>
-          call.function.name.startsWith('gmail_') ||
-          (call.function.name === SEQUENCE_TOOL_NAME && sequenceContainsGmail(call.function.arguments)) ||
+          isPrivateEmailToolName(call.function.name) ||
+          (call.function.name === SEQUENCE_TOOL_NAME && sequenceContainsPrivateEmail(call.function.arguments)) ||
           (call.function.name === EXECUTE_CODE_TOOL_NAME &&
-            codeExecutionContainsTool(call.function.arguments, this.options.registry, (name) => name.startsWith('gmail_')))
+            codeExecutionContainsTool(call.function.arguments, this.options.registry, isPrivateEmailToolName))
         )) {
-          // Gmail content must stay in memory for this turn only. Persist only
+          // Email content must stay in memory for this turn only. Persist only
           // complete context from earlier turns, including while the model is
           // making follow-up calls with the temporary email result.
-          gmailTurn = true
+          privateEmailTurn = true
           this.persistedHistoryLimit = turnStartHistory.length
         }
 
@@ -889,7 +889,7 @@ export class Agent {
       } else if (stoppedReason) {
         await this.audit('agent.stopped', { reason: 'limit', detail: stoppedReason })
         const finalMessage = message('assistant', stoppedReason, effectiveMode)
-        if (!gmailTurn && this.options.persistConversation !== false) this.options.conversations?.appendMessage(this.sessionId, finalMessage)
+        if (!privateEmailTurn && this.options.persistConversation !== false) this.options.conversations?.appendMessage(this.sessionId, finalMessage)
         this.options.emit({ type: 'assistant_message', message: finalMessage })
         await this.auditChat('assistant', stoppedReason)
       } else if (!producedText) {
@@ -905,7 +905,7 @@ export class Agent {
         this.options.emit({ type: 'error', message: describeProviderError(error) })
       }
     } finally {
-      this.history = gmailTurn
+      this.history = privateEmailTurn
         ? turnStartHistory
         : splitTurns(this.history).slice(-40).flat()
       this.persistedHistoryLimit = null
@@ -1458,11 +1458,15 @@ function parseArguments(
   }
 }
 
-function sequenceContainsGmail(raw: string): boolean {
+function sequenceContainsPrivateEmail(raw: string): boolean {
   const parsed = parseArguments(raw)
   if (!parsed.ok) return false
   const sequence = sequenceInput.safeParse(parsed.value)
-  return sequence.success && sequence.data.steps.some((step) => step.tool.startsWith('gmail_'))
+  return sequence.success && sequence.data.steps.some((step) => isPrivateEmailToolName(step.tool))
+}
+
+function isPrivateEmailToolName(name: string): boolean {
+  return name.startsWith('gmail_') || name.startsWith('microsoft_mail_')
 }
 
 function codeExecutionContainsTool(
@@ -1491,6 +1495,7 @@ function sequenceContainsUntrustedTool(raw: string): boolean {
 function isUntrustedSourceTool(name: string): boolean {
   return name === 'delegate_task' || name === 'search_conversations' || name === 'web_fetch' ||
     name === 'web_search' || name.startsWith('browser_') || name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') ||
+    name.startsWith('microsoft_mail_') ||
     name.startsWith('gmail_') || name.startsWith('google_drive_') || name === 'run_command' ||
     name === EXECUTE_CODE_TOOL_NAME || name.startsWith('mcp__')
 }

@@ -12,6 +12,7 @@ import type {
   PublicGoogleTasksSettings,
   PublicMicrosoftTodoSettings,
   PublicMicrosoftCalendarSettings,
+  PublicMicrosoftMailSettings,
   LocalApiResult,
   LocalApiStatus,
   SettingsPatch,
@@ -24,11 +25,14 @@ import type {
   MicrosoftTodoSettingsResult,
   MicrosoftTodoConnectStatusResult,
   MicrosoftCalendarSettingsResult,
-  MicrosoftCalendarConnectStatusResult
+  MicrosoftCalendarConnectStatusResult,
+  MicrosoftMailSettingsResult,
+  MicrosoftMailConnectStatusResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
 import { McpPanel } from './McpPanel'
 import { APP_THEMES, type AppTheme } from '../theme'
+import { MicrosoftMailSettingsCard } from './MicrosoftMailSettingsCard'
 
 type Access = 'read' | 'read-write'
 
@@ -56,6 +60,7 @@ export interface SettingsViewProps {
   googleTasksSettings: PublicGoogleTasksSettings | null
   microsoftTodoSettings: PublicMicrosoftTodoSettings | null
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
+  microsoftMailSettings: PublicMicrosoftMailSettings | null
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
@@ -81,6 +86,11 @@ export interface SettingsViewProps {
   onGetMicrosoftCalendarConnectStatus: () => Promise<MicrosoftCalendarConnectStatusResult>
   onCancelMicrosoftCalendarConnect: () => Promise<MicrosoftCalendarConnectStatusResult>
   onDisconnectMicrosoftCalendar: () => Promise<MicrosoftCalendarSettingsResult>
+  onUpdateMicrosoftMailClientId: (clientId: string) => Promise<MicrosoftMailSettingsResult>
+  onBeginMicrosoftMailConnect: () => Promise<MicrosoftMailSettingsResult>
+  onGetMicrosoftMailConnectStatus: () => Promise<MicrosoftMailConnectStatusResult>
+  onCancelMicrosoftMailConnect: () => Promise<MicrosoftMailConnectStatusResult>
+  onDisconnectMicrosoftMail: () => Promise<MicrosoftMailSettingsResult>
   onTest: () => Promise<ProviderStatus>
   onAddGrant: (access: Access) => Promise<GrantMutationResult>
   onRemoveGrant: (id: string) => Promise<GrantMutationResult>
@@ -107,6 +117,7 @@ export function SettingsView({
   googleTasksSettings,
   microsoftTodoSettings,
   microsoftCalendarSettings,
+  microsoftMailSettings,
   grants,
   onSave,
   onUpdateWebSearchApiKey,
@@ -132,6 +143,11 @@ export function SettingsView({
   onGetMicrosoftCalendarConnectStatus,
   onCancelMicrosoftCalendarConnect,
   onDisconnectMicrosoftCalendar,
+  onUpdateMicrosoftMailClientId,
+  onBeginMicrosoftMailConnect,
+  onGetMicrosoftMailConnectStatus,
+  onCancelMicrosoftMailConnect,
+  onDisconnectMicrosoftMail,
   onTest,
   onAddGrant,
   onRemoveGrant,
@@ -1648,6 +1664,14 @@ export function SettingsView({
           <p className="muted">Loading Outlook Calendar settings…</p>
         )}
       </section>
+      <MicrosoftMailSettingsCard
+        settings={microsoftMailSettings}
+        onUpdateClientId={onUpdateMicrosoftMailClientId}
+        onBeginConnect={onBeginMicrosoftMailConnect}
+        onGetConnectStatus={onGetMicrosoftMailConnectStatus}
+        onCancelConnect={onCancelMicrosoftMailConnect}
+        onDisconnect={onDisconnectMicrosoftMail}
+      />
       <McpPanel />
 
       <section className="settings-section">
@@ -1656,7 +1680,7 @@ export function SettingsView({
           <p>
             Create or restore a consistent snapshot of chats, finance records, memory facts, research, vault documents, Today plans,
             saved workflows and Skills, coaching profile and journal, voice settings, provider settings, folder grants, allowed domains,
-            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do, Outlook Calendar connection settings, and the audit log. Optionally provide a
+            MCP connections, Google Calendar, Gmail, Google Drive, Google Tasks, Microsoft To Do, Outlook Calendar and Outlook Mail connection settings, and the audit log. Optionally provide a
             passphrase to encrypt the snapshot with AES-256-GCM.
           </p>
         </div>

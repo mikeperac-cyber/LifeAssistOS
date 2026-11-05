@@ -42,6 +42,7 @@ import type {
   PublicGoogleTasksSettings,
   PublicMicrosoftTodoSettings,
   PublicMicrosoftCalendarSettings,
+  PublicMicrosoftMailSettings,
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
@@ -52,7 +53,9 @@ import type {
   MicrosoftTodoSettingsResult,
   MicrosoftTodoConnectStatusResult,
   MicrosoftCalendarSettingsResult,
-  MicrosoftCalendarConnectStatusResult
+  MicrosoftCalendarConnectStatusResult,
+  MicrosoftMailSettingsResult,
+  MicrosoftMailConnectStatusResult
 } from '../../shared/ipc'
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
@@ -92,6 +95,7 @@ type StartupLoadKey =
   | 'tasks'
   | 'microsoftTodo'
   | 'microsoftCalendar'
+  | 'microsoftMail'
   | 'speech'
   | 'workflows'
   | 'scheduledTasks'
@@ -114,6 +118,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   tasks: 'Google Tasks settings',
   microsoftTodo: 'Microsoft To Do settings',
   microsoftCalendar: 'Outlook Calendar settings',
+  microsoftMail: 'Outlook Mail settings',
   speech: 'Speech settings',
   workflows: 'Workflows',
   scheduledTasks: 'Scheduled tasks',
@@ -121,7 +126,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -129,7 +134,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail']
 
 let localSequence = 0
 
@@ -244,6 +249,7 @@ export default function App(): React.JSX.Element {
   const [googleTasksSettings, setGoogleTasksSettings] = useState<PublicGoogleTasksSettings | null>(null)
   const [microsoftTodoSettings, setMicrosoftTodoSettings] = useState<PublicMicrosoftTodoSettings | null>(null)
   const [microsoftCalendarSettings, setMicrosoftCalendarSettings] = useState<PublicMicrosoftCalendarSettings | null>(null)
+  const [microsoftMailSettings, setMicrosoftMailSettings] = useState<PublicMicrosoftMailSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
@@ -380,6 +386,7 @@ export default function App(): React.JSX.Element {
     loadInitial('tasks', () => window.assist.getGoogleTasksSettings(), setGoogleTasksSettings)
     loadInitial('microsoftTodo', () => window.assist.getMicrosoftTodoSettings(), setMicrosoftTodoSettings)
     loadInitial('microsoftCalendar', () => window.assist.getMicrosoftCalendarSettings(), setMicrosoftCalendarSettings)
+    loadInitial('microsoftMail', () => window.assist.getMicrosoftMailSettings(), setMicrosoftMailSettings)
     loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
     loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
     loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
@@ -1078,6 +1085,36 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateMicrosoftMailClientId = useCallback(async (clientId: string): Promise<MicrosoftMailSettingsResult> => {
+    const result = await window.assist.updateMicrosoftMailClientId(clientId)
+    if (result.ok && result.settings) setMicrosoftMailSettings(result.settings)
+    return result
+  }, [])
+
+  const beginMicrosoftMailConnect = useCallback(async (): Promise<MicrosoftMailSettingsResult> => {
+    const result = await window.assist.beginMicrosoftMailConnect()
+    if (result.ok && result.settings) setMicrosoftMailSettings(result.settings)
+    return result
+  }, [])
+
+  const getMicrosoftMailConnectStatus = useCallback(async (): Promise<MicrosoftMailConnectStatusResult> => {
+    const result = await window.assist.getMicrosoftMailConnectStatus()
+    if (result.ok && result.settings) setMicrosoftMailSettings(result.settings)
+    return result
+  }, [])
+
+  const cancelMicrosoftMailConnect = useCallback(async (): Promise<MicrosoftMailConnectStatusResult> => {
+    const result = await window.assist.cancelMicrosoftMailConnect()
+    if (result.ok && result.settings) setMicrosoftMailSettings(result.settings)
+    return result
+  }, [])
+
+  const disconnectMicrosoftMail = useCallback(async (): Promise<MicrosoftMailSettingsResult> => {
+    const result = await window.assist.disconnectMicrosoftMail()
+    if (result.ok && result.settings) setMicrosoftMailSettings(result.settings)
+    return result
+  }, [])
+
   const testProvider = useCallback((): Promise<ProviderStatus> => {
     return window.assist.testProvider()
   }, [])
@@ -1483,7 +1520,7 @@ export default function App(): React.JSX.Element {
           ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView />}
@@ -1554,6 +1591,7 @@ export default function App(): React.JSX.Element {
               googleTasksSettings={googleTasksSettings}
               microsoftTodoSettings={microsoftTodoSettings}
               microsoftCalendarSettings={microsoftCalendarSettings}
+              microsoftMailSettings={microsoftMailSettings}
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
@@ -1579,6 +1617,11 @@ export default function App(): React.JSX.Element {
               onGetMicrosoftCalendarConnectStatus={getMicrosoftCalendarConnectStatus}
               onCancelMicrosoftCalendarConnect={cancelMicrosoftCalendarConnect}
               onDisconnectMicrosoftCalendar={disconnectMicrosoftCalendar}
+              onUpdateMicrosoftMailClientId={updateMicrosoftMailClientId}
+              onBeginMicrosoftMailConnect={beginMicrosoftMailConnect}
+              onGetMicrosoftMailConnectStatus={getMicrosoftMailConnectStatus}
+              onCancelMicrosoftMailConnect={cancelMicrosoftMailConnect}
+              onDisconnectMicrosoftMail={disconnectMicrosoftMail}
               onTest={testProvider}
               onAddGrant={addGrant}
               onRemoveGrant={removeGrant}

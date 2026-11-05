@@ -7,6 +7,8 @@ const PRIVATE_READ_TOOLS = new Set([
   'get_coaching_context',
   'google_calendar_list_events',
   'microsoft_calendar_list_events',
+  'microsoft_mail_search_messages',
+  'microsoft_mail_read_message',
   'list_today',
   'load_skill',
   'recall_memory'
@@ -25,7 +27,7 @@ export type DelegationRunner = (task: string, context: ToolContext) => Promise<u
  */
 export function delegationToolNames(registry: ToolRegistry, allowWebSearch = true): ReadonlySet<string> {
   return new Set(registry.list()
-    .filter((tool) => !tool.name.startsWith('mcp__') && !tool.name.startsWith('gmail_'))
+    .filter((tool) => !tool.name.startsWith('mcp__') && !tool.name.startsWith('gmail_') && !tool.name.startsWith('microsoft_mail_'))
     .filter((tool) => !PRIVATE_READ_TOOLS.has(tool.name))
     .filter((tool) => allowWebSearch || tool.name !== 'web_search')
     .filter((tool) => tool.risk === 'read' ||

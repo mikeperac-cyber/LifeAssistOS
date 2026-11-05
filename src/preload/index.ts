@@ -141,6 +141,16 @@ const api: AssistApi = {
   disconnectMicrosoftCalendar: () => ipcRenderer.invoke('assist:microsoft-calendar-disconnect'),
   listMicrosoftCalendarEvents: (startDateTime?: string, endDateTime?: string, pageToken?: string) =>
     ipcRenderer.invoke('assist:microsoft-calendar-list-events', startDateTime, endDateTime, pageToken),
+  getMicrosoftMailSettings: () => ipcRenderer.invoke('assist:microsoft-mail-settings'),
+  updateMicrosoftMailClientId: (clientId: string) => ipcRenderer.invoke('assist:microsoft-mail-client-id-update', clientId),
+  beginMicrosoftMailConnect: () => ipcRenderer.invoke('assist:microsoft-mail-connect-begin'),
+  getMicrosoftMailConnectStatus: () => ipcRenderer.invoke('assist:microsoft-mail-connect-status'),
+  cancelMicrosoftMailConnect: () => ipcRenderer.invoke('assist:microsoft-mail-connect-cancel'),
+  disconnectMicrosoftMail: () => ipcRenderer.invoke('assist:microsoft-mail-disconnect'),
+  searchMicrosoftMail: (query: string, pageToken?: string) =>
+    ipcRenderer.invoke('assist:microsoft-mail-search', query, pageToken),
+  readMicrosoftMailMessage: (messageId: string) =>
+    ipcRenderer.invoke('assist:microsoft-mail-read-message', messageId),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)
