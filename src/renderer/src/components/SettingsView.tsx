@@ -35,6 +35,7 @@ import type {
   MicrosoftOneDriveConnectStatusResult
 } from '../../../shared/ipc'
 import { PROVIDER_PRESETS, presetFor } from '../../../shared/presets'
+import { normalizeProviderEndpoint } from '../../../shared/provider-endpoint'
 import { McpPanel } from './McpPanel'
 import { APP_THEMES, type AppTheme } from '../theme'
 import { MicrosoftMailSettingsCard } from './MicrosoftMailSettingsCard'
@@ -343,6 +344,8 @@ export function SettingsView({
   }, [microsoftCalendarConnectStatus?.phase, onGetMicrosoftCalendarConnectStatus])
 
   const preset = presetFor(form.preset)
+  const existingProviderKeyMatchesForm =
+    settings.provider.preset === form.preset && sameEndpointOrigin(settings.provider.baseUrl, form.baseUrl)
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]): void {
     setForm((current) => ({ ...current, [key]: value }))
@@ -350,11 +353,14 @@ export function SettingsView({
 
   function choosePreset(id: FormState['preset']): void {
     const next = presetFor(id)
+    setModels([])
+    setStatus(null)
     setForm((current) => ({
       ...current,
       preset: id,
       baseUrl: next.baseUrl,
-      model: next.model || current.model
+      model: next.model || current.model,
+      apiKey: id === current.preset ? current.apiKey : ''
     }))
   }
 
@@ -421,6 +427,7 @@ export function SettingsView({
 
     try {
       const result = await onSave({ apiKey: null })
+      if (result.ok) setForm((current) => ({ ...current, apiKey: '' }))
       setStatus(
         result.ok
           ? { ok: true, text: 'API key cleared.' }
@@ -1169,7 +1176,7 @@ export function SettingsView({
           <label className="field field-wide">
             <span className="field-label">
               API key
-              {settings.provider.hasApiKey && (
+              {existingProviderKeyMatchesForm && settings.provider.hasApiKey && (
                 <span className="field-tag">
                   {settings.provider.apiKeyStored ? 'stored securely' : 'session only'}
                 </span>
@@ -1182,7 +1189,7 @@ export function SettingsView({
               spellCheck={false}
               onChange={(event) => update('apiKey', event.target.value)}
               placeholder={
-                settings.provider.hasApiKey
+                existingProviderKeyMatchesForm && settings.provider.hasApiKey
                   ? 'Leave blank to keep the current key'
                   : preset.needsKey ? `Enter ${preset.label} API key` : 'Only needed for authenticated endpoints'
               }
@@ -1200,7 +1207,7 @@ export function SettingsView({
           <button className="ghost-button" type="button" onClick={test} disabled={saving || testing}>
             {testing ? 'Testing…' : 'Test connection'}
           </button>
-          {settings.provider.hasApiKey && (
+          {existingProviderKeyMatchesForm && settings.provider.hasApiKey && (
             <button className="ghost-button" type="button" onClick={clearKey} disabled={saving || testing}>
               Clear key
             </button>
@@ -1943,4 +1950,14 @@ function toForm(settings: PublicSettings): FormState {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function sameEndpointOrigin(first: string, second: string): boolean {
+  try {
+    const firstEndpoint = normalizeProviderEndpoint(first)
+    const secondEndpoint = normalizeProviderEndpoint(second)
+    return new URL(firstEndpoint).origin === new URL(secondEndpoint).origin
+  } catch {
+    return false
+  }
 }

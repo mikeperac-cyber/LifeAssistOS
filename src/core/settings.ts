@@ -16,6 +16,7 @@ export interface SecretCodec {
 const providerSchema = z.object({
   preset: z.enum([
     'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai',
+    'nvidia', 'together', 'fireworks', 'cerebras',
     'ollama', 'lmstudio', 'custom'
   ]),
   baseUrl: z.string().trim().min(1).max(2048),
@@ -190,6 +191,15 @@ export class SettingsStore {
           next.apiKeyStored = Boolean(this.codec?.available)
           next.storedApiKeyEnc = undefined
         }
+      } else if (
+        parsed.data.preset !== current.provider.preset ||
+        providerOrigin(parsed.data.baseUrl) !== providerOrigin(current.provider.baseUrl)
+      ) {
+        // A single stored key belongs to the active provider endpoint. Never
+        // send it to a different provider after a preset or host change.
+        next.apiKey = ''
+        next.apiKeyStored = false
+        next.storedApiKeyEnc = undefined
       }
 
       this.apply(await this.persist(next))
@@ -255,6 +265,14 @@ function stripUndefined<T extends object>(value: T): Partial<T> {
     }
   }
   return result
+}
+
+function providerOrigin(input: string): string {
+  try {
+    return new URL(input).origin
+  } catch {
+    return ''
+  }
 }
 
 const RETIRED_ANTHROPIC_MODEL_REPLACEMENTS: Record<string, string> = {

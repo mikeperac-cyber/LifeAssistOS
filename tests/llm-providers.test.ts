@@ -98,6 +98,7 @@ describe('Provider presets & settings schema', () => {
     expect(DEFAULT_PROVIDER_SETTINGS.preset).toBe('openai')
     expect(PROVIDER_PRESETS.map((preset) => preset.id)).toEqual([
       'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai',
+      'nvidia', 'together', 'fireworks', 'cerebras',
       'ollama', 'lmstudio', 'custom'
     ])
     expect(Object.fromEntries(PROVIDER_PRESETS.map(({ id, baseUrl }) => [id, baseUrl]))).toMatchObject({
@@ -106,6 +107,10 @@ describe('Provider presets & settings schema', () => {
       deepseek: 'https://api.deepseek.com',
       mistral: 'https://api.mistral.ai/v1',
       xai: 'https://api.x.ai/v1',
+      nvidia: 'https://integrate.api.nvidia.com/v1',
+      together: 'https://api.together.ai/v1',
+      fireworks: 'https://api.fireworks.ai/inference/v1',
+      cerebras: 'https://api.cerebras.ai/v1',
       ollama: 'http://127.0.0.1:11434/v1',
       lmstudio: 'http://127.0.0.1:1234/v1'
     })
@@ -438,7 +443,9 @@ describe('Provider factory & role routing', () => {
       res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }))
     })
 
-    for (const id of ['openrouter', 'groq', 'deepseek', 'mistral', 'xai'] as const) {
+    for (const id of [
+      'openrouter', 'groq', 'deepseek', 'mistral', 'xai', 'nvidia', 'together', 'fireworks', 'cerebras'
+    ] as const) {
       const provider = createProviderForSettings({
         preset: id,
         baseUrl: server.baseUrl,
@@ -452,8 +459,29 @@ describe('Provider factory & role routing', () => {
       await provider.chat({ messages: [{ role: 'user', content: `test ${id}` }] })
     }
 
-    expect(server.requests).toHaveLength(5)
+    expect(server.requests).toHaveLength(9)
     expect(server.requests.every((request) => request.headers.authorization === 'Bearer provider-test-key')).toBe(true)
+  })
+
+  it('uses Cerebras max_completion_tokens for its GLM API', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }))
+    })
+    const provider = createProviderForSettings({
+      preset: 'cerebras',
+      baseUrl: server.baseUrl,
+      model: 'zai-glm-4.7',
+      apiKey: 'cerebras-test-key',
+      contextLength: 8192,
+      temperature: 0.2,
+      maxSteps: 8
+    })
+
+    await provider.chat({ messages: [{ role: 'user', content: 'test' }], maxTokens: 1234 })
+
+    expect(server.requests[0].body).toMatchObject({ max_completion_tokens: 1234 })
+    expect(server.requests[0].body).not.toHaveProperty('max_tokens')
   })
 
   it('routes anthropic preset to Anthropic adapter and selects fastModel / visionModel by role', async () => {

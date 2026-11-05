@@ -19,6 +19,8 @@ export interface OpenAICompatibleConfig {
   timeoutMs?: number
   /** Ollama's OpenAI-compatible image input currently uses a data URL string. */
   imageUrlFormat?: 'nested' | 'string'
+  /** Some compatible providers use the newer OpenAI token-limit field. */
+  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
   fetchImpl?: typeof fetch
 }
 
@@ -43,6 +45,7 @@ class OpenAICompatibleProvider implements Provider {
   private readonly maxRetries: number
   private readonly timeoutMs: number
   private readonly imageUrlFormat: 'nested' | 'string'
+  private readonly maxTokensField: 'max_tokens' | 'max_completion_tokens'
   private readonly fetchImpl: typeof fetch
 
   constructor(config: OpenAICompatibleConfig) {
@@ -53,6 +56,7 @@ class OpenAICompatibleProvider implements Provider {
     this.maxRetries = Math.max(0, config.maxRetries ?? DEFAULT_MAX_RETRIES)
     this.timeoutMs = Math.max(1_000, config.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     this.imageUrlFormat = config.imageUrlFormat ?? 'nested'
+    this.maxTokensField = config.maxTokensField ?? 'max_tokens'
     this.fetchImpl = config.fetchImpl ?? fetch
   }
 
@@ -139,7 +143,7 @@ class OpenAICompatibleProvider implements Provider {
       temperature: request.temperature ?? this.temperature
     }
 
-    if (request.maxTokens) body.max_tokens = request.maxTokens
+    if (request.maxTokens) body[this.maxTokensField] = request.maxTokens
     if (request.tools && request.tools.length > 0) {
       body.tools = request.tools
       body.tool_choice = 'auto'

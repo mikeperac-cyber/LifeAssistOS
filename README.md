@@ -5,7 +5,7 @@ Mike Assist is a local-first desktop AI assistant. The model proposes actions; a
 ## Features
 
 - Electron + React desktop app with a sandboxed renderer and typed IPC.
-- OpenAI Chat Completions-compatible provider for Ollama, LM Studio, OpenAI, and compatible servers.
+- Hosted model providers include OpenAI, Anthropic, Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, NVIDIA NIM, Together AI, Fireworks AI, and Cerebras. Ollama, LM Studio, and other OpenAI-compatible endpoints are also supported.
 - Optional OpenAI-compatible local API server for other clients, bound to IPv4 loopback with a session-only bearer token. Requests run through the same agent, task lock, and approval gateway and are not saved to chat history.
 - Streaming, sequential tool execution, configurable step limits, context trimming, and cancellation.
 - Bounded dependent tool sequences of up to eight registered calls for fixed workflows, plus an approval-gated JavaScript runner for real loops and branching across tool results.
@@ -76,7 +76,7 @@ If Electron's binary was skipped during installation:
 node node_modules/electron/install.js
 ```
 
-The default provider is Ollama at `http://127.0.0.1:11434/v1`, using `qwen2.5:3b`:
+The default provider is OpenAI at `https://api.openai.com/v1`, using `gpt-4o-mini`. Enter an API key in **Settings → AI providers** to use it. To work fully offline, choose Ollama at `http://127.0.0.1:11434/v1`, using `qwen2.5:3b`:
 
 ```powershell
 ollama pull qwen2.5:3b

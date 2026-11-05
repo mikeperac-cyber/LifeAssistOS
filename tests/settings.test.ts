@@ -142,6 +142,30 @@ describe('SettingsStore', () => {
     expect(reloaded.get().provider.apiKey).toBe('sk-encrypted')
   })
 
+  it('clears the previous provider key when the active preset changes', async () => {
+    const store = new SettingsStore(file, codec)
+    await store.init()
+    await store.update({ apiKey: 'openai-secret' })
+
+    await store.update({ preset: 'together', baseUrl: 'https://api.together.ai/v1', model: 'Qwen/Qwen3.5-9B' })
+
+    expect(store.get().provider.apiKey).toBeUndefined()
+    expect(store.public().provider).toMatchObject({ hasApiKey: false, apiKeyStored: false, preset: 'together' })
+    const persisted = JSON.parse(await readFile(file, 'utf8')) as { apiKeyEnc?: string }
+    expect(persisted.apiKeyEnc).toBeUndefined()
+  })
+
+  it('clears an API key when the provider endpoint host changes', async () => {
+    const store = new SettingsStore(file, codec)
+    await store.init()
+    await store.update({ apiKey: 'openai-secret' })
+
+    await store.update({ baseUrl: 'https://proxy.example/v1' })
+
+    expect(store.get().provider.apiKey).toBeUndefined()
+    expect(store.public().provider.hasApiKey).toBe(false)
+  })
+
   it('does not apply an API key update when persisting it fails', async () => {
     const store = new SettingsStore(file, codec)
     await store.init()

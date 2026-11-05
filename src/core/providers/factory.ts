@@ -45,6 +45,7 @@ export function createProviderForSettings(
     apiKey: settings.apiKey,
     temperature: settings.temperature,
     imageUrlFormat: settings.preset === 'ollama' ? 'string' : 'nested',
+    maxTokensField: settings.preset === 'cerebras' ? 'max_completion_tokens' : 'max_tokens',
     fetchImpl: options?.fetchImpl
   })
 }

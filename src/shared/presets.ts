@@ -75,6 +75,38 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     hint: 'Use xAI’s OpenAI-compatible API with an xAI API key.'
   },
   {
+    id: 'nvidia',
+    label: 'NVIDIA NIM',
+    baseUrl: 'https://integrate.api.nvidia.com/v1',
+    model: 'openai/gpt-oss-120b',
+    needsKey: true,
+    hint: 'OpenAI-compatible hosted inference. Model access depends on your NVIDIA account; select a tool-capable model for assistant actions.'
+  },
+  {
+    id: 'together',
+    label: 'Together AI',
+    baseUrl: 'https://api.together.ai/v1',
+    model: 'Qwen/Qwen3.5-9B',
+    needsKey: true,
+    hint: 'OpenAI-compatible hosted models with tool calling and vision on supported models. Usage may be billed by Together AI.'
+  },
+  {
+    id: 'fireworks',
+    label: 'Fireworks AI',
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    model: 'accounts/fireworks/models/kimi-k2-instruct-0905',
+    needsKey: true,
+    hint: 'OpenAI-compatible hosted inference. Choose a model that supports tool calling for assistant actions.'
+  },
+  {
+    id: 'cerebras',
+    label: 'Cerebras Inference',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    model: 'zai-glm-4.7',
+    needsKey: true,
+    hint: 'GLM-4.7 supports standard tool calling. Cerebras recommends temperature 0.8–1.0 when reasoning is enabled; adjust Temperature below.'
+  },
+  {
     id: 'ollama',
     label: 'Ollama (local)',
     baseUrl: 'http://127.0.0.1:11434/v1',
