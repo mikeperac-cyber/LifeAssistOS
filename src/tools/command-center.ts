@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ToolDef } from '../shared/types'
+import type { EmailTaskProvider, ToolDef } from '../shared/types'
 import type { PlanningStore } from '../core/planning'
 import type { VaultStore } from '../core/vault'
 
@@ -54,6 +54,32 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     run: async (args) => planning.addTask(args)
   }
 
+  const createEmailFollowupTask: ToolDef<{ provider: EmailTaskProvider; messageId: string; title: string; notes?: string; dueDate?: string; remindAt?: string; priority?: 'low' | 'normal' | 'high' }, unknown> = {
+    name: 'create_email_followup_task',
+    description: 'Create a local Today task based on a Gmail or Outlook email after approval. This tool does not access email. Use a message ID from an email the user has selected and approved for reading. Store only the provider and message ID as source provenance; include email content in task notes only when the user requests it, and show those notes in the approval preview. Set remindAt only when the user explicitly asks for a notification.',
+    risk: 'write',
+    input: z.object({
+      provider: z.enum(['gmail', 'outlook']),
+      messageId: z.string().trim().min(1).max(512).refine((id) => !/[\u0000-\u001f\u007f]/.test(id), 'Email message IDs cannot contain control characters.'),
+      title: z.string().trim().min(1).max(240),
+      notes: z.string().trim().max(2000).optional(),
+      dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      remindAt: z.string().datetime({ offset: true }).optional(),
+      priority: z.enum(['low', 'normal', 'high']).optional()
+    }),
+    scope: () => ({ kind: 'none' }),
+    preview: (args) => [
+      `Create a local Today task from ${args.provider === 'gmail' ? 'Gmail' : 'Outlook'} email message ID ${args.messageId}.`,
+      `Title: ${args.title}`,
+      args.notes ? `Notes saved to this task:\n${args.notes}` : 'No email body or notes will be copied into the task.',
+      args.dueDate ? `Due date: ${args.dueDate}` : undefined,
+      args.remindAt ? `Reminder: ${args.remindAt}` : undefined,
+      `Priority: ${args.priority ?? 'normal'}`,
+      'The task stores only the email provider and message ID as provenance.'
+    ].filter(Boolean).join('\n'),
+    run: async ({ provider, messageId, ...task }) => planning.addTask({ ...task, emailSource: { provider, messageId } })
+  }
+
   const updateTask: ToolDef<{
     id: string
     title?: string
@@ -90,5 +116,5 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     run: async (args) => planning.updateTask(args.id, { status: 'done' })
   }
 
-  return [searchVault, listToday, saveVault, captureInbox, createTask, updateTask, completeTask]
+  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, updateTask, completeTask]
 }

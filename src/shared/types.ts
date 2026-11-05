@@ -642,6 +642,12 @@ export interface VaultSearchResult {
 
 export type PlanTaskStatus = 'open' | 'done' | 'cancelled'
 export type PlanTaskPriority = 'low' | 'normal' | 'high'
+export type EmailTaskProvider = 'gmail' | 'outlook'
+
+export interface EmailTaskSource {
+  provider: EmailTaskProvider
+  messageId: string
+}
 
 export interface PlanTask {
   id: string
@@ -657,6 +663,7 @@ export interface PlanTask {
   completedAt: string | null
   sourceInboxId?: string
   sourceGoalId?: string
+  emailSource?: EmailTaskSource
 }
 
 export interface InboxItem {

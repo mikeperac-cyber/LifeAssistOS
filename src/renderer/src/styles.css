@@ -3305,6 +3305,7 @@ summary:focus-visible {
 .today-task-copy { flex: 1; min-width: 120px; }
 .today-task strong { color: var(--text); font-size: 12px; font-weight: 600; }
 .today-task span { color: var(--faint); font-size: 10px; }
+.today-task .today-task-source { width: fit-content; padding: 2px 6px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--accent); font-size: 9px; }
 .task-reminder-button { flex: 0 0 auto; padding: 6px 8px; font-size: 10px; }
 .task-reminder-editor { flex: 1 1 100%; flex-direction: row !important; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .task-reminder-editor input { min-width: 180px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10px; }

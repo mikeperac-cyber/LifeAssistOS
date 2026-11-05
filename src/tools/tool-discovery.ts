@@ -63,8 +63,8 @@ function tokenize(text: string): string[] {
 }
 
 function aliasesForTool(name: string): string {
-  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft') {
-    return 'eposta mail gelen kutusu taslak gonder yanit alici'
+  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft' || name === 'create_email_followup_task') {
+    return 'eposta mail gelen kutusu taslak gonder yanit alici task followup follow-up task from email email follow-up make a task'
   }
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') {
     return 'outlook calendar event meeting appointment agenda availability takvim etkinlik toplanti randevu musaitlik ajanda'
@@ -82,7 +82,7 @@ function aliasesForTool(name: string): string {
   if (name.includes('coaching') || name === 'get_coaching_context') {
     return 'koc kocluk kisisel isletme hedef gunluk yansima aliskanlik motivasyon'
   }
-  if (name === 'list_today' || name === 'create_task' || name === 'capture_inbox' ||
+  if (name === 'list_today' || name === 'create_task' || name === 'create_email_followup_task' || name === 'capture_inbox' ||
       name === 'update_task' || name === 'complete_task' || name.startsWith('schedule_agent_task') ||
       name === 'list_scheduled_agent_tasks') {
     return 'bugun yarin gorev yapilacak hatirlatma oncelik plan otomasyon zamanlama'

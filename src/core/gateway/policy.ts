@@ -64,6 +64,7 @@ export const defaultPolicy: PolicyConfig = {
     save_vault_document: 'ask',
     capture_inbox: 'ask',
     create_task: 'ask',
+    create_email_followup_task: 'ask',
     update_task: 'ask',
     complete_task: 'ask',
     get_coaching_context: 'allow',

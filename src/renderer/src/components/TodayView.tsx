@@ -224,6 +224,7 @@ export function TodayView({ googleTasksSettings, microsoftTodoSettings, microsof
                 <button type="button" className="task-check" onClick={() => void complete(item.id)} aria-label={`Complete ${item.title}`}>○</button>
                 <div className="today-task-copy">
                   <strong>{item.title}</strong>
+                  {item.emailSource && <span className="today-task-source" title={`Message ID: ${item.emailSource.messageId}`}>From {item.emailSource.provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
                   {item.dueDate && <span>Due {item.dueDate}</span>}
                   {item.remindAt && editingReminderId !== item.id && <span>Reminder {formatReminder(item.remindAt)}</span>}
                 </div>

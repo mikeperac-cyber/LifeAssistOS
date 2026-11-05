@@ -69,5 +69,6 @@ describe('defaultPolicy completeness', () => {
     }
 
     expect(missing).toEqual([])
+    expect(resolveDecision('create_email_followup_task', 'write', defaultPolicy).decision).toBe('ask')
   })
 })

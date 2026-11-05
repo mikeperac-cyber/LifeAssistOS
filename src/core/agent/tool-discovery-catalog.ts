@@ -43,7 +43,7 @@ export function selectToolSpecsForTurn(tools: ProviderToolSpec[], prompt: string
 
 export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('mcp__')) return 'mcp'
-  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft') return 'email'
+  if (name.startsWith('gmail_') || name.startsWith('microsoft_mail_') || name === 'create_email_draft' || name === 'create_email_followup_task') return 'email'
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event') return 'calendar'
   if (name.startsWith('google_drive_')) return 'drive'
   if (name.startsWith('google_tasks_')) return 'planning'
@@ -51,7 +51,7 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.includes('memory') || name === 'recall_memory') return 'memory'
   if (name.includes('coaching') || name === 'get_coaching_context') return 'coaching'
   if (name.includes('vault')) return 'vault'
-  if (name === 'list_today' || name === 'capture_inbox' || name === 'create_task' || name === 'update_task' ||
+  if (name === 'list_today' || name === 'capture_inbox' || name === 'create_task' || name === 'create_email_followup_task' || name === 'update_task' ||
     name === 'complete_task' || name === 'schedule_agent_task' || name === 'list_scheduled_agent_tasks') {
     return 'planning'
   }
