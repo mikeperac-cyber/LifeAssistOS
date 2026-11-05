@@ -3479,6 +3479,49 @@ summary:focus-visible {
 .email-search-header p { max-width: 670px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .email-search-boundary { display: flex; max-width: 290px; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid rgba(var(--accent-rgb), .2); border-radius: 9px; background: var(--accent-dim); color: var(--muted); font-size: 10px; line-height: 1.45; }
 .email-search-boundary strong { color: var(--accent); font-size: 10px; }
+.cloud-files-view { display: flex; flex-direction: column; gap: 14px; max-width: 1240px; margin: 0 auto; }
+.cloud-files-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 2px 1px; }
+.cloud-files-header h2 { margin: 4px 0 6px; font-size: 22px; letter-spacing: -0.035em; }
+.cloud-files-header p { max-width: 720px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.cloud-files-header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
+.cloud-files-header-actions .ghost-button { padding: 7px 9px; font-size: 10px; }
+.cloud-files-provider { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; }
+.cloud-files-provider select { max-width: 210px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 10px; }
+.cloud-files-source-badge { padding: 6px 9px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--panel); color: var(--accent); font-size: 10px; white-space: nowrap; }
+.cloud-files-privacy { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid rgba(var(--accent-rgb), .2); border-radius: 9px; background: var(--accent-dim); color: var(--muted); font-size: 10px; line-height: 1.45; }
+.cloud-files-privacy strong { color: var(--accent); font-size: 10px; }
+.cloud-files-search { display: flex; flex-direction: column; gap: 7px; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.cloud-files-search > label { color: var(--muted); font-size: 10px; font-weight: 600; }
+.cloud-files-search-row { display: flex; align-items: center; gap: 8px; }
+.cloud-files-search-row input { min-width: 0; flex: 1; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
+.cloud-files-search-row button { flex: 0 0 auto; padding: 8px 11px; font-size: 10px; }
+.cloud-files-layout { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr); align-items: start; gap: 13px; }
+.cloud-files-results, .cloud-files-reader { min-width: 0; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.cloud-files-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.cloud-files-section-head h3 { margin: 1px 0 4px; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+.cloud-files-section-head span { color: var(--faint); font-size: 9px; overflow-wrap: anywhere; }
+.cloud-files-section-head .ghost-button { flex: 0 0 auto; padding: 6px 8px; font-size: 9px; }
+.cloud-files-note { margin: 0 0 9px; color: var(--faint); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.cloud-files-result-list { display: flex; max-height: 560px; flex-direction: column; gap: 6px; overflow: auto; }
+.cloud-files-result { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 4px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
+.cloud-files-result:hover:not(:disabled) { border-color: var(--line); }
+.cloud-files-result.active { border-color: rgba(var(--accent-rgb), .38); background: var(--accent-dim); }
+.cloud-files-result strong { color: var(--text); font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
+.cloud-files-result span, .cloud-files-result small { color: var(--faint); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
+.cloud-files-result .cloud-files-path { color: var(--muted); }
+.cloud-files-reader { min-height: 250px; }
+.cloud-files-text { max-height: 560px; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-files-reader > .ghost-button { padding: 6px 8px; font-size: 9px; }
+.cloud-files-reader-empty { display: flex; min-height: 210px; flex-direction: column; align-items: center; justify-content: center; padding: 16px; text-align: center; }
+.cloud-files-reader-empty > span { color: var(--accent); font-size: 22px; }
+.cloud-files-reader-empty h3, .cloud-files-connect-empty h3, .cloud-files-first-search h3 { margin: 8px 0 5px; color: var(--text); font-size: 12px; }
+.cloud-files-reader-empty p, .cloud-files-connect-empty p, .cloud-files-first-search p { max-width: 560px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.cloud-files-error { margin: 0; padding: 9px 10px; border: 1px solid var(--red-dim); border-radius: 8px; background: var(--red-dim); color: var(--red); font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+.cloud-files-status { margin: 0; color: var(--accent); font-size: 10px; line-height: 1.45; }
+.cloud-files-empty { margin: 0; padding: 16px 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.cloud-files-disconnected, .cloud-files-connect-empty, .cloud-files-first-search { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 17px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.cloud-files-disconnected p { margin: 0; color: var(--amber); font-size: 10px; line-height: 1.45; }
+.cloud-files-connect-empty .primary-button { margin-top: 5px; padding: 8px 10px; font-size: 10px; }
 .email-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; gap: 14px; }
 .email-search-grid .today-email-panel { min-width: 0; margin-top: 0; }
 .email-search-task-warning { margin: 0; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); color: var(--amber); font-size: 10px; line-height: 1.45; }
@@ -3653,10 +3696,18 @@ summary:focus-visible {
   .research-projects { min-height: auto; }
   .research-project-list { max-height: 180px; }
   .today-grid { grid-template-columns: 1fr; }
+  .cloud-files-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 680px) {
+  .cloud-files-header { flex-direction: column; }
+  .cloud-files-header-actions { width: 100%; justify-content: flex-start; }
 }
 
 @media (max-width: 620px) {
   .research-view, .vault-view, .today-view, .teaching-view { padding: 17px 14px 28px; }
+  .cloud-files-search-row { align-items: stretch; flex-direction: column; }
+  .cloud-files-search-row button { align-self: flex-start; }
   .research-source-add, .task-add { flex-wrap: wrap; }
   .research-source-add input, .task-add input:first-child { flex-basis: 100%; }
   .task-add input[type='date'], .task-add input[type='datetime-local'], .task-add select { flex: 1; width: auto; }

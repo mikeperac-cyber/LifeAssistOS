@@ -232,6 +232,62 @@ export interface GoogleDriveSettingsResult {
   settings?: PublicGoogleDriveSettings
 }
 
+export type ConnectedFileProvider = 'google_drive' | 'microsoft_onedrive'
+
+export interface ConnectedCloudFile {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime?: string
+  size?: string | number
+  parentPath?: string
+}
+
+export interface ConnectedCloudFileSearchResult {
+  ok: boolean
+  error?: string
+  files?: ConnectedCloudFile[]
+  nextPageToken?: string
+  note?: string
+}
+
+export interface ConnectedCloudFileReadInput {
+  fileId: string
+  fileName: string
+  mimeType: string
+  startChar?: number
+  maxChars?: number
+  startPage?: number
+  maxPages?: number
+  startRow?: number
+  maxRows?: number
+  startSheet?: number
+  maxSheets?: number
+}
+
+export interface ConnectedCloudFileReadOutput {
+  name?: string
+  mimeType?: string
+  format?: string
+  bytes?: number
+  text: string
+  note?: string
+  truncated?: boolean
+  nextStartChar?: number
+  nextChar?: number
+  nextPage?: number
+  nextSheet?: number
+  totalPages?: number
+  totalSheets?: number
+  sheetRanges?: Array<{ sheet: number; nextRow?: number }>
+}
+
+export interface ConnectedCloudFileReadResult {
+  ok: boolean
+  error?: string
+  output?: ConnectedCloudFileReadOutput
+}
+
 export interface GoogleTasksSettingsResult {
   ok: boolean
   error?: string
@@ -656,6 +712,8 @@ export interface AssistApi {
   updateGoogleDriveClientId(clientId: string): Promise<GoogleDriveSettingsResult>
   connectGoogleDrive(): Promise<GoogleDriveSettingsResult>
   disconnectGoogleDrive(): Promise<GoogleDriveSettingsResult>
+  searchGoogleDriveFiles(query: string, pageToken?: string): Promise<ConnectedCloudFileSearchResult>
+  readGoogleDriveFile(input: ConnectedCloudFileReadInput): Promise<ConnectedCloudFileReadResult>
   getGoogleTasksSettings(): Promise<PublicGoogleTasksSettings>
   updateGoogleTasksClientId(clientId: string): Promise<GoogleTasksSettingsResult>
   connectGoogleTasks(): Promise<GoogleTasksSettingsResult>
@@ -701,6 +759,8 @@ export interface AssistApi {
   getMicrosoftOneDriveConnectStatus(): Promise<MicrosoftOneDriveConnectStatusResult>
   cancelMicrosoftOneDriveConnect(): Promise<MicrosoftOneDriveConnectStatusResult>
   disconnectMicrosoftOneDrive(): Promise<MicrosoftOneDriveSettingsResult>
+  searchMicrosoftOneDriveFiles(query: string): Promise<ConnectedCloudFileSearchResult>
+  readMicrosoftOneDriveFile(input: ConnectedCloudFileReadInput): Promise<ConnectedCloudFileReadResult>
 
   onEvent(listener: (event: AssistEvent) => void): () => void
 }

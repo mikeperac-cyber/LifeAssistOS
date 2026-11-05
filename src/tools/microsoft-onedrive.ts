@@ -16,7 +16,7 @@ const searchInput = z.object({
 })
 const readInput = z.object({
   fileId: z.string().regex(/^[A-Za-z0-9!._=-]{1,512}$/).refine((value) => value !== '.' && value !== '..'),
-  fileName: z.string().trim().min(1).max(500).refine((value) => !/[\u0000-\u001f\u007f]/.test(value)),
+  fileName: z.string().min(1).max(500).refine((value) => value.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(value)),
   mimeType: z.string().min(1).max(200).describe('MIME type from the OneDrive search result.'),
   startChar: z.number().int().min(0).max(2_000_000).optional(),
   maxChars: z.number().int().min(200).max(6_000).default(5_000),
@@ -36,7 +36,7 @@ export function createMicrosoftOneDriveTools(service: MicrosoftOneDriveService):
     sessionApprovalAllowed: false,
     input: searchInput,
     scope: () => oneDriveScope(service),
-    preview: (args) => `Search OneDrive for “${preview(args.query)}” and inspect up to ${args.maxResults} file matches. Matching names and metadata will be sent to Microsoft and may be shared with your configured model provider.`,
+    preview: (args) => `Search OneDrive for “${preview(args.query)}” and inspect up to ${args.maxResults} file matches. The query is sent to Microsoft. In Cloud Files, matches stay in this view; when requested in Chat, matching metadata is also sent to your configured model provider.`,
     async run(args, context) {
       try { return await service.searchFiles(args.query, args.maxResults, context.signal) }
       catch (error) { throw new ToolError(error instanceof Error ? error.message : 'OneDrive search failed.') }
@@ -53,7 +53,7 @@ export function createMicrosoftOneDriveTools(service: MicrosoftOneDriveService):
       if (!service.isReady()) return oneDriveScope(service)
       return { kind: 'url', host: new URL(MICROSOFT_ONEDRIVE_API_ORIGIN).hostname, url: `/v1.0/me/drive/items/${encodeURIComponent(args.fileId)}/content` }
     },
-    preview: (args) => `Read the OneDrive search result “${preview(args.fileName)}” (${args.mimeType})${args.startPage ? ` from page ${args.startPage}` : ''}${args.startSheet ? ` from sheet ${args.startSheet}` : ''}${args.startRow ? ` at row ${args.startRow}` : ''}${args.startChar !== undefined ? ` at character ${args.startChar}` : ''} and return up to ${args.maxChars} characters. Microsoft’s temporary download link is limited to approved Microsoft hosts. The extract and assistant response may be saved in chat history.`,
+    preview: (args) => `Read the OneDrive search result “${preview(args.fileName)}” (${args.mimeType})${args.startPage ? ` from page ${args.startPage}` : ''}${args.startSheet ? ` from sheet ${args.startSheet}` : ''}${args.startRow ? ` at row ${args.startRow}` : ''}${args.startChar !== undefined ? ` at character ${args.startChar}` : ''} and return up to ${args.maxChars} characters. Microsoft’s temporary download link is limited to approved Microsoft hosts. In Cloud Files, the extract stays in this view; when requested in Chat, it is sent to your configured model and may be saved with the assistant response.`,
     async run(args, context) {
       try {
         const content = await service.readFileContent(args.fileId, context.signal, { name: args.fileName, mimeType: args.mimeType })

@@ -243,7 +243,7 @@ export class MicrosoftOneDriveService {
     const item = parsed.data
     const itemFile = item.file
     if (!itemFile) throw new Error('Microsoft Graph returned unexpected OneDrive file metadata.')
-    if (expected && (item.name !== expected.name || itemFile.mimeType.toLowerCase() !== expected.mimeType.toLowerCase())) {
+    if (expected && (publicFileName(item.name) !== expected.name || itemFile.mimeType.toLowerCase() !== expected.mimeType.toLowerCase())) {
       throw new Error('This OneDrive search result changed. Search again before reading the file.')
     }
     const mimeType = itemFile.mimeType.toLowerCase()
@@ -364,12 +364,16 @@ function toPublicFile(item: z.infer<typeof DRIVE_ITEM_SCHEMA>): MicrosoftOneDriv
   const modifiedTime = item.lastModifiedDateTime ? normalizeDateTime(item.lastModifiedDateTime) : undefined
   return {
     id: item.id,
-    name: item.name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) || 'Untitled file',
+    name: publicFileName(item.name),
     mimeType: item.file.mimeType.toLowerCase(),
     ...(item.size !== undefined ? { size: item.size } : {}),
     ...(modifiedTime ? { modifiedTime } : {}),
     ...(item.parentReference?.path ? { parentPath: item.parentReference.path.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 1_000) } : {})
   }
+}
+
+function publicFileName(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500) || 'Untitled file'
 }
 
 function normalizeDateTime(value: string): string | undefined {

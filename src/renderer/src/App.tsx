@@ -86,6 +86,7 @@ const TeachingView = lazy(() => import('./components/TeachingView').then((module
 const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
 const ConnectedEmailView = lazy(() => import('./components/ConnectedEmailView').then((module) => ({ default: module.ConnectedEmailView })))
+const ConnectedFilesView = lazy(() => import('./components/ConnectedFilesView').then((module) => ({ default: module.ConnectedFilesView })))
 const QuickCaptureDialog = lazy(() => import('./components/QuickCaptureDialog').then((module) => ({ default: module.QuickCaptureDialog })))
 const GlobalSearchDialog = lazy(() => import('./components/GlobalSearchDialog').then((module) => ({ default: module.GlobalSearchDialog })))
 
@@ -1696,6 +1697,14 @@ export default function App(): React.JSX.Element {
               onOpenSettings={() => setView('settings')}
               onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
               onMicrosoftMailSettingsRefresh={setMicrosoftMailSettings}
+            />
+          ))}
+          {view === 'cloud_files' && gateStartupView(['drive', 'microsoftOneDrive'], 'connected file services', (
+            <ConnectedFilesView
+              googleDriveSettings={googleDriveSettings}
+              microsoftOneDriveSettings={microsoftOneDriveSettings}
+              disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
+              onOpenSettings={() => setView('settings')}
             />
           ))}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (

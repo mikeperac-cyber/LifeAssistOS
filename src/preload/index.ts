@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
-import type { AssistApi, CalendarPrepTaskInput, EmailFollowupTaskInput, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type { AssistApi, CalendarPrepTaskInput, ConnectedCloudFileReadInput, EmailFollowupTaskInput, SettingsPatch, TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
 import type { ApprovalChoice, AssistantSkillInput, MemoryFactPatch, McpServerInput } from '../shared/types'
 import type { AssistEvent } from '../shared/types'
 
@@ -124,6 +124,10 @@ const api: AssistApi = {
   updateGoogleDriveClientId: (clientId: string) => ipcRenderer.invoke('assist:google-drive-client-id-update', clientId),
   connectGoogleDrive: () => ipcRenderer.invoke('assist:google-drive-connect'),
   disconnectGoogleDrive: () => ipcRenderer.invoke('assist:google-drive-disconnect'),
+  searchGoogleDriveFiles: (query: string, pageToken?: string) =>
+    ipcRenderer.invoke('assist:google-drive-search-files', query, pageToken),
+  readGoogleDriveFile: (input: ConnectedCloudFileReadInput) =>
+    ipcRenderer.invoke('assist:google-drive-read-file', input),
   getGoogleTasksSettings: () => ipcRenderer.invoke('assist:google-tasks-settings'),
   updateGoogleTasksClientId: (clientId: string) => ipcRenderer.invoke('assist:google-tasks-client-id-update', clientId),
   connectGoogleTasks: () => ipcRenderer.invoke('assist:google-tasks-connect'),
@@ -168,6 +172,10 @@ const api: AssistApi = {
   getMicrosoftOneDriveConnectStatus: () => ipcRenderer.invoke('assist:microsoft-onedrive-connect-status'),
   cancelMicrosoftOneDriveConnect: () => ipcRenderer.invoke('assist:microsoft-onedrive-connect-cancel'),
   disconnectMicrosoftOneDrive: () => ipcRenderer.invoke('assist:microsoft-onedrive-disconnect'),
+  searchMicrosoftOneDriveFiles: (query: string) =>
+    ipcRenderer.invoke('assist:microsoft-onedrive-search-files', query),
+  readMicrosoftOneDriveFile: (input: ConnectedCloudFileReadInput) =>
+    ipcRenderer.invoke('assist:microsoft-onedrive-read-file', input),
 
   onEvent: (listener: (event: AssistEvent) => void) => {
     const wrapped = (_event: IpcRendererEvent, payload: AssistEvent): void => listener(payload)

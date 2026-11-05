@@ -13,6 +13,7 @@ describe('global search helpers', () => {
     expect(searchNavigationViews('budget')).toContain('finances')
     expect(searchNavigationViews('gmail connection')).toContain('integrations')
     expect(searchNavigationViews('outlook email')).toContain('email')
+    expect(searchNavigationViews('onedrive files')).toContain('cloud_files')
     expect(searchNavigationViews('capture task')).toContain('today')
     expect(new Set(searchNavigationViews('')).size).toBe(searchNavigationViews('').length)
   })

@@ -5,6 +5,7 @@ const VIEW_KEYWORDS: Record<View, string> = {
   chat: 'assistant conversation conversations ask write create new',
   today: 'task tasks inbox capture reminder reminders plan',
   email: 'mail messages gmail outlook communication follow up followup correspondence',
+  cloud_files: 'cloud file files google drive onedrive microsoft storage search read pdf docx xlsx documents',
   coach: 'goal goals habits reflection personal business',
   scheduled: 'schedule schedules recurring automatic reminder',
   research: 'sources papers links web citations',

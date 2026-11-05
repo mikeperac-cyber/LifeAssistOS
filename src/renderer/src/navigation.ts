@@ -27,6 +27,10 @@ export const VIEW_META = {
     label: 'Knowledge Vault',
     description: 'Search durable notes and captured sources with local FTS5.'
   },
+  cloud_files: {
+    label: 'Cloud Files',
+    description: 'Search and read connected Google Drive and OneDrive files with per-action approval.'
+  },
   teaching: {
     label: 'LB English',
     description: 'IELTS Academic and English teaching packs for LB English.'
@@ -66,7 +70,7 @@ export type View = keyof typeof VIEW_META
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
   { label: 'Workspace', items: ['chat', 'today', 'coach'] },
   { label: 'Communication', items: ['email'] },
-  { label: 'Knowledge', items: ['memory', 'research', 'vault', 'teaching'] },
+  { label: 'Knowledge', items: ['memory', 'research', 'vault', 'cloud_files', 'teaching'] },
   { label: 'Tools', items: ['scheduled', 'workflows', 'skills', 'integrations', 'finances'] },
   { label: 'System', items: ['activity', 'settings'] }
 ]
@@ -93,6 +97,7 @@ export function resolveIntegrationTargetView(id: string): View {
   if (
     id === 'today' ||
     id === 'email' ||
+    id === 'cloud_files' ||
     id === 'research' ||
     id === 'vault' ||
     id === 'teaching' ||

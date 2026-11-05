@@ -305,6 +305,10 @@ describe('Google Drive reads and tools', () => {
     expect(tools.every((tool) => tool.risk === 'external' && tool.sessionApprovalAllowed === false)).toBe(true)
     expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask'])
     expect(tools[0]?.scope?.({ query: 'reports', maxResults: 3 }, { grants: {} as never, primaryGrantId: '' })).toMatchObject({ kind: 'url', host: 'www.googleapis.com' })
+    expect(tools[1]?.input.parse({ fileId: 'abcde_123', fileName: ' Report.pdf ', mimeType: 'application/pdf' }))
+      .toMatchObject({ fileName: ' Report.pdf ' })
+    expect(await tools[0]?.preview?.({ query: 'reports', maxResults: 10 }, {} as never)).toContain('In Cloud Files, matches stay in this view')
+    expect(await tools[1]?.preview?.({ fileId: 'abcde_123', fileName: 'Report.pdf', mimeType: 'application/pdf', maxChars: 5_000 }, {} as never)).toContain('when requested in Chat')
   })
 })
 

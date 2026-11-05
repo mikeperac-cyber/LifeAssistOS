@@ -23,12 +23,12 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'browser', title: 'Interactive Browser', category: 'Web actions', description: 'Visible, isolated browser for inspecting pages and acting on exact allowlisted HTTPS domains.', access: 'Exact domain allowlist · per-action approval', status: 'available', tone: 'purple' },
   { id: 'google_calendar', title: 'Google Calendar', category: 'Planning', description: 'View today’s events, create local prep tasks, or open a meeting-prep draft that can use approved Drive files and local notes.', access: 'Owned event scope · approval for reads, changes, task creation, and Drive access', status: 'available', tone: 'teal' },
   { id: 'google_gmail', title: 'Gmail', category: 'Communication', description: 'Search and read messages in Chat, create drafts or send with typed confirmation, and add local follow-up tasks from Today.', access: 'Read + draft approval · typed SEND · separate local task approval', status: 'available', tone: 'blue' },
-  { id: 'google_drive', title: 'Google Drive', category: 'Work', description: 'Search and analyze selected Docs, Sheets, Slides, PDFs, DOCX, XLSX, and text files with approval for each action.', access: 'Broad read-only scope · per-action approval', status: 'available', tone: 'teal' },
+  { id: 'google_drive', title: 'Google Drive', category: 'Work', description: 'Search and read selected files in Cloud Files or Chat. Docs, Sheets, Slides, PDFs, DOCX, XLSX, and supported text files ask for approval each time.', access: 'Broad read-only scope · per-action approval', status: 'available', tone: 'teal' },
   { id: 'google_tasks', title: 'Google Tasks', category: 'Planning', description: 'View open tasks from a selected Google Tasks list and send local Today tasks into that list.', access: 'OAuth tasks · approval for every read and task send; existing read-only connections must reconnect', status: 'available', tone: 'blue' },
   { id: 'microsoft_todo', title: 'Microsoft To Do', category: 'Planning', description: 'View open tasks from a selected Microsoft To Do list and send local Today tasks into that list.', access: 'Delegated Tasks.ReadWrite · approval for every read and task send; existing read-only connections must reconnect', status: 'available', tone: 'blue' },
   { id: 'microsoft_calendar', title: 'Outlook Calendar', category: 'Planning', description: 'View Outlook events, create local prep tasks, or open a meeting-prep draft that can use approved Drive files and local notes.', access: 'Delegated Calendars.ReadBasic · approval for event pages, local tasks, and Drive access', status: 'available', tone: 'teal' },
   { id: 'microsoft_mail', title: 'Outlook Mail', category: 'Communication', description: 'Search and read selected messages in Chat, or add local follow-up tasks from Today. Sending is not available.', access: 'Delegated Mail.Read · approval for each search, message read, and local task', status: 'available', tone: 'blue' },
-  { id: 'microsoft_onedrive', title: 'Microsoft OneDrive', category: 'Work', description: 'Search and analyze selected PDF, DOCX, XLSX, and supported text files in Chat. File changes and uploads are not available.', access: 'Delegated Files.Read · approval for each search and file read', status: 'available', tone: 'teal' },
+  { id: 'microsoft_onedrive', title: 'Microsoft OneDrive', category: 'Work', description: 'Search and read selected PDF, DOCX, XLSX, and supported text files in Cloud Files or Chat. File changes and uploads are not available.', access: 'Delegated Files.Read · approval for each search and file read', status: 'available', tone: 'teal' },
   { id: 'memory', title: 'Personal Memory', category: 'Context', description: 'Approved facts are automatically recalled when relevant, with citations.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
   { id: 'skills', title: 'User Skills', category: 'Context', description: 'Reusable plain-text guidance loaded only when relevant to a task.', access: 'Local library · no added permissions', status: 'local', tone: 'purple' },
   { id: 'finances', title: 'Finance Ledger', category: 'Life admin', description: 'Categorized local income and expenses; no bank access or transfers.', access: 'Read + approved writes', status: 'local', tone: 'amber' },
@@ -103,11 +103,14 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const microsoftOneDriveNeedsReconnect = item.id === 'microsoft_onedrive' && !microsoftOneDriveSettings?.connected && microsoftOneDriveSettings?.tokenStored === true
           const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected || microsoftOneDriveConnected
           const emailSearchConnected = (item.id === 'google_gmail' && gmailConnected) || (item.id === 'microsoft_mail' && microsoftMailConnected)
+          const browseFilesConnected = (item.id === 'google_drive' && driveConnected) || (item.id === 'microsoft_onedrive' && microsoftOneDriveConnected)
           const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect || microsoftOneDriveNeedsReconnect
           const status = connectedStatus ? 'ready' : item.status
           const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
           const actionLabel = emailSearchConnected
             ? 'Search email'
+            : browseFilesConnected
+              ? 'Browse files'
             : item.id === 'helper'
             ? 'Use in Chat'
             : item.id === 'files'
@@ -126,7 +129,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               <div className="integration-access">{item.access}</div>
-              <button className="ghost-button" type="button" onClick={() => onOpen(emailSearchConnected ? 'email' : item.id)}>{actionLabel}</button>
+              <button className="ghost-button" type="button" onClick={() => onOpen(emailSearchConnected ? 'email' : browseFilesConnected ? 'cloud_files' : item.id)}>{actionLabel}</button>
             </article>
           )
         })}

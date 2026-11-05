@@ -189,6 +189,7 @@ function iconForView(view: View): React.JSX.Element {
     coach: '✧',
     today: '◷',
     email: '✉',
+    cloud_files: '▤',
     scheduled: '◴',
     research: '⌕',
     vault: '▣',

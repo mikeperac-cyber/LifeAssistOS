@@ -152,6 +152,34 @@ describe('Microsoft OneDrive settings and read-only Graph boundary', () => {
     expect(request).toHaveBeenCalledTimes(4)
   })
 
+  it('reads files using the same whitespace-normalized name returned by search', async () => {
+    const store = await configuredStore()
+    const downloadUrl = 'https://tenant-my.sharepoint.com/download?token=short-lived'
+    const request = vi.fn<MicrosoftOneDriveRequest>(async (url, _signal, options) => {
+      if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
+      if (url.hostname === 'graph.microsoft.com' && url.pathname.includes('/search(')) {
+        return response(JSON.stringify({ value: [
+          { id: 'file-123', name: '  Guide   report.pdf  ', size: 10, file: { mimeType: 'application/pdf' } }
+        ] }))
+      }
+      if (url.pathname.endsWith('/content')) return response('', 302, '', downloadUrl)
+      if (url.hostname === 'graph.microsoft.com') {
+        return response(JSON.stringify({
+          id: 'file-123', name: '  Guide   report.pdf  ', size: 10, file: { mimeType: 'application/pdf' }
+        }))
+      }
+      expect(options.headers?.Authorization).toBeUndefined()
+      return response('', 200, 'application/pdf', undefined, Buffer.from('%PDF-1.7 test'))
+    })
+    const service = new MicrosoftOneDriveService(store, { request, openExternal: async () => undefined })
+    const signal = new AbortController().signal
+    const search = await service.searchFiles('Guide', 10, signal)
+    const selected = search.files[0]
+    expect(selected?.name).toBe('Guide report.pdf')
+    const read = await service.readFileContent('file-123', signal, { name: selected!.name, mimeType: selected!.mimeType })
+    expect(read.file.name).toBe('Guide report.pdf')
+  })
+
   it('rejects download-link host tricks and does not request them', async () => {
     const store = await configuredStore()
     const request = vi.fn<MicrosoftOneDriveRequest>(async (url) => {
@@ -192,6 +220,10 @@ describe('Microsoft OneDrive settings and read-only Graph boundary', () => {
       expect(defaultPolicy.tools[tool.name]).toBe('ask')
       expect(tool.description).toContain('OneDrive')
     }
+    expect(tools[0]?.preview?.({ query: 'reports', maxResults: 10 }, {} as never)).toContain('In Cloud Files, matches stay in this view')
+    expect(tools[1]?.preview?.({ fileId: 'file-123', fileName: 'Report.pdf', mimeType: 'application/pdf', maxChars: 5_000 }, {} as never)).toContain('when requested in Chat')
+    expect(tools[1]?.input.parse({ fileId: 'file-123', fileName: ' Report.pdf ', mimeType: 'application/pdf' }))
+      .toMatchObject({ fileName: ' Report.pdf ' })
     expect(optionalToolDomain('microsoft_onedrive_search_files')).toBe('drive')
   })
 })

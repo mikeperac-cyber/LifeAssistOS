@@ -61,7 +61,15 @@ import type {
   ToolCall,
   ToolContext
 } from '../shared/types'
-import type { TodayTaskExportClearInput, TodayTaskExportInput } from '../shared/ipc'
+import type {
+  ConnectedCloudFile,
+  ConnectedCloudFileReadInput,
+  ConnectedCloudFileReadOutput,
+  ConnectedCloudFileReadResult,
+  ConnectedCloudFileSearchResult,
+  TodayTaskExportClearInput,
+  TodayTaskExportInput
+} from '../shared/ipc'
 import { createFileCheckpointTools, createWriteFileTool, fsTools } from '../tools/fs'
 import { readPdfTool } from '../tools/pdf'
 import { readOfficeDocumentTool } from '../tools/office-document'
@@ -1935,6 +1943,182 @@ function registerIpc(): void {
     }
   })
 
+  const executeCloudFileTool = async (
+    name: string,
+    args: unknown,
+    summary: string,
+    connected: boolean,
+    tainted = false
+  ): Promise<{ ok: boolean; output?: unknown; error?: string }> => {
+    if (!gateway) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (!connected) return { ok: false, error: 'Connect this file service in Settings first.' }
+    if (hasRunningAssistantTask()) return { ok: false, error: 'Wait for the current task to finish first.' }
+    directToolBusy = true
+    try {
+      sendToRenderer({ type: 'busy', busy: true })
+      const result = await gateway.execute({ id: randomUUID(), name, args, summary, tainted })
+      return result.ok
+        ? { ok: true, output: result.output }
+        : { ok: false, error: result.error ?? 'The approved file action did not complete.' }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    } finally {
+      directToolBusy = false
+      try { sendToRenderer({ type: 'busy', busy: false }) }
+      catch (error) { console.error('[cloud-files] could not clear the renderer busy state', error) }
+    }
+  }
+
+  const normalizeCloudFile = (value: unknown, provider: 'google_drive' | 'microsoft_onedrive'): ConnectedCloudFile | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const row = value as Record<string, unknown>
+    if (typeof row.id !== 'string' || row.id.length < 1 || row.id.length > 512 || /[\u0000-\u001f\u007f]/.test(row.id) ||
+        typeof row.name !== 'string' || row.name.trim().length < 1 || row.name.length > 500 || /[\u0000-\u001f\u007f]/.test(row.name) ||
+        typeof row.mimeType !== 'string' || row.mimeType.length < 1 || row.mimeType.length > 200) return null
+    if (provider === 'google_drive' && !/^[A-Za-z0-9_-]{5,200}$/.test(row.id)) return null
+    if (provider === 'microsoft_onedrive' && (!/^[A-Za-z0-9!._=-]{1,512}$/.test(row.id) || row.id === '.' || row.id === '..')) return null
+    return {
+      id: row.id,
+      name: row.name,
+      mimeType: row.mimeType.slice(0, 200),
+      ...(typeof row.modifiedTime === 'string' && row.modifiedTime.length <= 128 ? { modifiedTime: row.modifiedTime } : {}),
+      ...(typeof row.size === 'string' && /^\d{1,24}$/.test(row.size) ? { size: row.size } :
+        typeof row.size === 'number' && Number.isSafeInteger(row.size) && row.size >= 0 ? { size: row.size } : {}),
+      ...(typeof row.parentPath === 'string' && row.parentPath.length <= 2_048
+        ? { parentPath: row.parentPath.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 1_000) }
+        : {})
+    }
+  }
+
+  const readCloudFile = async (
+    input: unknown,
+    provider: 'google_drive' | 'microsoft_onedrive'
+  ): Promise<ConnectedCloudFileReadResult> => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return { ok: false, error: 'Select a file from the search results.' }
+    }
+    const row = input as Record<string, unknown>
+    if (typeof row.fileId !== 'string' || row.fileId.length < 1 || row.fileId.length > 512 ||
+        typeof row.fileName !== 'string' || row.fileName.trim().length < 1 || row.fileName.length > 500 || /[\u0000-\u001f\u007f]/.test(row.fileName) ||
+        typeof row.mimeType !== 'string' || row.mimeType.length < 1 || row.mimeType.length > 200 || /[\u0000-\u001f\u007f]/.test(row.mimeType)) {
+      return { ok: false, error: 'The selected file details are invalid. Search again and select a result.' }
+    }
+    const bounds: Record<keyof Omit<ConnectedCloudFileReadInput, 'fileId' | 'fileName' | 'mimeType'>, [number, number]> = {
+      startChar: [0, 2_000_000], maxChars: [200, 6_000], startPage: [1, 100_000], maxPages: [1, 20],
+      startRow: [1, 1_048_577], maxRows: [1, 500], startSheet: [1, 10_000], maxSheets: [1, 10]
+    }
+    const args: ConnectedCloudFileReadInput = {
+      fileId: row.fileId,
+      fileName: row.fileName,
+      mimeType: row.mimeType
+    }
+    for (const key of Object.keys(bounds) as Array<keyof typeof bounds>) {
+      const value = row[key]
+      if (value === undefined) continue
+      const [minimum, maximum] = bounds[key]
+      if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
+        return { ok: false, error: `The selected file has an invalid ${key} value.` }
+      }
+      args[key] = value
+    }
+
+    const drive = provider === 'google_drive'
+    const result = await executeCloudFileTool(
+      drive ? 'google_drive_read_file' : 'microsoft_onedrive_read_file',
+      args,
+      `Read a selected ${drive ? 'Google Drive' : 'OneDrive'} file in Cloud Files`,
+      drive ? Boolean(googleDrive?.isReady()) : Boolean(microsoftOneDrive?.isReady()),
+      true
+    )
+    if (!result.ok) return { ok: false, error: result.error }
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return { ok: false, error: 'The file service returned an unexpected read response.' }
+    }
+    const output = result.output as Record<string, unknown>
+    if (typeof output.text !== 'string' || output.text.length > 6_000) {
+      return { ok: false, error: 'The file service returned an invalid or oversized text extract.' }
+    }
+    const numberField = (key: string): number | undefined =>
+      typeof output[key] === 'number' && Number.isSafeInteger(output[key]) && (output[key] as number) >= 0
+        ? output[key] as number
+        : undefined
+    const normalized: ConnectedCloudFileReadOutput = {
+      text: output.text,
+      ...(typeof output.name === 'string' ? { name: output.name.slice(0, 500) } : {}),
+      ...(typeof output.mimeType === 'string' ? { mimeType: output.mimeType.slice(0, 200) } : {}),
+      ...(typeof output.format === 'string' ? { format: output.format.slice(0, 30) } : {}),
+      ...(numberField('bytes') !== undefined ? { bytes: numberField('bytes') } : {}),
+      ...(typeof output.note === 'string' ? { note: output.note.slice(0, 2_000) } : {}),
+      ...(typeof output.truncated === 'boolean' ? { truncated: output.truncated } : {}),
+      ...(['nextStartChar', 'nextChar', 'nextPage', 'nextSheet', 'totalPages', 'totalSheets'] as const)
+        .reduce<Partial<ConnectedCloudFileReadOutput>>((fields, key) => {
+          const value = numberField(key)
+          if (value !== undefined) fields[key] = value
+          return fields
+        }, {}),
+      ...(Array.isArray(output.sheetRanges)
+        ? { sheetRanges: output.sheetRanges.slice(0, 10).flatMap((range): Array<{ sheet: number; nextRow?: number }> => {
+          if (!range || typeof range !== 'object') return []
+          const entry = range as Record<string, unknown>
+          if (typeof entry.sheet !== 'number' || !Number.isSafeInteger(entry.sheet) || entry.sheet < 1) return []
+          return [{ sheet: entry.sheet, ...(typeof entry.nextRow === 'number' && Number.isSafeInteger(entry.nextRow) && entry.nextRow >= 1 ? { nextRow: entry.nextRow } : {}) }]
+        }) }
+        : {})
+    }
+    return { ok: true, output: normalized }
+  }
+
+  const searchCloudFiles = async (
+    provider: 'google_drive' | 'microsoft_onedrive',
+    query: string,
+    pageToken?: string
+  ): Promise<ConnectedCloudFileSearchResult> => {
+    const drive = provider === 'google_drive'
+    const result = await executeCloudFileTool(
+      drive ? 'google_drive_search_files' : 'microsoft_onedrive_search_files',
+      { query, maxResults: 10, ...(drive && pageToken ? { pageToken } : {}) },
+      `Search ${drive ? 'Google Drive' : 'OneDrive'} from Cloud Files`,
+      drive ? Boolean(googleDrive?.isReady()) : Boolean(microsoftOneDrive?.isReady()),
+      Boolean(pageToken)
+    )
+    if (!result.ok) return { ok: false, error: result.error }
+    if (!result.output || typeof result.output !== 'object' || Array.isArray(result.output)) {
+      return { ok: false, error: 'The file service returned an unexpected search response.' }
+    }
+    const output = result.output as Record<string, unknown>
+    if (!Array.isArray(output.files) || output.files.length > 20) {
+      return { ok: false, error: 'The file service returned an invalid file list.' }
+    }
+    const files = output.files.map((file) => normalizeCloudFile(file, provider))
+    if (files.some((file) => file === null)) return { ok: false, error: 'The file service returned an invalid file result. Search again.' }
+    return {
+      ok: true,
+      files: files as ConnectedCloudFile[],
+      ...(drive && typeof output.nextPageToken === 'string' && output.nextPageToken.length <= 2_048 && !/[\u0000-\u001f\u007f]/.test(output.nextPageToken)
+        ? { nextPageToken: output.nextPageToken }
+        : {}),
+      ...(typeof output.note === 'string' ? { note: output.note.slice(0, 1_000) } : {})
+    }
+  }
+
+  const validateCloudSearchQuery = (query: unknown): string | null => {
+    if (typeof query !== 'string') return null
+    const cleanQuery = query.trim()
+    return cleanQuery.length >= 2 && cleanQuery.length <= 120 && !/[\u0000-\u001f\u007f]/.test(cleanQuery)
+      ? cleanQuery
+      : null
+  }
+
+  ipcMain.handle('assist:google-drive-search-files', async (_event, query: unknown, pageToken: unknown) => {
+    const cleanQuery = validateCloudSearchQuery(query)
+    if (!cleanQuery || (pageToken !== undefined && (typeof pageToken !== 'string' || pageToken.length < 1 || pageToken.length > 2_048 || /[\u0000-\u001f\u007f]/.test(pageToken)))) {
+      return { ok: false, error: 'Enter a Drive search phrase between 2 and 120 printable characters.' }
+    }
+    return searchCloudFiles('google_drive', cleanQuery, typeof pageToken === 'string' ? pageToken : undefined)
+  })
+
+  ipcMain.handle('assist:google-drive-read-file', (_event, input: unknown) => readCloudFile(input, 'google_drive'))
+
   ipcMain.handle('assist:google-drive-settings', () =>
     googleDriveSettings?.public() ?? { clientId: '', connected: false, tokenStored: false }
   )
@@ -2645,6 +2829,14 @@ function registerIpc(): void {
       directToolBusy = false
     }
   })
+
+  ipcMain.handle('assist:microsoft-onedrive-search-files', async (_event, query: unknown) => {
+    const cleanQuery = validateCloudSearchQuery(query)
+    if (!cleanQuery) return { ok: false, error: 'Enter a OneDrive search phrase between 2 and 120 printable characters.' }
+    return searchCloudFiles('microsoft_onedrive', cleanQuery)
+  })
+
+  ipcMain.handle('assist:microsoft-onedrive-read-file', (_event, input: unknown) => readCloudFile(input, 'microsoft_onedrive'))
 
   ipcMain.handle('assist:settings-update', async (_event, patch: unknown) => {
     if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
