@@ -15,6 +15,7 @@ interface FinanceViewProps {
   loading: boolean
   disabled: boolean
   onPeriodChange: (period: Period) => void
+  onRefresh: () => void
   onAdd: (input: FinanceTransactionInput) => Promise<ToolResult>
 }
 
@@ -24,6 +25,7 @@ export function FinanceView({
   loading,
   disabled,
   onPeriodChange,
+  onRefresh,
   onAdd
 }: FinanceViewProps): React.JSX.Element {
   const [formOpen, setFormOpen] = useState(false)
@@ -35,7 +37,7 @@ export function FinanceView({
   const [note, setNote] = useState('')
   const [occurredAt, setOccurredAt] = useState('')
   const [saving, setSaving] = useState(false)
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   const categories = direction === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
   const categoryTotals = useMemo(() => report?.byCategory ?? [], [report])
@@ -43,7 +45,7 @@ export function FinanceView({
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setSaving(true)
-    setMessage('')
+    setMessage(null)
     const input: FinanceTransactionInput = {
       direction,
       amount: amount.trim(),
@@ -57,18 +59,44 @@ export function FinanceView({
     try {
       const result = await onAdd(input)
       if (result.ok) {
-        setMessage('Entry recorded after approval.')
+        setMessage({ ok: true, text: 'Entry recorded after approval.' })
         setAmount('')
         setMerchant('')
         setNote('')
         setOccurredAt('')
       } else {
-        setMessage(result.error ?? (result.denied ? 'Entry was not recorded.' : 'Could not record entry.'))
+        setMessage({ ok: false, text: result.error ?? (result.denied ? 'Entry was not recorded.' : 'Could not record entry.') })
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error))
+      setMessage({ ok: false, text: error instanceof Error ? error.message : String(error) })
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function exportCsv(): Promise<void> {
+    setMessage(null)
+    try {
+      const result = await window.assist.exportFinanceCsv()
+      if (result.ok && result.fileName) setMessage({ ok: true, text: `Exported ${result.fileName}.` })
+      else if (!result.cancelled) setMessage({ ok: false, text: result.error ?? 'Could not export the finance ledger.' })
+    } catch (error) {
+      setMessage({ ok: false, text: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  async function importCsv(): Promise<void> {
+    setMessage(null)
+    try {
+      const result = await window.assist.importFinanceCsv()
+      if (result.ok) {
+        setMessage({ ok: true, text: `Imported ${result.imported ?? 0} transaction(s).` })
+        onRefresh()
+      } else if (!result.cancelled && result.error) {
+        setMessage({ ok: false, text: result.error })
+      }
+    } catch (error) {
+      setMessage({ ok: false, text: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -99,12 +127,7 @@ export function FinanceView({
             className="ghost-button"
             type="button"
             disabled={disabled}
-            onClick={() =>
-              void window.assist.exportFinanceCsv().then((res) => {
-                if (res.ok && res.fileName) setMessage(`Exported ${res.fileName}.`)
-                else if (!res.cancelled && res.error) setMessage(res.error)
-              })
-            }
+            onClick={() => void exportCsv()}
           >
             Export CSV
           </button>
@@ -112,16 +135,7 @@ export function FinanceView({
             className="ghost-button"
             type="button"
             disabled={disabled}
-            onClick={() =>
-              void window.assist.importFinanceCsv().then((res) => {
-                if (res.ok) {
-                  setMessage(`Imported ${res.imported ?? 0} transaction(s).`)
-                  onPeriodChange(period)
-                } else if (!res.cancelled && res.error) {
-                  setMessage(res.error)
-                }
-              })
-            }
+            onClick={() => void importCsv()}
           >
             Import CSV
           </button>
@@ -172,7 +186,7 @@ export function FinanceView({
             <button className="primary-button" type="submit" disabled={disabled || saving}>
               {saving ? 'Waiting for approval…' : 'Review entry'}
             </button>
-            {message && <span className="settings-status">{message}</span>}
+            {message && <span className={`settings-status ${message.ok ? 'status-ok' : 'status-error'}`} role={message.ok ? 'status' : 'alert'}>{message.text}</span>}
           </div>
         </form>
       )}

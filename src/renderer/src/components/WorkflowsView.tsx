@@ -13,7 +13,7 @@ interface WorkflowsViewProps {
 }
 
 export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove, onCancel }: WorkflowsViewProps): React.JSX.Element {
-  const [status, setStatus] = useState('')
+  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [paramValues, setParamValues] = useState<Record<string, Record<string, string>>>({})
 
@@ -28,14 +28,17 @@ export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove,
   }
 
   async function run(id: string): Promise<void> {
-    setStatus('')
+    setStatus(null)
     try {
       const result = await onRun(id, paramValues[id])
-      setStatus(result.ok
-        ? `Completed all ${result.completedSteps} workflow steps.`
-        : `Stopped after ${result.completedSteps} of ${result.totalSteps} steps${result.error ? `: ${result.error}` : '.'}`)
+      setStatus({
+        ok: result.ok,
+        text: result.ok
+          ? `Completed all ${result.completedSteps} workflow steps.`
+          : `Stopped after ${result.completedSteps} of ${result.totalSteps} steps${result.error ? `: ${result.error}` : '.'}`
+      })
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
+      setStatus({ ok: false, text: error instanceof Error ? error.message : String(error) })
     }
   }
 
@@ -45,8 +48,13 @@ export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove,
       return
     }
     setRemovingId(null)
-    const result = await onRemove(id)
-    setStatus(result.ok ? 'Workflow removed.' : result.error ?? 'Could not remove workflow.')
+    setStatus(null)
+    try {
+      const result = await onRemove(id)
+      setStatus({ ok: result.ok, text: result.ok ? 'Workflow removed.' : result.error ?? 'Could not remove workflow.' })
+    } catch (error) {
+      setStatus({ ok: false, text: error instanceof Error ? error.message : String(error) })
+    }
   }
 
   return (
@@ -60,7 +68,7 @@ export function WorkflowsView({ workflows, runningId, disabled, onRun, onRemove,
         {runningId && <button className="stop-button" type="button" onClick={onCancel}>Stop workflow</button>}
       </header>
 
-      {status && <div className="workflow-status" role="status">{status}</div>}
+      {status && <div className={`workflow-status ${status.ok ? 'status-ok' : 'status-error'}`} role={status.ok ? 'status' : 'alert'}>{status.text}</div>}
 
       {workflows.length === 0 ? (
         <div className="finance-empty workflow-empty">

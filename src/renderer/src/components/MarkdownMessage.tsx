@@ -190,22 +190,30 @@ function InlineContent({
 
 function CodeBlockView({ language, code }: { language: string; code: string }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState('')
 
-  const copyCode = (): void => {
-    void navigator.clipboard?.writeText(code).then(() => {
+  const copyCode = async (): Promise<void> => {
+    setCopyError('')
+    try {
+      if (!navigator.clipboard) throw new Error('Clipboard access is unavailable.')
+      await navigator.clipboard.writeText(code)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    })
+    } catch {
+      setCopied(false)
+      setCopyError('Could not copy this code block.')
+    }
   }
 
   return (
     <div className="md-code-block">
       <div className="md-code-header">
         <span className="md-code-lang">{language}</span>
-        <button type="button" className="ghost-button md-copy-btn" onClick={copyCode}>
+        <button type="button" className="ghost-button md-copy-btn" onClick={() => void copyCode()}>
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
+      {copyError && <span className="md-copy-error" role="alert">{copyError}</span>}
       <pre>
         <code>{code}</code>
       </pre>

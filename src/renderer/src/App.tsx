@@ -237,59 +237,46 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     let alive = true
+    const loadFailures = new Set<string>()
+    const reportLoadFailure = (label: string, error: unknown): void => {
+      const detail = error instanceof Error ? error.message : String(error)
+      loadFailures.add(`${label}: ${detail}`)
+      setAppWarning(`Some app data could not be loaded: ${[...loadFailures].join('; ')}`)
+    }
+    const loadInitial = <T,>(label: string, request: () => Promise<T>, apply: (value: T) => void): void => {
+      void Promise.resolve().then(request).then((value) => {
+        if (alive) apply(value)
+      }).catch((error: unknown) => {
+        if (alive) reportLoadFailure(label, error)
+      })
+    }
 
-    void window.assist.getAudit().then((events) => {
-      if (alive) setAudit(events)
-    })
-    void window.assist.getAuditIntegrity().then((integrity) => {
-      if (alive) setAuditIntegrity(integrity)
-    })
-    void window.assist.getChatState().then((result) => {
-      if (alive && result.ok && result.state) {
+    loadInitial('Activity log', () => window.assist.getAudit(), setAudit)
+    loadInitial('Activity log integrity', () => window.assist.getAuditIntegrity(), setAuditIntegrity)
+    loadInitial('Chat history', () => window.assist.getChatState(), (result) => {
+      if (result.ok && result.state) {
         setSessions(result.state.sessions)
         setActiveSessionId(result.state.activeSessionId)
         setTimeline(timelineFor(result.state.messages))
+      } else {
+        reportLoadFailure('Chat history', result.error ?? 'The chat store is not ready.')
       }
     })
-    void window.assist.getGrants().then((list) => {
-      if (alive) setGrants(list)
+    loadInitial('Approved folders', () => window.assist.getGrants(), setGrants)
+    loadInitial('Allowed domains', () => window.assist.getAllowedDomains(), setAllowedDomains)
+    loadInitial('Settings', () => window.assist.getSettings(), (value) => {
+      setSettings(value)
+      setOnboardingOpen(!value.onboardingComplete)
     })
-    void window.assist.getAllowedDomains().then((domains) => {
-      if (alive) setAllowedDomains(domains)
-    })
-    void window.assist.getSettings().then((value) => {
-      if (alive) {
-        setSettings(value)
-        setOnboardingOpen(!value.onboardingComplete)
-      }
-    })
-    void window.assist.getLocalApiStatus().then((value) => {
-      if (alive) setLocalApiStatus(value)
-    })
-    void window.assist.getWebSearchSettings().then((value) => {
-      if (alive) setWebSearchSettings(value)
-    })
-    void window.assist.getGoogleCalendarSettings().then((value) => {
-      if (alive) setGoogleCalendarSettings(value)
-    })
-    void window.assist.getGoogleGmailSettings().then((value) => {
-      if (alive) setGoogleGmailSettings(value)
-    })
-    void window.assist.getGoogleDriveSettings().then((value) => {
-      if (alive) setGoogleDriveSettings(value)
-    })
-    void window.assist.getSpeechEndpoint().then((endpoint) => {
-      if (alive) setSpeechEndpoint(endpoint)
-    })
-    void window.assist.getWorkflows().then((list) => {
-      if (alive) setWorkflows(list)
-    })
-    void window.assist.getScheduledTasks().then((list) => {
-      if (alive) setScheduledTasks(list)
-    })
-    void window.assist.getSkills().then((list) => {
-      if (alive) setSkills(list)
-    })
+    loadInitial('Local API status', () => window.assist.getLocalApiStatus(), setLocalApiStatus)
+    loadInitial('Web search settings', () => window.assist.getWebSearchSettings(), setWebSearchSettings)
+    loadInitial('Google Calendar settings', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
+    loadInitial('Gmail settings', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
+    loadInitial('Google Drive settings', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
+    loadInitial('Speech settings', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
+    loadInitial('Workflows', () => window.assist.getWorkflows(), setWorkflows)
+    loadInitial('Scheduled tasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
+    loadInitial('Skills', () => window.assist.getSkills(), setSkills)
 
     return () => {
       alive = false
@@ -340,10 +327,14 @@ export default function App(): React.JSX.Element {
             setMemoryVersion((version) => version + 1)
           }
           if (resultTool === 'schedule_agent_task' && event.result.ok) {
-            void window.assist.getScheduledTasks().then(setScheduledTasks)
+            void window.assist.getScheduledTasks().then(setScheduledTasks).catch((error: unknown) => {
+              setAppWarning(`Scheduled tasks could not be refreshed: ${error instanceof Error ? error.message : String(error)}`)
+            })
           }
           if (resultTool === 'save_skill' && event.result.ok) {
-            void window.assist.getSkills().then(setSkills)
+            void window.assist.getSkills().then(setSkills).catch((error: unknown) => {
+              setAppWarning(`Skills could not be refreshed: ${error instanceof Error ? error.message : String(error)}`)
+            })
           }
           toolNamesByCallId.current.delete(event.result.callId)
           setTimeline((previous) =>
@@ -411,6 +402,9 @@ export default function App(): React.JSX.Element {
             setStep(null)
             void window.assist.getChatState().then((result) => {
               if (result.ok && result.state) setSessions(result.state.sessions)
+              else setAppWarning(`Chat history could not be refreshed: ${result.error ?? 'the chat store is not ready.'}`)
+            }).catch((error: unknown) => {
+              setAppWarning(`Chat history could not be refreshed: ${error instanceof Error ? error.message : String(error)}`)
             })
           }
           break
@@ -423,7 +417,9 @@ export default function App(): React.JSX.Element {
           break
 
         case 'scheduled_tasks_changed':
-          void window.assist.getScheduledTasks().then(setScheduledTasks)
+          void window.assist.getScheduledTasks().then(setScheduledTasks).catch((error: unknown) => {
+            setAppWarning(`Scheduled tasks could not be refreshed: ${error instanceof Error ? error.message : String(error)}`)
+          })
           break
       }
     })
@@ -682,8 +678,10 @@ export default function App(): React.JSX.Element {
       queueRunningRef.current = false
       setQueueRunning(false)
     }
-    void window.assist.cancel()
-  }, [])
+    void window.assist.cancel().catch((error: unknown) => {
+      pushSystemMessage(`Could not stop the active task: ${error instanceof Error ? error.message : String(error)}`)
+    })
+  }, [pushSystemMessage])
 
   const toggleVoiceChat = useCallback(() => {
     setVoiceChatEnabled((enabled) => !enabled)
@@ -730,6 +728,8 @@ export default function App(): React.JSX.Element {
     let cancelled = false
     void window.assist.searchChats(q, chatMode).then((matches) => {
       if (!cancelled) setFilteredSessions(matches)
+    }).catch((error: unknown) => {
+      if (!cancelled) setAppWarning(`Conversation search failed: ${error instanceof Error ? error.message : String(error)}`)
     })
     return () => {
       cancelled = true
@@ -738,43 +738,65 @@ export default function App(): React.JSX.Element {
 
   const renameActiveChat = useCallback(async (): Promise<void> => {
     if (!activeSessionId || !renameDraft.trim()) return
-    const result = await window.assist.renameChat(activeSessionId, renameDraft.trim())
-    if (result.ok && result.state) {
-      setSessions(result.state.sessions)
-      setRenamingSession(false)
+    try {
+      const result = await window.assist.renameChat(activeSessionId, renameDraft.trim())
+      if (result.ok && result.state) {
+        setSessions(result.state.sessions)
+        setRenamingSession(false)
+      } else {
+        pushSystemMessage(result.error ?? 'Could not rename this conversation.')
+      }
+    } catch (error) {
+      pushSystemMessage(`Could not rename this conversation: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, [activeSessionId, renameDraft])
+  }, [activeSessionId, renameDraft, pushSystemMessage])
 
   const deleteActiveChat = useCallback(async (): Promise<void> => {
     if (!activeSessionId || busy || queueRunning || workflowRunningId) return
-    const result = await window.assist.deleteChat(activeSessionId)
-    if (result.ok && result.state) {
-      streaming.current.clear()
-      setSessions(result.state.sessions)
-      setActiveSessionId(result.state.activeSessionId)
-      setTimeline(timelineFor(result.state.messages))
-      setPermission(null)
-      setRenamingSession(false)
+    try {
+      const result = await window.assist.deleteChat(activeSessionId)
+      if (result.ok && result.state) {
+        streaming.current.clear()
+        setSessions(result.state.sessions)
+        setActiveSessionId(result.state.activeSessionId)
+        setTimeline(timelineFor(result.state.messages))
+        setPermission(null)
+        setRenamingSession(false)
+      } else {
+        pushSystemMessage(result.error ?? 'Could not delete this conversation.')
+      }
+    } catch (error) {
+      pushSystemMessage(`Could not delete this conversation: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, [activeSessionId, busy, queueRunning, workflowRunningId])
+  }, [activeSessionId, busy, queueRunning, workflowRunningId, pushSystemMessage])
 
   const exportActiveChat = useCallback(async (): Promise<void> => {
     if (!activeSessionId) return
-    const result = await window.assist.exportChat(activeSessionId)
-    if (result.ok && result.fileName) {
-      pushSystemMessage(`Exported conversation to ${result.fileName}.`)
-    } else if (!result.cancelled && result.error) {
-      pushSystemMessage(result.error)
+    try {
+      const result = await window.assist.exportChat(activeSessionId)
+      if (result.ok && result.fileName) {
+        pushSystemMessage(`Exported conversation to ${result.fileName}.`)
+      } else if (!result.cancelled && result.error) {
+        pushSystemMessage(result.error)
+      }
+    } catch (error) {
+      pushSystemMessage(`Could not export this conversation: ${error instanceof Error ? error.message : String(error)}`)
     }
   }, [activeSessionId, pushSystemMessage])
 
   const deleteMessageFromActiveChat = useCallback(async (messageId: string): Promise<void> => {
     if (!activeSessionId || busy || queueRunning || workflowRunningId) return
-    const result = await window.assist.deleteChatMessage(activeSessionId, messageId)
-    if (result.ok && result.state) {
-      setTimeline(timelineFor(result.state.messages))
+    try {
+      const result = await window.assist.deleteChatMessage(activeSessionId, messageId)
+      if (result.ok && result.state) {
+        setTimeline(timelineFor(result.state.messages))
+      } else {
+        pushSystemMessage(result.error ?? 'Could not delete this message.')
+      }
+    } catch (error) {
+      pushSystemMessage(`Could not delete this message: ${error instanceof Error ? error.message : String(error)}`)
     }
-  }, [activeSessionId, busy, queueRunning, workflowRunningId])
+  }, [activeSessionId, busy, queueRunning, workflowRunningId, pushSystemMessage])
 
   const respond = useCallback(
     (choice: ApprovalChoice) => {
@@ -783,6 +805,7 @@ export default function App(): React.JSX.Element {
 
       setPermission(null)
       void window.assist.respondPermission(request.id, choice).catch((error: unknown) => {
+        setPermission((current) => current && current.id !== request.id ? current : request)
         setTimeline((previous) => [
           ...previous,
           {
@@ -892,14 +915,18 @@ export default function App(): React.JSX.Element {
       }
       setFinanceRefresh((v) => v + 1)
       setMemoryVersion((v) => v + 1)
-      void window.assist.getSettings().then(setSettings)
-      void window.assist.getAllowedDomains().then(setAllowedDomains)
-      void window.assist.getSpeechEndpoint().then(setSpeechEndpoint)
-      void window.assist.getWorkflows().then(setWorkflows)
-      void window.assist.getScheduledTasks().then(setScheduledTasks)
-      void window.assist.getSkills().then(setSkills)
-      void window.assist.getAudit().then(setAudit)
-      void window.assist.getAuditIntegrity().then(setAuditIntegrity)
+      void Promise.all([
+        window.assist.getSettings().then(setSettings),
+        window.assist.getAllowedDomains().then(setAllowedDomains),
+        window.assist.getSpeechEndpoint().then(setSpeechEndpoint),
+        window.assist.getWorkflows().then(setWorkflows),
+        window.assist.getScheduledTasks().then(setScheduledTasks),
+        window.assist.getSkills().then(setSkills),
+        window.assist.getAudit().then(setAudit),
+        window.assist.getAuditIntegrity().then(setAuditIntegrity)
+      ]).catch((error: unknown) => {
+        setAppWarning(`Some app data could not be refreshed after backup restore: ${error instanceof Error ? error.message : String(error)}`)
+      })
     }
     return res
   }, [])
@@ -1241,6 +1268,7 @@ export default function App(): React.JSX.Element {
                 loading={financeLoading}
                 disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
                 onPeriodChange={setFinancePeriod}
+                onRefresh={() => setFinanceRefresh((version) => version + 1)}
                 onAdd={recordFinanceTransaction}
               />
             </>

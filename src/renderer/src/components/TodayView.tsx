@@ -10,14 +10,32 @@ export function TodayView(): React.JSX.Element {
   const [editingReminderId, setEditingReminderId] = useState<string | null>(null)
   const [priority, setPriority] = useState<'low' | 'normal' | 'high'>('normal')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
 
-  const load = async (): Promise<void> => setSnapshot(await window.assist.getToday())
+  const load = async (): Promise<void> => {
+    setLoading(true)
+    setError('')
+    try {
+      setSnapshot(await window.assist.getToday())
+      setLoadFailed(false)
+    } catch (cause) {
+      setLoadFailed(true)
+      setError(errorText(cause, 'Could not load Today.'))
+    } finally {
+      setLoading(false)
+    }
+  }
   useEffect(() => { void load() }, [])
 
   const addCapture = async (): Promise<void> => {
-    const result = await window.assist.captureInbox(capture)
-    if (result.snapshot) { setSnapshot(result.snapshot); setCapture(''); setError('') }
-    else setError(result.error ?? 'Could not capture that.')
+    try {
+      const result = await window.assist.captureInbox(capture)
+      if (result.snapshot) { setSnapshot(result.snapshot); setCapture(''); setError('') }
+      else setError(result.error ?? 'Could not capture that.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not capture that.'))
+    }
   }
 
   const addTask = async (): Promise<void> => {
@@ -36,14 +54,18 @@ export function TodayView(): React.JSX.Element {
         setError('')
       } else setError(result.error ?? 'Could not add that task.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Choose a valid reminder time.')
+      setError(errorText(cause, 'Could not add that task.'))
     }
   }
 
   const complete = async (id: string): Promise<void> => {
-    const result = await window.assist.updatePlanTask(id, { status: 'done' })
-    if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
-    else setError(result.error ?? 'Could not complete that task.')
+    try {
+      const result = await window.assist.updatePlanTask(id, { status: 'done' })
+      if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
+      else setError(result.error ?? 'Could not complete that task.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not complete that task.'))
+    }
   }
 
   const saveReminder = async (item: PlanTask, value = reminderDraft): Promise<void> => {
@@ -56,30 +78,42 @@ export function TodayView(): React.JSX.Element {
         setError('')
       } else setError(result.error ?? 'Could not update that reminder.')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Choose a valid reminder time.')
+      setError(errorText(cause, 'Could not update that reminder.'))
     }
   }
 
   const clearReminder = async (item: PlanTask): Promise<void> => {
-    const result = await window.assist.updatePlanTask(item.id, { remindAt: null })
-    if (result.snapshot) {
-      setSnapshot(result.snapshot)
-      setEditingReminderId(null)
-      setReminderDraft('')
-      setError('')
-    } else setError(result.error ?? 'Could not clear that reminder.')
+    try {
+      const result = await window.assist.updatePlanTask(item.id, { remindAt: null })
+      if (result.snapshot) {
+        setSnapshot(result.snapshot)
+        setEditingReminderId(null)
+        setReminderDraft('')
+        setError('')
+      } else setError(result.error ?? 'Could not clear that reminder.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not clear that reminder.'))
+    }
   }
 
   const convert = async (id: string): Promise<void> => {
-    const result = await window.assist.convertInbox(id)
-    if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
-    else setError(result.error ?? 'Could not convert that inbox item.')
+    try {
+      const result = await window.assist.convertInbox(id)
+      if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
+      else setError(result.error ?? 'Could not convert that inbox item.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not convert that inbox item.'))
+    }
   }
 
   const dismiss = async (id: string): Promise<void> => {
-    const result = await window.assist.dismissInbox(id)
-    if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
-    else setError(result.error ?? 'Could not dismiss that inbox item.')
+    try {
+      const result = await window.assist.dismissInbox(id)
+      if (result.snapshot) { setSnapshot(result.snapshot); setError('') }
+      else setError(result.error ?? 'Could not dismiss that inbox item.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not dismiss that inbox item.'))
+    }
   }
 
   return (
@@ -91,9 +125,17 @@ export function TodayView(): React.JSX.Element {
           <p>Keep the next useful action visible without turning your day into a rigid schedule.</p>
           <p className="reminder-help">Set an optional Windows notification. It appears while Mike Assist is running; overdue reminders appear once the next time it opens.</p>
         </div>
-        <span className="today-date">{snapshot.date}</span>
+        <span className="today-date">{loading ? 'Loading…' : snapshot.date}</span>
       </div>
 
+      {loading ? (
+        <p className="muted today-load-status" role="status">Loading today’s tasks and inbox…</p>
+      ) : loadFailed ? (
+        <div className="today-error-state">
+          <p role="alert">{error}</p>
+          <button className="ghost-button" type="button" onClick={() => void load()}>Retry</button>
+        </div>
+      ) : <>
       <div className="today-grid">
         <section className="today-card today-tasks">
           <div className="today-card-head"><h3>Next actions</h3><span>{snapshot.tasks.length}</span></div>
@@ -152,9 +194,14 @@ export function TodayView(): React.JSX.Element {
           </div>
         </section>
       </div>
-      {error && <p className="status-error today-error">{error}</p>}
+      {error && <p className="status-error today-error" role="alert">{error}</p>}
+      </>}
     </div>
   )
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback
 }
 
 function localDateTimeToIso(value: string): string | null {

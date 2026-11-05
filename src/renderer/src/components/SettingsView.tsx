@@ -763,7 +763,7 @@ export function SettingsView({
             </button>
           )}
           {status && (
-            <span className={`settings-status ${status.ok ? 'status-ok' : 'status-error'}`}>
+            <span className={`settings-status ${status.ok ? 'status-ok' : 'status-error'}`} role={status.ok ? 'status' : 'alert'}>
               {status.text}
             </span>
           )}
@@ -812,7 +812,7 @@ export function SettingsView({
             </button>
           </div>
         )}
-        {localApiMessage && <p className="settings-status">{localApiMessage}</p>}
+        {localApiMessage && <p className="settings-status" role="status">{localApiMessage}</p>}
         {localApiStatus === null && <p className="field-hint">Checking local API status…</p>}
       </section>
 
@@ -877,7 +877,7 @@ export function SettingsView({
           <button className="ghost-button" type="button" onClick={addFolder} disabled={grantBusy}>
             Add folder…
           </button>
-          {grantError && <span className="settings-status status-error">{grantError}</span>}
+          {grantError && <span className="settings-status status-error" role="alert">{grantError}</span>}
         </div>
       </section>
 
@@ -920,7 +920,7 @@ export function SettingsView({
           <button className="ghost-button" type="button" onClick={addDomain} disabled={domainBusy || !domainInput.trim()}>
             {domainBusy ? 'Saving…' : 'Allow domain'}
           </button>
-          {domainError && <span className="settings-status status-error">{domainError}</span>}
+          {domainError && <span className="settings-status status-error" role="alert">{domainError}</span>}
         </div>
       </section>
 
@@ -962,7 +962,7 @@ export function SettingsView({
                   Clear key
                 </button>
               )}
-              {webSearchMessage && <span className="settings-status">{webSearchMessage}</span>}
+              {webSearchMessage && <span className="settings-status" role="status">{webSearchMessage}</span>}
             </div>
           </div>
         ) : (
@@ -1024,7 +1024,7 @@ export function SettingsView({
                   {googleCalendarBusy ? 'Waiting for sign-in…' : 'Connect Google Calendar'}
                 </button>
               )}
-              {googleCalendarMessage && <span className="settings-status">{googleCalendarMessage}</span>}
+              {googleCalendarMessage && <span className="settings-status" role="status">{googleCalendarMessage}</span>}
             </div>
           </div>
         ) : (
@@ -1084,7 +1084,7 @@ export function SettingsView({
                   {googleGmailBusy ? 'Waiting for sign-in…' : 'Connect Gmail'}
                 </button>
               )}
-              {googleGmailMessage && <span className="settings-status">{googleGmailMessage}</span>}
+              {googleGmailMessage && <span className="settings-status" role="status">{googleGmailMessage}</span>}
             </div>
           </div>
         ) : (
@@ -1143,7 +1143,7 @@ export function SettingsView({
                   {googleDriveBusy ? 'Waiting for sign-in…' : 'Connect Google Drive'}
                 </button>
               )}
-              {googleDriveMessage && <span className="settings-status">{googleDriveMessage}</span>}
+              {googleDriveMessage && <span className="settings-status" role="status">{googleDriveMessage}</span>}
             </div>
           </div>
         ) : (
@@ -1181,7 +1181,7 @@ export function SettingsView({
               Restore from backup…
             </button>
           )}
-          {backupMessage && <span className="settings-status">{backupMessage}</span>}
+          {backupMessage && <span className="settings-status" role="status">{backupMessage}</span>}
         </div>
       </section>
 
@@ -1208,7 +1208,7 @@ export function SettingsView({
           <button className="ghost-button" type="button" onClick={() => void saveSpeechEndpoint()} disabled={speechBusy}>
             {speechBusy ? 'Saving…' : 'Save voice endpoint'}
           </button>
-          {speechMessage && <span className="settings-status">{speechMessage}</span>}
+          {speechMessage && <span className="settings-status" role="status">{speechMessage}</span>}
         </div>
       </section>
 

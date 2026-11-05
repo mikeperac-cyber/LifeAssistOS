@@ -19,13 +19,23 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   const load = async (): Promise<void> => {
-    const next = await window.assist.getCoachingContext()
-    setContext(next)
-    setStyle(next.profile.style)
-    setRetention(next.profile.reflectionRetention)
-    setBoundaries(next.profile.boundaries)
+    setLoading(true)
+    setLoadError('')
+    try {
+      const next = await window.assist.getCoachingContext()
+      setContext(next)
+      setStyle(next.profile.style)
+      setRetention(next.profile.reflectionRetention)
+      setBoundaries(next.profile.boundaries)
+    } catch (cause) {
+      setLoadError(errorText(cause, 'Could not load coaching preferences.'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { void load() }, [])
@@ -36,6 +46,8 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
       const result = await window.assist.updateCoachingProfile({ style, reflectionRetention: retention, boundaries })
       if (result.ok && result.context) { setContext(result.context); setNotice('Coaching preferences saved.') }
       else setError(result.error ?? 'Could not save coaching preferences.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not save coaching preferences.'))
     } finally { setBusy(false) }
   }
 
@@ -47,35 +59,53 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
       if (result.ok && result.context) {
         setContext(result.context); setGoalTitle(''); setGoalWhy(''); setGoalDate(''); setGoalMilestones(''); setNotice('Goal added after approval.')
       } else setError(result.error ?? 'The goal was not saved.')
+    } catch (cause) {
+      setError(errorText(cause, 'The goal was not saved.'))
     } finally { setBusy(false) }
   }
 
   const completeGoal = async (goal: CoachingGoal): Promise<void> => {
-    const result = await window.assist.updateCoachingGoal(goal.id, { status: 'completed' })
-    if (result.ok && result.context) { setContext(result.context); setNotice('Goal marked complete.') }
-    else setError(result.error ?? 'Could not update that goal.')
+    try {
+      const result = await window.assist.updateCoachingGoal(goal.id, { status: 'completed' })
+      if (result.ok && result.context) { setContext(result.context); setNotice('Goal marked complete.') }
+      else setError(result.error ?? 'Could not update that goal.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not update that goal.'))
+    }
   }
 
   const toggleGoalPause = async (goal: CoachingGoal): Promise<void> => {
     const status = goal.status === 'paused' ? 'active' : 'paused'
-    const result = await window.assist.updateCoachingGoal(goal.id, { status })
-    if (result.ok && result.context) {
-      setContext(result.context)
-      setNotice(status === 'active' ? 'Goal resumed.' : 'Goal paused.')
-    } else setError(result.error ?? 'Could not update that goal.')
+    try {
+      const result = await window.assist.updateCoachingGoal(goal.id, { status })
+      if (result.ok && result.context) {
+        setContext(result.context)
+        setNotice(status === 'active' ? 'Goal resumed.' : 'Goal paused.')
+      } else setError(result.error ?? 'Could not update that goal.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not update that goal.'))
+    }
   }
 
   const toggleMilestone = async (goal: CoachingGoal, milestoneId: string): Promise<void> => {
     const milestones = goal.milestones.map((milestone) => milestone.id === milestoneId ? { ...milestone, done: !milestone.done } : milestone)
-    const result = await window.assist.updateCoachingGoal(goal.id, { milestones })
-    if (result.ok && result.context) { setContext(result.context); setNotice('Milestone updated.') }
-    else setError(result.error ?? 'Could not update that milestone.')
+    try {
+      const result = await window.assist.updateCoachingGoal(goal.id, { milestones })
+      if (result.ok && result.context) { setContext(result.context); setNotice('Milestone updated.') }
+      else setError(result.error ?? 'Could not update that milestone.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not update that milestone.'))
+    }
   }
 
   const addMilestoneToToday = async (goal: CoachingGoal, milestoneTitle: string): Promise<void> => {
-    const result = await window.assist.addPlanTask({ title: milestoneTitle, notes: `Next step for coaching goal: ${goal.title}`, sourceGoalId: goal.id })
-    if (result.ok) setNotice('Milestone added to Today.')
-    else setError(result.error ?? 'Could not add that milestone to Today.')
+    try {
+      const result = await window.assist.addPlanTask({ title: milestoneTitle, notes: `Next step for coaching goal: ${goal.title}`, sourceGoalId: goal.id })
+      if (result.ok) setNotice('Milestone added to Today.')
+      else setError(result.error ?? 'Could not add that milestone to Today.')
+    } catch (cause) {
+      setError(errorText(cause, 'Could not add that milestone to Today.'))
+    }
   }
 
   const submitReflection = async (): Promise<void> => {
@@ -111,6 +141,32 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
     ? 'Review my saved Personal life coaching context. Summarize progress without judgment, identify one pattern only if the evidence supports it, and suggest no more than three realistic next actions. Ask one focused question. Do not diagnose, guilt, or save anything.'
     : 'Review my saved Business / LB English coaching context. Summarize progress without judgment, identify one useful business, teaching, or IELTS pattern only if the evidence supports it, and suggest no more than three realistic next actions. Ask one focused question. Do not diagnose, guilt, or save anything.'
 
+  const handleAreaTabKey = (event: React.KeyboardEvent<HTMLButtonElement>): void => {
+    const nextArea = getNextCoachArea(area, event.key)
+    if (!nextArea) return
+    event.preventDefault()
+    setArea(nextArea)
+    window.requestAnimationFrame(() => document.getElementById(`coach-area-tab-${nextArea}`)?.focus())
+  }
+
+  if (!context) {
+    return (
+      <div className="coach-view">
+        <div className="coach-header">
+          <div><span className="eyebrow">Smart life coaching</span><h2>Coach</h2></div>
+        </div>
+        {loading ? (
+          <p className="muted" role="status">Loading saved coaching preferences and goals…</p>
+        ) : (
+          <div className="coach-load-error">
+            <p role="alert">{loadError || 'Saved coaching context is not available.'}</p>
+            <button className="ghost-button" type="button" onClick={() => void load()}>Retry</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="coach-view">
       <div className="coach-header">
@@ -125,12 +181,13 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
         </div>
       </div>
 
-      <div className="coach-area-tabs" role="tablist">
-        <button type="button" className={area === 'personal' ? 'active' : ''} onClick={() => setArea('personal')}>Personal life<span>Goals, energy, relationships</span></button>
-        <button type="button" className={area === 'lb_english' ? 'active' : ''} onClick={() => setArea('lb_english')}>Business / LB English<span>Teaching, IELTS, operations</span></button>
+      <div className="coach-area-tabs" role="tablist" aria-label="Coaching area">
+        <button id="coach-area-tab-personal" type="button" role="tab" aria-selected={area === 'personal'} aria-controls="coach-area-panel" tabIndex={area === 'personal' ? 0 : -1} className={area === 'personal' ? 'active' : ''} onClick={() => setArea('personal')} onKeyDown={handleAreaTabKey}>Personal life<span>Goals, energy, relationships</span></button>
+        <button id="coach-area-tab-lb_english" type="button" role="tab" aria-selected={area === 'lb_english'} aria-controls="coach-area-panel" tabIndex={area === 'lb_english' ? 0 : -1} className={area === 'lb_english' ? 'active' : ''} onClick={() => setArea('lb_english')} onKeyDown={handleAreaTabKey}>Business / LB English<span>Teaching, IELTS, operations</span></button>
       </div>
 
-      <div className="coach-grid">
+      {loadError && <div className="coach-load-error"><p role="alert">{loadError}</p><button className="ghost-button" type="button" onClick={() => void load()}>Retry</button></div>}
+      <div className="coach-grid" id="coach-area-panel" role="tabpanel" aria-labelledby={`coach-area-tab-${area}`} tabIndex={0}>
         <section className="coach-card coach-profile">
           <div className="coach-card-head"><div><span className="eyebrow">Control room</span><h3>Coaching preferences</h3></div><span className="privacy-chip">Private by default</span></div>
           <label>Style<select value={style} onChange={(event) => setStyle(event.target.value as typeof style)}><option value="supportive">Supportive</option><option value="direct">Direct and concise</option><option value="socratic">Socratic questions</option></select></label>
@@ -163,7 +220,22 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
           {savedJournal.length === 0 && <p className="muted">Saved reflections will appear here. Unsaved check-ins never enter the journal.</p>}
         </section>
       </div>
-      {(error || notice) && <p className={`coach-status ${error ? 'status-error' : 'status-ok'}`}>{error || notice}</p>}
+      {(error || notice) && <p className={`coach-status ${error ? 'status-error' : 'status-ok'}`} role={error ? 'alert' : 'status'}>{error || notice}</p>}
     </div>
   )
+}
+
+function errorText(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback
+}
+
+export function getNextCoachArea(area: CoachArea, key: string): CoachArea | null {
+  const areas: CoachArea[] = ['personal', 'lb_english']
+  const currentIndex = areas.indexOf(area)
+  if (currentIndex < 0) return null
+  if (key === 'Home') return areas[0]
+  if (key === 'End') return areas[areas.length - 1]
+  if (key === 'ArrowRight') return areas[(currentIndex + 1) % areas.length]
+  if (key === 'ArrowLeft') return areas[(currentIndex - 1 + areas.length) % areas.length]
+  return null
 }

@@ -176,7 +176,7 @@ export function SkillsView({
       <div className="skills-layout">
         <aside className="skills-list" aria-label="Saved skills">
           {skills.map((skill) => (
-            <button key={skill.id} type="button" className={`skill-list-item ${selectedId === skill.id ? 'active' : ''}`} onClick={() => select(skill)} disabled={disabled || busy}>
+            <button key={skill.id} type="button" aria-pressed={selectedId === skill.id} className={`skill-list-item ${selectedId === skill.id ? 'active' : ''}`} onClick={() => select(skill)} disabled={disabled || busy}>
               <span className="skill-list-name">{skill.name}</span>
               <span className="skill-list-meta">{SCOPE_LABELS[skill.scope]} · {skill.enabled ? 'enabled' : 'disabled'}</span>
               <span className="skill-list-description">{skill.description}</span>

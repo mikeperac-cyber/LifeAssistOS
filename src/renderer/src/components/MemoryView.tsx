@@ -29,7 +29,7 @@ export function MemoryView({
   const [draftText, setDraftText] = useState('')
   const [draftScope, setDraftScope] = useState<MemoryScope>('general')
   const [draftBusy, setDraftBusy] = useState(false)
-  const [draftNotice, setDraftNotice] = useState('')
+  const [draftNotice, setDraftNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   const [search, setSearch] = useState('')
   const [searchBusy, setSearchBusy] = useState(false)
@@ -69,20 +69,20 @@ export function MemoryView({
     const text = draftText.trim()
     if (!text || draftBusy || disabled) return
     setDraftBusy(true)
-    setDraftNotice('')
+    setDraftNotice(null)
     try {
       const input: MemoryFactInput = { text, scope: draftScope }
       const result = await window.assist.addMemory(input)
       if (result.ok) {
         setDraftText('')
-        setDraftNotice('Approved and saved to memory.')
+        setDraftNotice({ ok: true, text: 'Approved and saved to memory.' })
         onChanged()
         await refresh()
       } else {
-        setDraftNotice(result.error ?? 'Save did not complete.')
+        setDraftNotice({ ok: false, text: result.error ?? 'Save did not complete.' })
       }
     } catch (error) {
-      setDraftNotice(error instanceof Error ? error.message : String(error))
+      setDraftNotice({ ok: false, text: error instanceof Error ? error.message : String(error) })
     } finally {
       setDraftBusy(false)
     }
@@ -216,7 +216,7 @@ export function MemoryView({
             {draftBusy ? 'Waiting…' : 'Save fact'}
           </button>
         </div>
-        {draftNotice && <p className="memory-notice" role="status">{draftNotice}</p>}
+        {draftNotice && <p className={draftNotice.ok ? 'memory-notice' : 'memory-error'} role={draftNotice.ok ? 'status' : 'alert'}>{draftNotice.text}</p>}
       </section>
 
       <section className="memory-search">
@@ -247,11 +247,11 @@ export function MemoryView({
       </section>
 
       {loadError && <div className="memory-error" role="alert">{loadError}</div>}
-      {loading && <p className="muted">Loading memory…</p>}
+      {loading && <p className="muted" role="status">Loading memory…</p>}
 
       <section className="memory-list">
         <h2 className="section-title">
-          {matches ? `Search matches (${viewList.length})` : `Active facts (${facts.length})`}
+          {matches ? `Search matches (${viewList.length})` : `Active facts (${loading || loadError ? '—' : facts.length})`}
         </h2>
         {viewList.map((fact) => (
           <article key={fact.id} className="memory-card">
@@ -336,7 +336,7 @@ export function MemoryView({
           </article>
         ))}
 
-        {!loading && viewList.length === 0 && (
+        {!loading && !loadError && viewList.length === 0 && (
           <div className="memory-empty">
             <div className="memory-empty-mark">◈</div>
             <p>{matches ? 'No facts matched that search.' : 'No facts yet. Try /remember in chat, or save one above.'}</p>
@@ -346,7 +346,7 @@ export function MemoryView({
 
       <section className="memory-archived">
         <details>
-          <summary>Archived ({archived.length})</summary>
+          <summary>Archived ({loading || loadError ? '—' : archived.length})</summary>
           {archived.map((fact) => (
             <article key={fact.id} className="memory-card archived">
               <header className="memory-card-top">
@@ -356,7 +356,7 @@ export function MemoryView({
               <p className="memory-text">{fact.text}</p>
             </article>
           ))}
-          {archived.length === 0 && <p className="muted">Nothing archived yet.</p>}
+          {!loading && !loadError && archived.length === 0 && <p className="muted">Nothing archived yet.</p>}
         </details>
       </section>
     </div>

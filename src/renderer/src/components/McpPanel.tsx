@@ -90,8 +90,12 @@ export function McpPanel(): React.JSX.Element {
       setArgsText('')
       setUrl('')
       setAddOpen(false)
-      const added = (await window.assist.getMcpServers()).find((server) => server.name === trimmed)
-      setNotice(added?.status === 'connected' ? `Connected to ${trimmed}.` : `Saved ${trimmed}; check its status below.`)
+      try {
+        const added = (await window.assist.getMcpServers()).find((server) => server.name === trimmed)
+        setNotice(added?.status === 'connected' ? `Connected to ${trimmed}.` : `Saved ${trimmed}; check its status below.`)
+      } catch {
+        setNotice(`Saved ${trimmed}; check its status below.`)
+      }
     }
   }
 
@@ -155,7 +159,7 @@ export function McpPanel(): React.JSX.Element {
               <div className="mcp-server-text">
                 <span className="mcp-server-name">{server.name}</span>
                 <code className="mcp-server-detail">{server.detail || server.transport}</code>
-                {server.error && <span className="mcp-server-error">{server.error}</span>}
+                {server.error && <span className="mcp-server-error" role="alert">{server.error}</span>}
                 <span className="muted">
                   {server.tools.length} tool{server.tools.length === 1 ? '' : 's'}
                   {server.truncated ? ' · capped at 24' : ''} · every call asks
@@ -301,7 +305,7 @@ export function McpPanel(): React.JSX.Element {
       )}
 
       {(error || notice) && (
-        <span className={`settings-status ${error ? 'status-error' : ''}`}>{error || notice}</span>
+        <span className={`settings-status ${error ? 'status-error' : ''}`} role={error ? 'alert' : 'status'}>{error || notice}</span>
       )}
     </section>
   )

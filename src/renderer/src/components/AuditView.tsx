@@ -93,6 +93,7 @@ export function AuditView({
               key={option.value}
               type="button"
               className={filter === option.value ? 'active' : ''}
+              aria-pressed={filter === option.value}
               onClick={() => setFilter(option.value)}
             >
               {option.label}
@@ -111,14 +112,14 @@ export function AuditView({
           <span className="audit-count">
             {events.length.toLocaleString()} event{events.length === 1 ? '' : 's'} · append-only
           </span>
-          {exportMessage && <span className="audit-export-message">{exportMessage}</span>}
+          {exportMessage && <span className="audit-export-message" role="status">{exportMessage}</span>}
         </div>
       </div>
 
       {shown.length === 0 ? (
         <div className="audit-empty">
           <div className="audit-empty-mark">◇</div>
-          <p>No events yet. Every message, decision, and tool run lands here.</p>
+          <p>{auditEmptyMessage(events.length, filter)}</p>
         </div>
       ) : (
         <div className="audit-list">
@@ -137,6 +138,12 @@ export function AuditView({
       )}
     </div>
   )
+}
+
+export function auditEmptyMessage(eventCount: number, filter: Filter): string {
+  if (eventCount === 0) return 'No events yet. Every message, decision, and tool run lands here.'
+  const filterLabel = FILTERS.find((option) => option.value === filter)?.label.toLocaleLowerCase() ?? 'matching'
+  return `No events match the ${filterLabel} filter.`
 }
 
 function formatTime(value: string): string {

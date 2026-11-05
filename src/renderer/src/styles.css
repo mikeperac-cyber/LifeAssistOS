@@ -3137,6 +3137,8 @@ summary:focus-visible {
 .research-empty-mark { color: var(--accent); font-size: 34px; }
 .research-empty p { max-width: 420px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .research-status { margin: 14px 0 0; font-size: 11px; }
+.research-load-error { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
+.research-load-error p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 
 .vault-view { max-width: 1180px; margin: 0 auto; }
 .vault-toolbar { margin: 0 auto 16px; }
@@ -3151,6 +3153,8 @@ summary:focus-visible {
 .vault-result span { display: block; margin-top: 4px; color: var(--faint); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .vault-result p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .vault-empty { margin: auto 0; padding: 30px 10px; text-align: center; }
+.vault-load-error { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
+.vault-load-error p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 .vault-editor { display: flex; flex-direction: column; gap: 10px; }
 .vault-title { font-size: 16px !important; font-weight: 650; }
 .vault-body { flex: 1; min-height: 350px; font-size: 12px !important; line-height: 1.65 !important; }
@@ -3191,6 +3195,9 @@ summary:focus-visible {
 .inbox-item > div { display: flex; gap: 6px; }
 .inbox-item button { padding: 5px 8px; font-size: 10px; }
 .today-error { margin-top: 12px; font-size: 11px; }
+.today-load-status { margin: 12px 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--panel); }
+.today-error-state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
+.today-error-state p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 
 .teaching-view { max-width: 1120px; margin: 0 auto; }
 .teaching-header { margin-bottom: 17px; }
@@ -3251,6 +3258,8 @@ summary:focus-visible {
 .coach-journal-entry span { color: var(--faint); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .coach-journal-entry p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
 .coach-status { margin: 13px 0 0; font-size: 11px; }
+.coach-load-error { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
+.coach-load-error p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
   .coach-view { padding: 18px 18px 30px; }
@@ -3307,6 +3316,8 @@ summary:focus-visible {
 .integration-access { margin-top: auto; margin-bottom: 10px; color: var(--faint); font-family: var(--mono); font-size: 9px; }
 .integration-card .ghost-button { align-self: flex-start; padding: 6px 9px; font-size: 10px; }
 .integration-mcp { margin-top: 14px; padding: 16px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
+.integration-load-error { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
+.integration-load-error p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 .integration-mcp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .integration-mcp-head h3 { margin: 4px 0; font-size: 14px; }
 .integration-mcp-head p { margin: 0; color: var(--muted); font-size: 11px; }

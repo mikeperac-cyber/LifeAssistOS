@@ -38,20 +38,107 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
   googleDriveSettings: PublicGoogleDriveSettings | null
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
-  useEffect(() => { void window.assist.getMcpServers().then(setServers) }, [])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const loadServers = async (): Promise<void> => {
+    setLoading(true)
+    setError('')
+    try {
+      setServers(await window.assist.getMcpServers())
+    } catch (cause) {
+      setServers([])
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void loadServers() }, [])
   const connected = servers.filter((server) => server.status === 'connected').length
 
-  return <div className="integrations-view"><div className="integrations-header"><div><span className="eyebrow">Capability map</span><h2>Integrations</h2><p>See what Mike Assist can use, where data goes, and which actions still need your approval. Nothing is connected silently.</p></div><span className="integration-summary">{connected} MCP connected · {INTEGRATIONS.filter((item) => item.status === 'local').length} local</span></div><div className="integration-notice"><strong>Consent by capability</strong><span>Read-only context can inform the coach. Persistent changes and external actions continue through the permission gateway.</span></div><div className="integration-grid">{INTEGRATIONS.map((item) => {
-    const calendarConnected = item.id === 'google_calendar' && googleCalendarSettings?.connected === true
-    const calendarNeedsReconnect = item.id === 'google_calendar' && !googleCalendarSettings?.connected && googleCalendarSettings?.tokenStored === true
-    const gmailConnected = item.id === 'google_gmail' && googleGmailSettings?.connected === true
-    const gmailNeedsReconnect = item.id === 'google_gmail' && !googleGmailSettings?.connected && googleGmailSettings?.tokenStored === true
-    const driveConnected = item.id === 'google_drive' && googleDriveSettings?.connected === true
-    const driveNeedsReconnect = item.id === 'google_drive' && !googleDriveSettings?.connected && googleDriveSettings?.tokenStored === true
-    const connectedStatus = calendarConnected || gmailConnected || driveConnected
-    const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect
-    const status = connectedStatus ? 'ready' : item.status
-    const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
-    return <article className="integration-card" key={item.id}><div className="integration-card-top"><span className={`integration-dot tone-${item.tone}`} /><span className="integration-category">{item.category}</span><span className={`integration-status integration-${status}`}>{statusLabel}</span></div><h3>{item.title}</h3><p>{item.description}</p><div className="integration-access">{item.access}</div><button className="ghost-button" type="button" onClick={() => onOpen(item.id)}>{item.id === 'helper' ? 'Use in Chat' : item.id === 'files' ? 'Manage folders' : item.id === 'drafts' || item.id === 'web_search' || item.id === 'browser' || item.id === 'google_calendar' || item.id === 'google_gmail' || item.id === 'google_drive' ? 'Open settings' : 'Open'}</button></article>
-  })}</div><section className="integration-mcp"><div className="integration-mcp-head"><div><span className="eyebrow">External connectors</span><h3>MCP servers</h3><p>Only servers you configure are listed. Server results are untrusted and every MCP tool call asks.</p></div><button className="ghost-button" type="button" onClick={() => onOpen('mcp')}>Manage MCP</button></div>{servers.length === 0 ? <p className="muted">No MCP servers configured.</p> : <div className="integration-server-list">{servers.map((server) => <div className="integration-server" key={server.id}><span className={`integration-dot tone-${server.status === 'connected' ? 'teal' : 'amber'}`} /><strong>{server.name}</strong><code>{server.transport}</code><span className="muted">{server.status} · {server.tools.length} tools</span></div>)}</div>}</section></div>
+  return (
+    <div className="integrations-view">
+      <div className="integrations-header">
+        <div>
+          <span className="eyebrow">Capability map</span>
+          <h2>Integrations</h2>
+          <p>See what Mike Assist can use, where data goes, and which actions still need your approval. Nothing is connected silently.</p>
+        </div>
+        <span className="integration-summary">
+          {loading ? 'Checking MCP connections…' : error ? 'MCP status unavailable' : `${connected} MCP connected · ${INTEGRATIONS.filter((item) => item.status === 'local').length} local`}
+        </span>
+      </div>
+      <div className="integration-notice">
+        <strong>Consent by capability</strong>
+        <span>Read-only context can inform the coach. Persistent changes and external actions continue through the permission gateway.</span>
+      </div>
+      <div className="integration-grid">
+        {INTEGRATIONS.map((item) => {
+          const calendarConnected = item.id === 'google_calendar' && googleCalendarSettings?.connected === true
+          const calendarNeedsReconnect = item.id === 'google_calendar' && !googleCalendarSettings?.connected && googleCalendarSettings?.tokenStored === true
+          const gmailConnected = item.id === 'google_gmail' && googleGmailSettings?.connected === true
+          const gmailNeedsReconnect = item.id === 'google_gmail' && !googleGmailSettings?.connected && googleGmailSettings?.tokenStored === true
+          const driveConnected = item.id === 'google_drive' && googleDriveSettings?.connected === true
+          const driveNeedsReconnect = item.id === 'google_drive' && !googleDriveSettings?.connected && googleDriveSettings?.tokenStored === true
+          const connectedStatus = calendarConnected || gmailConnected || driveConnected
+          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect
+          const status = connectedStatus ? 'ready' : item.status
+          const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
+          const actionLabel = item.id === 'helper'
+            ? 'Use in Chat'
+            : item.id === 'files'
+              ? 'Manage folders'
+              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive'].includes(item.id)
+                ? 'Open settings'
+                : 'Open'
+
+          return (
+            <article className="integration-card" key={item.id}>
+              <div className="integration-card-top">
+                <span className={`integration-dot tone-${item.tone}`} />
+                <span className="integration-category">{item.category}</span>
+                <span className={`integration-status integration-${status}`}>{statusLabel}</span>
+              </div>
+              <h3>{item.title}</h3>
+              <p>{item.description}</p>
+              <div className="integration-access">{item.access}</div>
+              <button className="ghost-button" type="button" onClick={() => onOpen(item.id)}>{actionLabel}</button>
+            </article>
+          )
+        })}
+      </div>
+      <section className="integration-mcp">
+        <div className="integration-mcp-head">
+          <div>
+            <span className="eyebrow">External connectors</span>
+            <h3>MCP servers</h3>
+            <p>Only servers you configure are listed. Server results are untrusted and every MCP tool call asks.</p>
+          </div>
+          <button className="ghost-button" type="button" onClick={() => onOpen('mcp')}>Manage MCP</button>
+        </div>
+        {loading ? (
+          <p className="muted" role="status">Loading MCP connections…</p>
+        ) : error ? (
+          <div className="integration-load-error">
+            <p role="alert">{error}</p>
+            <button className="ghost-button" type="button" onClick={() => void loadServers()}>Retry</button>
+          </div>
+        ) : servers.length === 0 ? (
+          <p className="muted">No MCP servers configured.</p>
+        ) : (
+          <div className="integration-server-list">
+            {servers.map((server) => (
+              <div className="integration-server" key={server.id}>
+                <span className={`integration-dot tone-${server.status === 'connected' ? 'teal' : 'amber'}`} />
+                <strong>{server.name}</strong>
+                <code>{server.transport}</code>
+                <span className="muted">{server.status} · {server.tools.length} tools</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  )
 }
