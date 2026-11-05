@@ -628,6 +628,8 @@ export interface AssistApi {
   listGoogleTasks(taskListId: string, pageToken?: string): Promise<GoogleTasksReadResult>
   exportTodayTask(input: TodayTaskExportInput): Promise<TodayTaskExportActionResult>
   clearTodayTaskExportRetryGuard(input: TodayTaskExportClearInput): Promise<TodayTaskExportActionResult>
+  syncTodayTask(input: TodayTaskExportInput): Promise<TodayTaskExportActionResult>
+  clearTodayTaskSyncRetryGuard(input: TodayTaskExportClearInput): Promise<TodayTaskExportActionResult>
 
   getMicrosoftTodoSettings(): Promise<PublicMicrosoftTodoSettings>
   updateMicrosoftTodoClientId(clientId: string): Promise<MicrosoftTodoSettingsResult>

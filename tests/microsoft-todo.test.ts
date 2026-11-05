@@ -144,6 +144,39 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
     })
   })
 
+  it('reads and conditionally patches only an exact linked Microsoft To Do task', async () => {
+    const store = await connectedStore()
+    await store.enableTaskWrites()
+    const requests: Array<{ url: URL; options: { method?: string; body?: string; headers?: Record<string, string> } }> = []
+    const request: MicrosoftTodoRequest = async (url, _signal, options) => {
+      requests.push({ url, options })
+      if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
+      if (options.method === 'GET') return response(JSON.stringify({
+        id: 'remote-task-1', title: 'Old title', body: { contentType: 'text', content: 'Old notes' },
+        dueDateTime: { dateTime: '2026-11-10T00:00:00', timeZone: 'UTC' }, importance: 'normal', status: 'notStarted', '@odata.etag': 'etag-1'
+      }))
+      return response(JSON.stringify({
+        id: 'remote-task-1', title: 'New title', body: { contentType: 'text', content: 'New notes' },
+        dueDateTime: { dateTime: '2026-11-12T00:00:00', timeZone: 'UTC' }, importance: 'high', status: 'notStarted', '@odata.etag': 'etag-2'
+      }))
+    }
+    const service = new MicrosoftTodoService(store, { request, openExternal: async () => undefined })
+    const signal = new AbortController().signal
+    expect(await service.getTask('AAMk-list=', 'remote-task-1', signal)).toMatchObject({ title: 'Old title', etag: 'etag-1', due: '2026-11-10', priority: 'normal' })
+    expect(await service.updateTask('AAMk-list=', 'remote-task-1', {
+      title: 'New title', notes: 'New notes', dueDate: '2026-11-12', priority: 'high'
+    }, 'etag-1', signal)).toMatchObject({ title: 'New title', etag: 'etag-2', due: '2026-11-12', priority: 'high' })
+    const patch = requests.find(({ options }) => options.method === 'PATCH')
+    expect(patch?.url.pathname).toBe('/v1.0/me/todo/lists/AAMk-list%3D/tasks/remote-task-1')
+    expect(patch?.options.headers?.['If-Match']).toBe('etag-1')
+    expect(JSON.parse(patch?.options.body ?? '{}')).toEqual({
+      title: 'New title', body: { contentType: 'text', content: 'New notes' },
+      dueDateTime: { dateTime: '2026-11-12T00:00:00', timeZone: 'UTC' }, importance: 'high'
+    })
+    expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks/task-1'), 'PATCH')).toBe(true)
+    expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks'), 'PATCH')).toBe(false)
+  })
+
   it('sends an approved local task once and returns the existing link on retry', async () => {
     const store = await connectedStore()
     await store.enableTaskWrites()
@@ -174,6 +207,59 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
     planning.close()
   })
 
+  it('syncs approved local edits to the linked Microsoft task and blocks remote conflicts', async () => {
+    const store = await connectedStore()
+    await store.enableTaskWrites()
+    const planning = new PlanningStore(path.join(dir, 'planning-sync.sqlite'))
+    await planning.init()
+    const task = planning.addTask({ title: 'Review the proposal', notes: 'Check the cost.', priority: 'normal' })
+    let remote = {
+      id: 'graph-task-1', title: task.title, body: { contentType: 'text', content: task.notes },
+      status: 'notStarted' as const, importance: task.priority, '@odata.etag': 'etag-1'
+    }
+    let patchCalls = 0
+    const request: MicrosoftTodoRequest = async (url, _signal, options) => {
+      if (url.hostname === 'login.microsoftonline.com') return tokenResponse()
+      if (options.method === 'POST') return response(JSON.stringify(remote), 201)
+      if (options.method === 'GET') return response(JSON.stringify(remote))
+      patchCalls += 1
+      const body = JSON.parse(options.body ?? '{}') as { title: string; body: { content: string }; importance: 'low' | 'normal' | 'high' }
+      remote = {
+        ...remote,
+        title: body.title,
+        body: { contentType: 'text', content: body.body.content },
+        importance: body.importance,
+        '@odata.etag': 'etag-2'
+      }
+      return response(JSON.stringify(remote))
+    }
+    const service = new MicrosoftTodoService(store, { request, openExternal: async () => undefined })
+    const tools = createMicrosoftTodoTools(service, planning)
+    const create = tools.find((item) => item.name === 'microsoft_todo_create_from_today_task')!
+    const sync = tools.find((item) => item.name === 'microsoft_todo_sync_today_task')!
+    const context = { kind: 'none' as const, signal: new AbortController().signal }
+    const initialArgs = { taskId: task.id, expectedUpdatedAt: task.updatedAt, taskListId: 'AAMk-list=', taskListTitle: 'Tasks' }
+    await create.run(initialArgs, context)
+
+    await new Promise((resolve) => setTimeout(resolve, 3))
+    const edited = planning.updateTask(task.id, { title: 'Review the revised proposal', notes: 'Add the final cost estimate.', priority: 'high' })
+    const args = { ...initialArgs, expectedUpdatedAt: edited.updatedAt }
+    expect(sync.preview!(args, context)).toContain('Review the revised proposal')
+    expect(await sync.run(args, context)).toMatchObject({ status: 'synced', remoteTaskId: 'graph-task-1' })
+    expect(remote).toMatchObject({ title: edited.title, body: { content: edited.notes }, importance: 'high', '@odata.etag': 'etag-2' })
+    expect(planning.getTaskExport(task.id, 'microsoft_todo', 'AAMk-list=')).toMatchObject({ syncedTitle: edited.title, syncedPriority: 'high', remoteEtag: 'etag-2', syncStatus: 'idle' })
+
+    remote = { ...remote, title: 'Changed in To Do', '@odata.etag': 'etag-3' }
+    await new Promise((resolve) => setTimeout(resolve, 3))
+    const editedAgain = planning.updateTask(task.id, { notes: 'One more local edit.' })
+    const conflictArgs = { ...initialArgs, expectedUpdatedAt: editedAgain.updatedAt }
+    expect(await sync.run(conflictArgs, context)).toMatchObject({ status: 'conflict', remoteTask: { title: 'Changed in To Do' } })
+    expect(patchCalls).toBe(1)
+    expect(remote.title).toBe('Changed in To Do')
+    expect(planning.getTaskExport(task.id, 'microsoft_todo', 'AAMk-list=')).toMatchObject({ syncedTitle: 'Changed in To Do', remoteEtag: 'etag-3', syncStatus: 'failed' })
+    planning.close()
+  })
+
   it('cancels an in-progress device flow without storing a token', async () => {
     const store = await configuredStore()
     const request: MicrosoftTodoRequest = async () => response(JSON.stringify({
@@ -194,7 +280,7 @@ describe('Microsoft To Do settings and device-code sign-in', () => {
   })
 })
 
-describe('Microsoft Graph To Do read-only API boundary', () => {
+describe('Microsoft Graph To Do fixed API boundary', () => {
   it('lists bounded task pages, removes completed tasks, and converts HTML notes to plain text', async () => {
     const store = await connectedStore()
     const requests: Array<{ url: URL; options: { method?: string; maxResponseBytes?: number } }> = []
@@ -297,12 +383,12 @@ describe('Microsoft Graph To Do read-only API boundary', () => {
     expect(isAllowedMicrosoftTodoApiRequest(new URL('https://graph.microsoft.com/v1.0/me/todo/lists/list-1/tasks?%24top=100'), 'GET')).toBe(false)
   })
 
-  it('registers only per-call-approved external read tools', async () => {
+  it('registers per-call-approved external read and linked-task update tools', async () => {
     const store = await connectedStore()
     const tools = createMicrosoftTodoTools(new MicrosoftTodoService(store, { openExternal: async () => undefined }), {} as never)
-    expect(tools.map((tool) => tool.name)).toEqual(['microsoft_todo_list_task_lists', 'microsoft_todo_list_tasks', 'microsoft_todo_create_from_today_task'])
+    expect(tools.map((tool) => tool.name)).toEqual(['microsoft_todo_list_task_lists', 'microsoft_todo_list_tasks', 'microsoft_todo_create_from_today_task', 'microsoft_todo_sync_today_task'])
     expect(tools.every((tool) => tool.risk === 'external' && tool.sessionApprovalAllowed === false)).toBe(true)
-    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask', 'ask'])
+    expect(tools.map((tool) => defaultPolicy.tools[tool.name])).toEqual(['ask', 'ask', 'ask', 'ask'])
     expect(tools[0]?.scope?.({}, { grants: {} as never, primaryGrantId: '' })).toMatchObject({ kind: 'url', host: 'graph.microsoft.com' })
   })
 })

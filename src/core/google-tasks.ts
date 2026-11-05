@@ -34,7 +34,8 @@ const GOOGLE_TASK_SCHEMA = z.object({
   notes: z.string().max(100_000).optional(),
   due: z.string().max(64).optional(),
   status: z.enum(['needsAction', 'completed']).optional(),
-  updated: z.string().max(64).optional()
+  updated: z.string().max(64).optional(),
+  etag: z.string().min(1).max(512).optional()
 })
 const GOOGLE_TASK_LIST_RESULT_SCHEMA = z.object({
   nextPageToken: z.string().min(1).max(2_048).optional(),
@@ -43,6 +44,7 @@ const GOOGLE_TASK_LIST_RESULT_SCHEMA = z.object({
 const MAX_TASK_NOTES_CHARS = 4_000
 
 export interface GoogleTaskCreateInput { title: string; notes?: string; dueDate?: string | null }
+export interface GoogleTaskUpdateInput { title: string; notes: string; dueDate: string | null }
 
 interface GoogleTasksSettingsFile {
   version: 1
@@ -324,14 +326,90 @@ export class GoogleTasksService {
     }
     const parsed = GOOGLE_TASK_SCHEMA.safeParse(parseJson(response.text, 'created-task response'))
     if (!parsed.success) throw new TaskExportError('Google may have created the task, but its response could not be verified.', true)
+    const returnedNotes = parsed.data.notes ? cleanTaskNotes(parsed.data.notes).slice(0, MAX_TASK_NOTES_CHARS) : notes
     return {
       id: parsed.data.id,
       title: cleanSingleLine(parsed.data.title) || title,
-      ...(notes ? { notes } : {}),
-      ...(input.dueDate ? { due: input.dueDate } : {}),
+      ...(returnedNotes ? { notes: returnedNotes } : {}),
+      ...((parsed.data.due?.slice(0, 10) ?? input.dueDate) ? { due: parsed.data.due?.slice(0, 10) ?? input.dueDate! } : {}),
       status: parsed.data.status ?? 'needsAction',
-      ...(parsed.data.updated ? { updated: parsed.data.updated } : {})
+      ...(parsed.data.updated ? { updated: parsed.data.updated } : {}),
+      ...(parsed.data.etag ? { etag: parsed.data.etag } : {})
     }
+  }
+
+  async getTask(taskListId: string, taskId: string, signal: AbortSignal): Promise<GoogleTask> {
+    if (!isGoogleTaskListId(taskListId) || !isGoogleTaskId(taskId)) throw new Error('Choose a valid linked Google Tasks item.')
+    const url = new URL(`/tasks/v1/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`, GOOGLE_TASKS_ORIGIN)
+    const response = await this.requestTasksApi(url, signal)
+    ensureSuccess(response, 'read linked task')
+    const parsed = GOOGLE_TASK_SCHEMA.safeParse(parseJson(response.text, 'linked task response'))
+    if (!parsed.success) throw new Error('Google Tasks returned an unexpected linked task.')
+    const notes = parsed.data.notes ? cleanTaskNotes(parsed.data.notes).slice(0, MAX_TASK_NOTES_CHARS) : ''
+    return {
+      id: parsed.data.id,
+      title: cleanSingleLine(parsed.data.title) || 'Untitled task',
+      ...(notes ? { notes } : {}),
+      ...(parsed.data.due ? { due: parsed.data.due.slice(0, 10) } : {}),
+      status: parsed.data.status ?? 'needsAction',
+      ...(parsed.data.updated ? { updated: parsed.data.updated } : {}),
+      ...(parsed.data.etag ? { etag: parsed.data.etag } : {})
+    }
+  }
+
+  async updateTask(taskListId: string, taskId: string, input: GoogleTaskUpdateInput, expectedEtag: string, signal: AbortSignal): Promise<GoogleTask> {
+    if (!this.canWriteTasks()) throw new TaskExportError('Reconnect Google Tasks in Settings to grant task-write permission before updating linked tasks.', false)
+    if (!isGoogleTaskListId(taskListId) || !isGoogleTaskId(taskId)) throw new TaskExportError('Choose a valid linked Google Tasks item.', false)
+    if (!isValidEtag(expectedEtag)) throw new TaskExportError('Google Tasks did not return a usable version tag; this link cannot be updated safely.', false)
+    const title = cleanSingleLine(input.title).slice(0, 1_024)
+    if (!title) throw new TaskExportError('This local task has no title Google can accept.', false)
+    const notes = cleanTaskNotes(input.notes).slice(0, MAX_TASK_NOTES_CHARS)
+    const body = {
+      title,
+      notes: notes || null,
+      due: input.dueDate ? `${input.dueDate}T00:00:00.000Z` : null
+    }
+    const url = new URL(`/tasks/v1/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`, GOOGLE_TASKS_ORIGIN)
+    if (!isAllowedGoogleTasksApiRequest(url, 'PATCH')) throw new TaskExportError('Google Tasks update was outside the approved linked-task route.', false)
+    let token: string
+    try { token = await this.getAccessToken(signal) }
+    catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Google Tasks access could not be refreshed.', false) }
+    let response: ResponseBody
+    try { response = await this.requestTaskPatch(url, signal, token, body, expectedEtag) }
+    catch { throw new TaskExportError('Google Tasks did not confirm whether it updated the linked task.', true) }
+    if (response.status === 401) {
+      this.clearCachedAccessToken()
+      try { token = await this.getAccessToken(signal) }
+      catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Google Tasks access could not be refreshed.', false) }
+      try { response = await this.requestTaskPatch(url, signal, token, body, expectedEtag) }
+      catch { throw new TaskExportError('Google Tasks did not confirm whether it updated the linked task.', true) }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const conflict = response.status === 412
+      throw new TaskExportError(conflict ? 'The Google task changed during the update. No local changes were sent; reload the list and review it.' : `Google Tasks could not update the linked task (HTTP ${response.status}).`, response.status >= 500)
+    }
+    const parsed = GOOGLE_TASK_SCHEMA.safeParse(parseJson(response.text, 'updated-task response'))
+    if (!parsed.success) throw new TaskExportError('Google may have updated the linked task, but its response could not be verified.', true)
+    const updatedNotes = parsed.data.notes ? cleanTaskNotes(parsed.data.notes).slice(0, MAX_TASK_NOTES_CHARS) : ''
+    return {
+      id: parsed.data.id,
+      title: cleanSingleLine(parsed.data.title) || title,
+      ...(updatedNotes ? { notes: updatedNotes } : {}),
+      ...(parsed.data.due ? { due: parsed.data.due.slice(0, 10) } : {}),
+      status: parsed.data.status ?? 'needsAction',
+      ...(parsed.data.updated ? { updated: parsed.data.updated } : {}),
+      ...(parsed.data.etag ? { etag: parsed.data.etag } : {})
+    }
+  }
+
+  private async requestTaskPatch(url: URL, signal: AbortSignal, token: string, body: Record<string, string | null>, etag: string): Promise<ResponseBody> {
+    return this.request(url, signal, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json', 'If-Match': etag },
+      body: JSON.stringify(body),
+      maxResponseBytes: 256_000,
+      timeoutMs: 15_000
+    })
   }
 
   private async requestTaskCreate(url: URL, signal: AbortSignal, token: string, body: Record<string, string>): Promise<ResponseBody> {
@@ -396,8 +474,15 @@ export class GoogleTasksService {
 }
 
 export function isAllowedGoogleTasksApiRequest(url: URL, method: string): boolean {
-  if (!['GET', 'POST'].includes(method) || url.origin !== GOOGLE_TASKS_ORIGIN || url.username || url.password || url.port || url.hash) return false
+  if (!['GET', 'POST', 'PATCH'].includes(method) || url.origin !== GOOGLE_TASKS_ORIGIN || url.username || url.password || url.port || url.hash) return false
   if (method === 'GET' && url.pathname === GOOGLE_TASK_LISTS_PATH) return true
+  const itemMatch = url.pathname.match(/^\/tasks\/v1\/lists\/([^/]{1,1536})\/tasks\/([^/]{1,1536})$/)
+  if (itemMatch?.[1] && itemMatch[2]) {
+    try {
+      if (!isGoogleTaskListId(decodeURIComponent(itemMatch[1])) || !isGoogleTaskId(decodeURIComponent(itemMatch[2]))) return false
+      return (method === 'GET' && !url.search) || (method === 'PATCH' && !url.search)
+    } catch { return false }
+  }
   const match = url.pathname.match(/^\/tasks\/v1\/lists\/([^/]{1,1536})\/tasks$/)
   if (!match?.[1]) return false
   try {
@@ -405,6 +490,9 @@ export function isAllowedGoogleTasksApiRequest(url: URL, method: string): boolea
     return method === 'GET' || (method === 'POST' && !url.search)
   } catch { return false }
 }
+
+function isGoogleTaskId(value: string): boolean { return value !== '.' && value !== '..' && value.length <= 512 && /^[A-Za-z0-9_@.-]{1,512}$/.test(value) }
+function isValidEtag(value: string): boolean { return value.length > 0 && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value) }
 
 export function isGoogleTaskListId(value: string): boolean {
   return value !== '.' && value !== '..' && value.length <= 512 && /^[A-Za-z0-9_@.-]{1,512}$/.test(value)

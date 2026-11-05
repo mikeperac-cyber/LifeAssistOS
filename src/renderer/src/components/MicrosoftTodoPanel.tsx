@@ -85,7 +85,7 @@ export function MicrosoftTodoPanel({ settings, todayTasks, disabled, onOpenSetti
         <h3 id="microsoft-todo-title">Microsoft To Do</h3>
         {settings?.connected && tasks.length > 0 && <span>{tasks.length} open</span>}
       </div>
-      <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read and send shows a separate approval with the task details. Existing read-only connections need to be disconnected and reconnected in Settings to send. Later local edits will not sync. Chat may send approved task details to your configured model provider.</p>
+      <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing. Chat may send approved task details to your configured model provider.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking Microsoft To Do connection…</p>
       ) : !settings.connected ? (

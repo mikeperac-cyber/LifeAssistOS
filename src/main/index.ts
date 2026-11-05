@@ -2067,7 +2067,7 @@ function registerIpc(): void {
   })
 
   const runTaskActionWithApproval = async (
-    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'create_calendar_prep_task' | 'create_email_followup_task' | 'clear_task_export_retry_guard',
+    name: 'google_tasks_create_from_today_task' | 'microsoft_todo_create_from_today_task' | 'google_tasks_sync_today_task' | 'microsoft_todo_sync_today_task' | 'create_calendar_prep_task' | 'create_email_followup_task' | 'clear_task_export_retry_guard' | 'clear_task_export_sync_retry_guard',
     args: unknown,
     summary: string
   ): Promise<{ ok: boolean; output?: unknown; error?: string; denied?: boolean; outcomeUnknown?: boolean }> => {
@@ -2140,6 +2140,27 @@ function registerIpc(): void {
       'clear_task_export_retry_guard',
       input,
       `Clear the local retry guard for this task in ${label}. Check the remote list first.`
+    )
+  })
+
+  ipcMain.handle('assist:today-task-sync', async (_event, input: unknown) => {
+    if (!isTodayTaskExportInput(input)) return { ok: false, error: 'Choose a valid task, destination, and provider.' }
+    const service = input.provider === 'google_tasks' ? googleTasks : microsoftTodo
+    if (!service?.isReady()) return { ok: false, error: `Connect ${input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} in Settings first.` }
+    if (!service.canWriteTasks()) return { ok: false, error: 'Reconnect this task service in Settings to grant permission to update linked tasks.' }
+    const name = input.provider === 'google_tasks' ? 'google_tasks_sync_today_task' : 'microsoft_todo_sync_today_task'
+    const label = input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+    const listTitle = input.taskListTitle.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120)
+    return runTaskActionWithApproval(name, input, `Update the linked task in ${label} list “${listTitle}”`)
+  })
+
+  ipcMain.handle('assist:today-task-sync-clear-guard', async (_event, input: unknown) => {
+    if (!isTodayTaskExportClearInput(input)) return { ok: false, error: 'Choose a valid task, destination, and provider.' }
+    const label = input.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+    return runTaskActionWithApproval(
+      'clear_task_export_sync_retry_guard',
+      input,
+      `Clear the local sync retry guard for this task in ${label}. Check the remote task first.`
     )
   })
 

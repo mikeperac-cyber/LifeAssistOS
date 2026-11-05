@@ -3,12 +3,14 @@ import { backup, DatabaseSync } from 'node:sqlite'
 import { openSQLiteDatabase } from './sqlite'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TodaySnapshot } from '../shared/types'
+import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, TaskExportProvider, TaskExportRecord, TaskExportStatus, TaskExportSyncStatus, TodaySnapshot } from '../shared/types'
 import { assertDateOnly } from '../shared/date-only'
 
 interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null }
 interface InboxRow { id: string; text: string; created_at: string; converted_task_id: string | null; dismissed_at: string | null }
-interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string }
+interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string; sync_status: TaskExportSyncStatus; synced_local_updated_at: string | null; synced_title: string | null; synced_notes: string | null; synced_due_date: string | null; synced_priority: PlanTaskPriority | null; remote_etag: string | null }
+
+export interface TaskExportSyncSnapshot { localUpdatedAt: string; title: string; notes: string; dueDate: string | null; priority?: PlanTaskPriority; remoteEtag?: string }
 
 export interface PendingTaskReminder { id: string; title: string; remindAt: string }
 
@@ -46,6 +48,10 @@ export class PlanningStore {
         task_id TEXT NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('google_tasks', 'microsoft_todo')),
         task_list_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('sending', 'sent', 'failed', 'uncertain')),
         remote_task_id TEXT, updated_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'idle' CHECK (sync_status IN ('idle', 'sending', 'failed', 'uncertain')),
+        synced_local_updated_at TEXT, synced_title TEXT, synced_notes TEXT, synced_due_date TEXT,
+        synced_priority TEXT CHECK (synced_priority IS NULL OR synced_priority IN ('low', 'normal', 'high')),
+        remote_etag TEXT,
         PRIMARY KEY (task_id, provider, task_list_id)
       );
       CREATE INDEX IF NOT EXISTS tasks_due_status ON tasks(due_date, status);
@@ -61,7 +67,16 @@ export class PlanningStore {
     this.db.exec('CREATE UNIQUE INDEX IF NOT EXISTS tasks_calendar_source ON tasks(source_calendar_provider, source_calendar_event_id) WHERE source_calendar_event_id IS NOT NULL')
     if (!columns.some((column) => column.name === 'remind_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT')
     if (!columns.some((column) => column.name === 'reminder_notified_at')) this.db.exec('ALTER TABLE tasks ADD COLUMN reminder_notified_at TEXT')
+    const exportColumns = this.db.prepare('PRAGMA table_info(task_exports)').all() as Array<{ name: string }>
+    if (!exportColumns.some((column) => column.name === 'sync_status')) this.db.exec("ALTER TABLE task_exports ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'idle' CHECK (sync_status IN ('idle', 'sending', 'failed', 'uncertain'))")
+    if (!exportColumns.some((column) => column.name === 'synced_local_updated_at')) this.db.exec('ALTER TABLE task_exports ADD COLUMN synced_local_updated_at TEXT')
+    if (!exportColumns.some((column) => column.name === 'synced_title')) this.db.exec('ALTER TABLE task_exports ADD COLUMN synced_title TEXT')
+    if (!exportColumns.some((column) => column.name === 'synced_notes')) this.db.exec('ALTER TABLE task_exports ADD COLUMN synced_notes TEXT')
+    if (!exportColumns.some((column) => column.name === 'synced_due_date')) this.db.exec('ALTER TABLE task_exports ADD COLUMN synced_due_date TEXT')
+    if (!exportColumns.some((column) => column.name === 'synced_priority')) this.db.exec("ALTER TABLE task_exports ADD COLUMN synced_priority TEXT CHECK (synced_priority IS NULL OR synced_priority IN ('low', 'normal', 'high'))")
+    if (!exportColumns.some((column) => column.name === 'remote_etag')) this.db.exec('ALTER TABLE task_exports ADD COLUMN remote_etag TEXT')
     this.db.prepare("UPDATE task_exports SET status = 'uncertain', updated_at = ? WHERE status = 'sending'").run(new Date().toISOString())
+    this.db.prepare("UPDATE task_exports SET sync_status = 'uncertain', updated_at = ? WHERE sync_status = 'sending'").run(new Date().toISOString())
   }
 
   snapshot(date = localDate()): TodaySnapshot {
@@ -194,18 +209,57 @@ export class PlanningStore {
         this.db.prepare("INSERT INTO task_exports (task_id, provider, task_list_id, status, remote_task_id, updated_at) VALUES (?, ?, ?, 'sending', NULL, ?)").run(taskId, provider, taskListId, updatedAt)
       }
       this.db.exec('COMMIT')
-      return { task, export: { provider, taskListId, status: 'sending', updatedAt }, alreadySent: false }
+      return { task, export: { provider, taskListId, status: 'sending', updatedAt, syncStatus: 'idle' }, alreadySent: false }
     } catch (error) {
       try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
       throw error
     }
   }
 
-  finishTaskExport(taskId: string, provider: TaskExportProvider, taskListId: string, status: Exclude<TaskExportStatus, 'sending'>, remoteTaskId?: string): void {
+  finishTaskExport(taskId: string, provider: TaskExportProvider, taskListId: string, status: Exclude<TaskExportStatus, 'sending'>, remoteTaskId?: string, syncSnapshot?: TaskExportSyncSnapshot): void {
     if (status === 'sent' && (!remoteTaskId || remoteTaskId.length > 512)) throw new Error('The task service returned an invalid remote task ID.')
-    const result = this.db.prepare('UPDATE task_exports SET status = ?, remote_task_id = ?, updated_at = ? WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = ?')
-      .run(status, status === 'sent' ? (remoteTaskId ?? null) : null, new Date().toISOString(), taskId, provider, taskListId, 'sending')
+    if (syncSnapshot && (!syncSnapshot.localUpdatedAt || (syncSnapshot.remoteEtag !== undefined && (!syncSnapshot.remoteEtag || syncSnapshot.remoteEtag.length > 512)))) throw new Error('The task service returned invalid sync version details.')
+    const result = this.db.prepare('UPDATE task_exports SET status = ?, remote_task_id = ?, updated_at = ?, sync_status = ?, synced_local_updated_at = ?, synced_title = ?, synced_notes = ?, synced_due_date = ?, synced_priority = ?, remote_etag = ? WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = ?')
+      .run(status, status === 'sent' ? (remoteTaskId ?? null) : null, new Date().toISOString(), 'idle', syncSnapshot?.localUpdatedAt ?? null, syncSnapshot?.title ?? null, syncSnapshot?.notes ?? null, syncSnapshot?.dueDate ?? null, syncSnapshot?.priority ?? null, syncSnapshot?.remoteEtag ?? null, taskId, provider, taskListId, 'sending')
     if (result.changes === 0) throw new Error('The local task send record changed before it could be updated.')
+  }
+
+  beginTaskExportSync(taskId: string, provider: TaskExportProvider, taskListId: string, expectedUpdatedAt: string): { task: PlanTask; export: TaskExportRecord } {
+    validateTaskExportTarget(provider, taskListId)
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      const task = this.getTask(taskId)
+      if (task.status !== 'open') throw new Error('Only an open local Today task can update a linked task.')
+      if (task.updatedAt !== expectedUpdatedAt) throw new Error('This local task changed after update approval was requested. Review it and approve again.')
+      const prior = this.getTaskExport(taskId, provider, taskListId)
+      if (!prior || prior.status !== 'sent' || !prior.remoteTaskId) throw new Error('This local task has no confirmed remote link to update.')
+      if (!prior.syncedLocalUpdatedAt || !prior.remoteEtag || prior.syncedTitle === undefined || prior.syncedNotes === undefined || (provider === 'microsoft_todo' && prior.syncedPriority === undefined)) {
+        throw new Error('This task link predates safe sync tracking or the provider returned no version tag. It can stay a one-time copy, but it cannot be updated safely.')
+      }
+      if (prior.syncStatus === 'sending' || prior.syncStatus === 'uncertain') throw new Error('A previous update may already have applied. Check the destination task and clear the sync retry guard before trying again.')
+      if (!taskDiffersFromExportBaseline(task, provider, prior)) throw new Error('This local task has no changes since the last confirmed update.')
+      const updatedAt = new Date().toISOString()
+      const result = this.db.prepare("UPDATE task_exports SET sync_status = 'sending', updated_at = ? WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = 'sent' AND sync_status IN ('idle', 'failed')")
+        .run(updatedAt, taskId, provider, taskListId)
+      if (result.changes === 0) throw new Error('This linked task is already being updated. Refresh and try again.')
+      this.db.exec('COMMIT')
+      return { task, export: { ...prior, syncStatus: 'sending', updatedAt } }
+    } catch (error) {
+      try { this.db.exec('ROLLBACK') } catch { /* Keep the original failure. */ }
+      throw error
+    }
+  }
+
+  finishTaskExportSync(taskId: string, provider: TaskExportProvider, taskListId: string, status: Exclude<TaskExportSyncStatus, 'sending'>, snapshot?: TaskExportSyncSnapshot): void {
+    if (status === 'idle' && (!snapshot || !snapshot.localUpdatedAt || (snapshot.remoteEtag !== undefined && (!snapshot.remoteEtag || snapshot.remoteEtag.length > 512)))) throw new Error('The provider returned invalid sync version details.')
+    const result = this.db.prepare("UPDATE task_exports SET sync_status = ?, updated_at = ?, synced_local_updated_at = CASE WHEN ? = 1 THEN ? ELSE synced_local_updated_at END, synced_title = CASE WHEN ? = 1 THEN ? ELSE synced_title END, synced_notes = CASE WHEN ? = 1 THEN ? ELSE synced_notes END, synced_due_date = CASE WHEN ? = 1 THEN ? ELSE synced_due_date END, synced_priority = CASE WHEN ? = 1 THEN ? ELSE synced_priority END, remote_etag = CASE WHEN ? = 1 THEN ? ELSE remote_etag END WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = 'sent' AND sync_status = 'sending'")
+      .run(status, new Date().toISOString(), snapshot ? 1 : 0, snapshot?.localUpdatedAt ?? null, snapshot ? 1 : 0, snapshot?.title ?? null, snapshot ? 1 : 0, snapshot?.notes ?? null, snapshot ? 1 : 0, snapshot?.dueDate ?? null, snapshot ? 1 : 0, snapshot?.priority ?? null, snapshot ? 1 : 0, snapshot?.remoteEtag ?? null, taskId, provider, taskListId)
+    if (result.changes === 0) throw new Error('The linked task sync record changed before it could be updated.')
+  }
+
+  clearTaskExportSyncRetryGuard(taskId: string, provider: TaskExportProvider, taskListId: string): void {
+    const result = this.db.prepare("UPDATE task_exports SET sync_status = 'idle', updated_at = ? WHERE task_id = ? AND provider = ? AND task_list_id = ? AND status = 'sent' AND sync_status = 'uncertain'").run(new Date().toISOString(), taskId, provider, taskListId)
+    if (result.changes === 0) throw new Error('There is no uncertain linked-task update to clear for that task and destination.')
   }
 
   clearTaskExportRetryGuard(taskId: string, provider: TaskExportProvider, taskListId: string): void {
@@ -275,7 +329,15 @@ function normalizeCalendarTaskSource(source: CalendarTaskSource): CalendarTaskSo
 }
 function isEmailTaskProvider(value: string | null): value is EmailTaskProvider { return value === 'gmail' || value === 'outlook' }
 function isCalendarTaskProvider(value: string | null): value is CalendarTaskProvider { return value === 'google_calendar' || value === 'microsoft_calendar' }
-function taskExportFromRow(row: TaskExportRow): TaskExportRecord { return { provider: row.provider, taskListId: row.task_list_id, status: row.status, ...(row.remote_task_id ? { remoteTaskId: row.remote_task_id } : {}), updatedAt: row.updated_at } }
+function taskExportFromRow(row: TaskExportRow): TaskExportRecord { return { provider: row.provider, taskListId: row.task_list_id, status: row.status, ...(row.remote_task_id ? { remoteTaskId: row.remote_task_id } : {}), updatedAt: row.updated_at, syncStatus: row.sync_status, ...(row.synced_local_updated_at ? { syncedLocalUpdatedAt: row.synced_local_updated_at } : {}), ...(row.synced_title !== null ? { syncedTitle: row.synced_title } : {}), ...(row.synced_notes !== null ? { syncedNotes: row.synced_notes } : {}), ...(row.synced_local_updated_at ? { syncedDueDate: row.synced_due_date } : {}), ...(row.synced_priority ? { syncedPriority: row.synced_priority } : {}), ...(row.remote_etag ? { remoteEtag: row.remote_etag } : {}) } }
+function taskDiffersFromExportBaseline(task: PlanTask, provider: TaskExportProvider, baseline: TaskExportRecord): boolean {
+  if (!baseline.syncedLocalUpdatedAt || baseline.syncedTitle === undefined || baseline.syncedNotes === undefined) return false
+  const titleLimit = provider === 'google_tasks' ? 1_024 : 240
+  const cleanTitle = task.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, titleLimit)
+  const cleanNotes = task.notes.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim().slice(0, 4_000)
+  return cleanTitle !== baseline.syncedTitle || cleanNotes !== baseline.syncedNotes || task.dueDate !== (baseline.syncedDueDate ?? null) ||
+    (provider === 'microsoft_todo' && baseline.syncedPriority !== undefined && task.priority !== baseline.syncedPriority)
+}
 function validateTaskExportTarget(provider: TaskExportProvider, taskListId: string): void {
   if (provider !== 'google_tasks' && provider !== 'microsoft_todo') throw new Error('Choose Google Tasks or Microsoft To Do as the destination.')
   if (!taskListId || taskListId.length > 512 || /[\u0000-\u001f\u007f]/.test(taskListId)) throw new Error('Choose a valid task list.')

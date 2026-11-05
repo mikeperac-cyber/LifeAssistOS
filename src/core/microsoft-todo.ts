@@ -22,6 +22,7 @@ const MAX_NOTE_CHARS = 4_000
 const MAX_NEXT_LINK_LENGTH = 8_192
 
 export interface MicrosoftTodoTaskCreateInput { title: string; notes?: string; dueDate?: string | null; priority?: 'low' | 'normal' | 'high' }
+export interface MicrosoftTodoTaskUpdateInput { title: string; notes: string; dueDate: string | null; priority: 'low' | 'normal' | 'high' }
 
 const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const LIST_PAGE_SCHEMA = z.object({
@@ -37,8 +38,10 @@ const TODO_TASK_SCHEMA = z.object({
   title: z.string().max(2_048).optional(),
   body: z.object({ contentType: z.string().max(32).optional(), content: z.string().max(100_000).optional() }).optional(),
   dueDateTime: z.object({ dateTime: z.string().max(128).optional(), timeZone: z.string().max(128).optional() }).optional(),
+  importance: z.enum(['low', 'normal', 'high']).optional(),
   status: z.enum(['notStarted', 'inProgress', 'completed', 'waitingOnOthers', 'deferred']).optional(),
-  lastModifiedDateTime: z.string().max(64).optional()
+  lastModifiedDateTime: z.string().max(64).optional(),
+  '@odata.etag': z.string().min(1).max(512).optional()
 }).passthrough()
 const TASK_PAGE_SCHEMA = z.object({
   value: z.array(TODO_TASK_SCHEMA).max(100).default([]),
@@ -285,6 +288,17 @@ export class MicrosoftTodoService {
     }
   }
 
+  async getTask(taskListId: string, taskId: string, signal: AbortSignal): Promise<MicrosoftTodoTask> {
+    if (!isSafeGraphId(taskListId) || !isSafeGraphId(taskId)) throw new Error('Choose a valid linked Microsoft To Do task.')
+    const taskPath = `/v1.0/me/todo/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`
+    const url = new URL(taskPath, MICROSOFT_TODO_API_ORIGIN)
+    const response = await this.requestGraph(url, signal, taskPath)
+    ensureSuccess(response, 'read linked Microsoft To Do task')
+    const parsed = TODO_TASK_SCHEMA.safeParse(parseJson(response.text, 'linked task response'))
+    if (!parsed.success) throw new Error('Microsoft Graph returned an unexpected linked To Do task.')
+    return mapTodoTask(parsed.data)
+  }
+
   async createTask(taskListId: string, input: MicrosoftTodoTaskCreateInput, signal: AbortSignal): Promise<MicrosoftTodoTask> {
     if (!this.canWriteTasks()) throw new TaskExportError('Reconnect Microsoft To Do in Settings to grant task-write permission before sending tasks.', false)
     if (!isSafeGraphId(taskListId)) throw new TaskExportError('Choose a valid Microsoft To Do list.', false)
@@ -319,30 +333,59 @@ export class MicrosoftTodoService {
     }
     const parsed = TODO_TASK_SCHEMA.safeParse(parseJson(response.text, 'created-task response'))
     if (!parsed.success) throw new TaskExportError('Microsoft To Do may have created the task, but its response could not be verified.', true)
-    const due = parsed.data.dueDateTime?.dateTime?.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
-    const updated = cleanSingleLine(parsed.data.lastModifiedDateTime)
-    return {
-      id: parsed.data.id,
-      title: cleanSingleLine(parsed.data.title) || title,
-      ...(notes ? { notes } : {}),
-      ...(due ?? (input.dueDate || undefined) ? { due: due ?? input.dueDate! } : {}),
-      status: parsed.data.status ?? 'notStarted',
-      ...(updated ? { updated } : {})
-    }
+    return mapTodoTask(parsed.data, { title, notes, due: input.dueDate ?? undefined, priority: input.priority ?? 'normal' })
   }
 
-  private async requestGraph(url: URL, signal: AbortSignal, expectedPath: string, method: 'GET' | 'POST' = 'GET', body?: unknown, tokenOverride?: string): Promise<ResponseBody> {
+  async updateTask(taskListId: string, taskId: string, input: MicrosoftTodoTaskUpdateInput, expectedEtag: string, signal: AbortSignal): Promise<MicrosoftTodoTask> {
+    if (!this.canWriteTasks()) throw new TaskExportError('Reconnect Microsoft To Do in Settings to grant task-write permission before updating linked tasks.', false)
+    if (!isSafeGraphId(taskListId) || !isSafeGraphId(taskId)) throw new TaskExportError('Choose a valid linked Microsoft To Do task.', false)
+    if (!isValidEtag(expectedEtag)) throw new TaskExportError('Microsoft To Do did not return a usable version tag; this link cannot be updated safely.', false)
+    const title = cleanSingleLine(input.title).slice(0, 240)
+    if (!title) throw new TaskExportError('This local task has no title Microsoft To Do can accept.', false)
+    const notes = input.notes.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim().slice(0, MAX_NOTE_CHARS)
+    const requestBody = {
+      title,
+      body: { contentType: 'text', content: notes },
+      dueDateTime: input.dueDate ? { dateTime: `${input.dueDate}T00:00:00`, timeZone: 'UTC' } : null,
+      importance: input.priority
+    }
+    const taskPath = `/v1.0/me/todo/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`
+    const url = new URL(taskPath, MICROSOFT_TODO_API_ORIGIN)
+    if (!isAllowedMicrosoftTodoApiRequest(url, 'PATCH', taskPath)) throw new TaskExportError('Microsoft To Do update was outside the approved linked-task route.', false)
+    let token: string
+    try { token = await this.connection.getAccessToken(signal) }
+    catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Microsoft To Do access could not be refreshed.', false) }
+    let response: ResponseBody
+    try { response = await this.requestGraph(url, signal, taskPath, 'PATCH', requestBody, token, { 'If-Match': expectedEtag }) }
+    catch { throw new TaskExportError('Microsoft To Do did not confirm whether it updated the linked task.', true) }
+    if (response.status === 401) {
+      this.clearCachedAccessToken()
+      try { token = await this.connection.getAccessToken(signal) }
+      catch (error) { throw new TaskExportError(error instanceof Error ? error.message : 'Microsoft To Do access could not be refreshed.', false) }
+      try { response = await this.requestGraph(url, signal, taskPath, 'PATCH', requestBody, token, { 'If-Match': expectedEtag }) }
+      catch { throw new TaskExportError('Microsoft To Do did not confirm whether it updated the linked task.', true) }
+    }
+    if (response.status < 200 || response.status >= 300) {
+      const conflict = response.status === 412
+      throw new TaskExportError(conflict ? 'The Microsoft To Do task changed during the update. No local changes were sent; reload the list and review it.' : `Microsoft To Do could not update the linked task (HTTP ${response.status}).`, response.status >= 500)
+    }
+    const parsed = TODO_TASK_SCHEMA.safeParse(parseJson(response.text, 'updated-task response'))
+    if (!parsed.success) throw new TaskExportError('Microsoft To Do may have updated the linked task, but its response could not be verified.', true)
+    return mapTodoTask(parsed.data, { title, notes, due: input.dueDate ?? undefined, priority: input.priority })
+  }
+
+  private async requestGraph(url: URL, signal: AbortSignal, expectedPath: string, method: 'GET' | 'POST' | 'PATCH' = 'GET', body?: unknown, tokenOverride?: string, additionalHeaders?: Record<string, string>): Promise<ResponseBody> {
     if (!isAllowedMicrosoftTodoApiRequest(url, method, expectedPath)) {
       throw new Error('Microsoft To Do requests are limited to list and task routes on Microsoft Graph.')
     }
     const makeRequest = async (token: string): Promise<ResponseBody> => this.request(url, signal, {
-      method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      method, headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...additionalHeaders },
       ...(body ? { body: JSON.stringify(body) } : {}),
       maxResponseBytes: 1_000_000, timeoutMs: 15_000
     })
     let response = await makeRequest(tokenOverride ?? await this.connection.getAccessToken(signal))
-    // The create caller owns the single safe re-auth retry. Keeping this GET
-    // helper retry for POSTs too could send the same create request three times.
+    // Mutations own their single safe re-auth retry. Keeping this GET helper
+    // retry for POST/PATCH could replay a write after an ambiguous response.
     if (response.status === 401 && method === 'GET') {
       this.clearCachedAccessToken()
       response = await makeRequest(await this.connection.getAccessToken(signal))
@@ -352,15 +395,23 @@ export class MicrosoftTodoService {
 }
 
 export function isAllowedMicrosoftTodoApiRequest(url: URL, method: string, expectedPath?: string): boolean {
-  if (!['GET', 'POST'].includes(method) || url.origin !== MICROSOFT_TODO_API_ORIGIN || url.username || url.password || url.port || url.hash) return false
+  if (!['GET', 'POST', 'PATCH'].includes(method) || url.origin !== MICROSOFT_TODO_API_ORIGIN || url.username || url.password || url.port || url.hash) return false
   const isListPath = url.pathname === MICROSOFT_TASK_LISTS_PATH
   const taskMatch = url.pathname.match(/^\/v1\.0\/me\/todo\/lists\/([^/]{1,2048})\/tasks$/)
+  const itemMatch = url.pathname.match(/^\/v1\.0\/me\/todo\/lists\/([^/]{1,2048})\/tasks\/([^/]{1,2048})$/)
   if (expectedPath && url.pathname !== expectedPath) return false
+  if (itemMatch?.[1] && itemMatch[2]) {
+    try {
+      if (!isSafeGraphId(decodeURIComponent(itemMatch[1])) || !isSafeGraphId(decodeURIComponent(itemMatch[2]))) return false
+      return (method === 'GET' || method === 'PATCH') && !url.search
+    } catch { return false }
+  }
   if (!isListPath && !taskMatch) return false
   if (taskMatch) {
     try { if (!isSafeGraphId(decodeURIComponent(taskMatch[1]!))) return false } catch { return false }
   }
   if (method === 'POST') return Boolean(taskMatch) && !url.search
+  if (method === 'PATCH') return false
   return hasSafePageQuery(url, isListPath)
 }
 
@@ -411,6 +462,24 @@ function hasSafePageQuery(url: URL, isListPath: boolean): boolean {
 function cleanSingleLine(value?: string): string {
   return value?.replace(/[\u0000-\u001f\u007f]/g, ' ').trim() ?? ''
 }
+
+function mapTodoTask(value: z.infer<typeof TODO_TASK_SCHEMA>, fallback?: { title: string; notes: string; due?: string; priority: 'low' | 'normal' | 'high' }): MicrosoftTodoTask {
+  const notes = value.body?.content ? cleanBody(value.body.content, value.body.contentType === 'html').slice(0, MAX_NOTE_CHARS) : fallback?.notes ?? ''
+  const due = value.dueDateTime?.dateTime?.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? fallback?.due
+  const updated = cleanSingleLine(value.lastModifiedDateTime)
+  return {
+    id: value.id,
+    title: cleanSingleLine(value.title) || fallback?.title || 'Untitled task',
+    ...(notes ? { notes } : {}),
+    ...(due ? { due } : {}),
+    status: value.status ?? 'notStarted',
+    ...(updated ? { updated } : {}),
+    ...(value['@odata.etag'] ? { etag: value['@odata.etag'] } : {}),
+    priority: value.importance ?? fallback?.priority ?? 'normal'
+  }
+}
+
+function isValidEtag(value: string): boolean { return value.length > 0 && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value) }
 
 function cleanBody(value: string, isHtml: boolean): string {
   const plain = isHtml

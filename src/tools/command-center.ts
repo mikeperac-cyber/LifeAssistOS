@@ -229,7 +229,29 @@ export function createCommandCenterTools(vault: VaultStore, planning: PlanningSt
     }
   }
 
-  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, createCalendarPrepTask, updateTask, completeTask, clearTaskExportRetryGuard]
+  const clearTaskExportSyncRetryGuard: ToolDef<{ taskId: string; provider: TaskExportProvider; taskListId: string }, unknown> = {
+    name: 'clear_task_export_sync_retry_guard',
+    description: 'Clear the local uncertainty guard after the user has checked the linked Google Tasks or Microsoft To Do item. This changes only local sync metadata; it does not edit the provider task. Requires separate approval.',
+    risk: 'write',
+    sessionApprovalAllowed: false,
+    input: z.object({ taskId: z.string().uuid(), provider: z.enum(['google_tasks', 'microsoft_todo']), taskListId: z.string().min(1).max(512) }),
+    scope: () => ({ kind: 'none' }),
+    preview: (args) => {
+      const task = planning.getTask(args.taskId)
+      const prior = planning.getTaskExport(args.taskId, args.provider, args.taskListId)
+      if (!prior || prior.status !== 'sent' || prior.syncStatus !== 'uncertain') throw new Error('This task has no uncertain linked-task update for that destination.')
+      const provider = args.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'
+      const title = task.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim()
+      return `Clear the local sync retry guard for “${title}” in ${provider}. Check the linked provider task first; the next update will still compare versions before writing.`
+    },
+    run: async (args) => {
+      planning.clearTaskExportSyncRetryGuard(args.taskId, args.provider, args.taskListId)
+      onTodayChanged()
+      return { cleared: true, provider: args.provider, note: 'No provider task was changed.' }
+    }
+  }
+
+  return [searchVault, listToday, saveVault, captureInbox, createTask, createEmailFollowupTask, createCalendarPrepTask, updateTask, completeTask, clearTaskExportRetryGuard, clearTaskExportSyncRetryGuard]
 }
 
 function safeCalendarText(value: string): string { return value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim() }

@@ -3304,6 +3304,11 @@ summary:focus-visible {
 .today-task-export-warning, .today-task-export-help { margin: 7px 0 0; font-size: 10px; line-height: 1.45; }
 .today-task-export-warning { color: var(--amber); }
 .today-task-export-help { color: var(--faint); }
+.today-task-export-conflict { margin-top: 8px; padding: 7px 8px; border: 1px solid var(--line-soft); border-radius: 7px; color: var(--muted); font-size: 10px; }
+.today-task-export-conflict summary { color: var(--text); cursor: pointer; font-weight: 600; }
+.today-task-export-conflict dl { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 5px 8px; margin: 8px 0 0; }
+.today-task-export-conflict dt { color: var(--faint); }
+.today-task-export-conflict dd { min-width: 0; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .today-task-export-guidance { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: var(--muted); font-size: 10px; }
 .today-task-export-control > .status-success, .today-task-export-control > .status-error { margin: 7px 0 0; padding: 6px 8px; border-radius: 7px; font-size: 10px; line-height: 1.4; }
 .today-calendar-event-actions { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 5px; }
@@ -3334,6 +3339,7 @@ summary:focus-visible {
 .today-task .today-task-source { width: fit-content; padding: 2px 6px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--accent); font-size: 9px; }
 .today-task .today-task-export { width: fit-content; padding: 2px 6px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--faint); font-size: 9px; }
 .today-task .today-task-export.export-sent { color: var(--accent); }
+.today-task .today-task-export.export-needs-sync { color: var(--amber); }
 .today-task .today-task-export.export-failed { color: var(--red); }
 .today-task .today-task-export.export-uncertain { color: var(--amber); }
 .task-reminder-button { flex: 0 0 auto; padding: 6px 8px; font-size: 10px; }

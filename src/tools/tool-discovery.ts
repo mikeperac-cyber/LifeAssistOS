@@ -86,7 +86,7 @@ function aliasesForTool(name: string): string {
     return 'koc kocluk kisisel isletme hedef gunluk yansima aliskanlik motivasyon'
   }
   if (name === 'list_today' || name === 'create_task' || name === 'create_email_followup_task' || name === 'capture_inbox' ||
-      name === 'update_task' || name === 'complete_task' || name === 'clear_task_export_retry_guard' || name.startsWith('schedule_agent_task') ||
+      name === 'update_task' || name === 'complete_task' || name === 'clear_task_export_retry_guard' || name === 'clear_task_export_sync_retry_guard' || name.startsWith('schedule_agent_task') ||
       name === 'list_scheduled_agent_tasks') {
     return 'bugun yarin gorev yapilacak hatirlatma oncelik plan otomasyon zamanlama'
   }

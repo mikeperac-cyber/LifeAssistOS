@@ -223,6 +223,75 @@ describe('Today planning store', () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it('tracks linked task baselines and recovers interrupted updates as uncertain', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-sync-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const store = new PlanningStore(file)
+    await store.init()
+    const task = store.addTask({ title: 'Prepare the agenda', notes: 'Include the schedule.', dueDate: '2026-11-08', priority: 'high' })
+    store.beginTaskExport(task.id, 'microsoft_todo', 'list-1', task.updatedAt)
+    store.finishTaskExport(task.id, 'microsoft_todo', 'list-1', 'sent', 'remote-task-1', {
+      localUpdatedAt: task.updatedAt, title: task.title, notes: task.notes, dueDate: task.dueDate, priority: task.priority, remoteEtag: 'etag-1'
+    })
+    expect(store.getTaskExport(task.id, 'microsoft_todo', 'list-1')).toMatchObject({
+      syncedLocalUpdatedAt: task.updatedAt, syncedTitle: task.title, syncedNotes: task.notes, syncedDueDate: task.dueDate, syncedPriority: 'high', remoteEtag: 'etag-1', syncStatus: 'idle'
+    })
+    expect(() => store.beginTaskExportSync(task.id, 'microsoft_todo', 'list-1', task.updatedAt)).toThrow(/no changes/i)
+
+    await new Promise((resolve) => setTimeout(resolve, 3))
+    const edited = store.updateTask(task.id, { title: 'Prepare the revised agenda', notes: 'Add the new schedule.' })
+    store.beginTaskExportSync(task.id, 'microsoft_todo', 'list-1', edited.updatedAt)
+    store.close()
+
+    const recovered = new PlanningStore(file)
+    await recovered.init()
+    expect(recovered.getTaskExport(task.id, 'microsoft_todo', 'list-1')?.syncStatus).toBe('uncertain')
+    expect(() => recovered.beginTaskExportSync(task.id, 'microsoft_todo', 'list-1', edited.updatedAt)).toThrow(/previous update may already have applied/i)
+    recovered.clearTaskExportSyncRetryGuard(task.id, 'microsoft_todo', 'list-1')
+    const retry = recovered.beginTaskExportSync(task.id, 'microsoft_todo', 'list-1', edited.updatedAt)
+    recovered.finishTaskExportSync(task.id, 'microsoft_todo', 'list-1', 'idle', {
+      localUpdatedAt: edited.updatedAt, title: edited.title, notes: edited.notes, dueDate: edited.dueDate, priority: edited.priority, remoteEtag: 'etag-2'
+    })
+    expect(retry.export.syncStatus).toBe('sending')
+    expect(recovered.getTaskExport(task.id, 'microsoft_todo', 'list-1')).toMatchObject({
+      syncStatus: 'idle', syncedLocalUpdatedAt: edited.updatedAt, syncedTitle: edited.title, remoteEtag: 'etag-2'
+    })
+    recovered.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('migrates older linked-task records without pretending they have a safe update baseline', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-task-sync-migration-'))
+    const file = path.join(dir, 'planning.sqlite')
+    const legacy = new DatabaseSync(file)
+    legacy.exec(`
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL, due_date TEXT,
+        priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high')),
+        status TEXT NOT NULL CHECK (status IN ('open', 'done', 'cancelled')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT,
+        source_inbox_id TEXT, source_goal_id TEXT
+      );
+      CREATE TABLE inbox (id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL, converted_task_id TEXT, dismissed_at TEXT);
+      CREATE TABLE task_exports (
+        task_id TEXT NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('google_tasks', 'microsoft_todo')),
+        task_list_id TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('sending', 'sent', 'failed', 'uncertain')),
+        remote_task_id TEXT, updated_at TEXT NOT NULL, PRIMARY KEY (task_id, provider, task_list_id)
+      );
+      INSERT INTO tasks VALUES ('old-task', 'Old linked task', 'Local notes', NULL, 'normal', 'open', '2026-11-01T00:00:00.000Z', '2026-11-01T00:00:00.000Z', NULL, NULL, NULL);
+      INSERT INTO task_exports VALUES ('old-task', 'google_tasks', 'list-1', 'sent', 'remote-task', '2026-11-01T00:00:00.000Z');
+    `)
+    legacy.close()
+
+    const store = new PlanningStore(file)
+    await store.init()
+    expect(store.getTaskExport('old-task', 'google_tasks', 'list-1')).toMatchObject({ status: 'sent', remoteTaskId: 'remote-task', syncStatus: 'idle' })
+    expect(store.getTaskExport('old-task', 'google_tasks', 'list-1')?.syncedLocalUpdatedAt).toBeUndefined()
+    expect(() => store.beginTaskExportSync('old-task', 'google_tasks', 'list-1', '2026-11-01T00:00:00.000Z')).toThrow(/predates safe sync tracking/i)
+    store.close()
+    await rm(dir, { recursive: true, force: true })
+  })
+
   it('migrates existing plan databases without losing old tasks', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'mike-assist-plan-migration-'))
     const file = path.join(dir, 'planning.sqlite')

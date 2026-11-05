@@ -89,13 +89,19 @@ describe('tool discovery', () => {
   it('finds connected-task send workflows from natural language', async () => {
     const registry = new ToolRegistry()
       .register(catalogTool('google_tasks_create_from_today_task', 'Send one open local Today task to a selected Google Tasks list after approval.'))
+      .register(catalogTool('google_tasks_sync_today_task', 'Sync or update local edits to the existing Google Tasks item linked to one local Today task after approval.'))
       .register(catalogTool('microsoft_todo_create_from_today_task', 'Send one open local Today task to a selected Microsoft To Do list after approval.'))
+      .register(catalogTool('microsoft_todo_sync_today_task', 'Sync or update local edits to the existing Microsoft To Do item linked to one local Today task after approval.'))
     const discovery = createToolDiscoveryTool(registry)
     const google = await discovery.run({ query: 'send my Today task to Google Tasks' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
+    const googleUpdate = await discovery.run({ query: 'update the linked Google task with my local edits' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
     const microsoft = await discovery.run({ query: 'copy my Today task to Microsoft To Do' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
+    const microsoftUpdate = await discovery.run({ query: 'update the linked Microsoft To Do task with my local edits' }, { kind: 'none', signal: new AbortController().signal }) as { tools: Array<{ name: string }> }
 
     expect(google.tools[0]?.name).toBe('google_tasks_create_from_today_task')
+    expect(googleUpdate.tools[0]?.name).toBe('google_tasks_sync_today_task')
     expect(microsoft.tools[0]?.name).toBe('microsoft_todo_create_from_today_task')
+    expect(microsoftUpdate.tools[0]?.name).toBe('microsoft_todo_sync_today_task')
     expect(optionalToolDomain('microsoft_todo_create_from_today_task')).toBe('planning')
   })
 

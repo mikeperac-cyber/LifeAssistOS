@@ -244,8 +244,8 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
                   {item.emailSource && <span className="today-task-source" title={`Message ID: ${item.emailSource.messageId}`}>From {item.emailSource.provider === 'gmail' ? 'Gmail' : 'Outlook'}</span>}
                   {item.calendarSource && <span className="today-task-source">From {item.calendarSource.provider === 'google_calendar' ? 'Google Calendar' : 'Outlook Calendar'}</span>}
                   {item.taskExports?.map((exported) => (
-                    <span className={`today-task-export export-${exported.status}`} key={`${exported.provider}:${exported.taskListId}`} title={exportStatusTitle(exported.status)}>
-                      {exported.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} · {exportStatusLabel(exported.status)}
+                    <span className={`today-task-export export-${exportStatusTone(exported, item)}`} key={`${exported.provider}:${exported.taskListId}`} title={exportStatusTitle(exported, item)}>
+                      {exported.provider === 'google_tasks' ? 'Google Tasks' : 'Microsoft To Do'} · {exportStatusLabel(exported, item)}
                     </span>
                   ))}
                   {item.dueDate && <span>Due {item.dueDate}</span>}
@@ -293,7 +293,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
           <h3 id="google-tasks-title">Google Tasks</h3>
           {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
         </div>
-        <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read and send shows a separate approval with the task details. Existing read-only connections need to be disconnected and reconnected in Settings to send. Later local edits will not sync. Chat may send approved task details to your configured model provider.</p>
+        <p className="today-google-tasks-note">Load a destination list, then send a local task here or ask in Chat. Each read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing; Google Tasks does not store local priority. Chat may send approved task details to your configured model provider.</p>
         {googleTasksSettings === null ? (
           <p className="muted" role="status">Checking Google Tasks connection…</p>
         ) : !googleTasksSettings.connected ? (
@@ -446,16 +446,52 @@ function formatTaskDue(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
 }
 
-function exportStatusLabel(status: NonNullable<PlanTask['taskExports']>[number]['status']): string {
-  if (status === 'sent') return 'sent'
-  if (status === 'sending') return 'sending'
-  if (status === 'uncertain') return 'check before retry'
+type TaskExportViewRecord = NonNullable<PlanTask['taskExports']>[number]
+
+function exportStatusLabel(record: TaskExportViewRecord, task: PlanTask): string {
+  if (record.status === 'sent') {
+    if (record.syncStatus === 'sending') return 'updating'
+    if (record.syncStatus === 'uncertain') return 'check sync'
+    if (!record.syncedLocalUpdatedAt) return 'older link'
+    if (!record.remoteEtag || (record.provider === 'microsoft_todo' && record.syncedPriority === undefined)) return 'update unavailable'
+    if (record.syncStatus === 'failed' && !taskDiffersFromExportBaseline(task, record)) return 'review remote'
+    if (taskDiffersFromExportBaseline(task, record)) return 'update available'
+    return 'up to date'
+  }
+  if (record.status === 'sending') return 'sending'
+  if (record.status === 'uncertain') return 'check before retry'
   return 'not sent'
 }
 
-function exportStatusTitle(status: NonNullable<PlanTask['taskExports']>[number]['status']): string {
-  if (status === 'uncertain') return 'The remote service may have created this task. Check its list before clearing the retry guard.'
-  if (status === 'failed') return 'The service rejected the create request. A new approved send can retry it.'
-  if (status === 'sending') return 'The task is being sent.'
-  return 'This is a one-time copy; later local edits will not update the remote task.'
+function exportStatusTone(record: TaskExportViewRecord, task: PlanTask): string {
+  if (record.status === 'sent' && record.syncStatus === 'uncertain') return 'uncertain'
+  if (record.status === 'sent' && record.syncStatus === 'failed') return 'failed'
+  if (record.status === 'sent' && taskDiffersFromExportBaseline(task, record)) return 'needs-sync'
+  return record.status
+}
+
+function exportStatusTitle(record: TaskExportViewRecord, task: PlanTask): string {
+  if (record.status === 'sent') {
+    if (record.syncStatus === 'uncertain') return 'The remote update may have applied. Check the linked task before clearing the sync retry guard.'
+    if (record.syncStatus === 'failed') return taskDiffersFromExportBaseline(task, record)
+      ? 'The remote update failed or found a conflict. Review the provider version, then approve an update again if the local copy should replace it.'
+      : 'The update was stopped; review the linked provider task before proceeding.'
+    if (!record.syncedLocalUpdatedAt) return 'This older link has no saved version baseline, so Mike Assist cannot update it safely.'
+    if (!record.remoteEtag || (record.provider === 'microsoft_todo' && record.syncedPriority === undefined)) return 'The provider did not return a complete version baseline, so Mike Assist cannot update this task safely.'
+    if (taskDiffersFromExportBaseline(task, record)) return 'This local task changed after it was last copied. Review an update to the linked task.'
+    return 'The local and linked task versions are up to date.'
+  }
+  if (record.status === 'uncertain') return 'The remote service may have created this task. Check its list before clearing the retry guard.'
+  if (record.status === 'failed') return 'The service rejected the create request. A new approved send can retry it.'
+  if (record.status === 'sending') return 'The task is being sent.'
+  return 'The task has not been sent to the provider yet.'
+}
+
+function taskDiffersFromExportBaseline(task: PlanTask, record: TaskExportViewRecord): boolean {
+  if (!record.syncedLocalUpdatedAt || record.syncedTitle === undefined || record.syncedNotes === undefined) return false
+  const titleLimit = record.provider === 'google_tasks' ? 1_024 : 240
+  const title = task.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, titleLimit)
+  const notes = task.notes.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ').trim().slice(0, 4_000)
+  return title !== record.syncedTitle || notes !== record.syncedNotes || task.dueDate !== (record.syncedDueDate ?? null) ||
+    (record.provider === 'microsoft_todo' && record.syncedPriority !== undefined && task.priority !== record.syncedPriority)
 }

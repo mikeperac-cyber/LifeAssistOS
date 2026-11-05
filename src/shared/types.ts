@@ -274,6 +274,7 @@ export interface GoogleTask {
   due?: string
   status: 'needsAction' | 'completed'
   updated?: string
+  etag?: string
 }
 
 export interface MicrosoftTodoTaskList {
@@ -290,6 +291,8 @@ export interface MicrosoftTodoTask {
   due?: string
   status: 'notStarted' | 'inProgress' | 'completed' | 'waitingOnOthers' | 'deferred'
   updated?: string
+  etag?: string
+  priority?: PlanTaskPriority
 }
 
 export interface MicrosoftCalendarEvent {
@@ -664,6 +667,7 @@ export type PlanTaskStatus = 'open' | 'done' | 'cancelled'
 export type PlanTaskPriority = 'low' | 'normal' | 'high'
 export type TaskExportProvider = 'google_tasks' | 'microsoft_todo'
 export type TaskExportStatus = 'sending' | 'sent' | 'failed' | 'uncertain'
+export type TaskExportSyncStatus = 'idle' | 'sending' | 'failed' | 'uncertain'
 
 export interface TaskExportRecord {
   provider: TaskExportProvider
@@ -671,6 +675,13 @@ export interface TaskExportRecord {
   status: TaskExportStatus
   remoteTaskId?: string
   updatedAt: string
+  syncStatus: TaskExportSyncStatus
+  syncedLocalUpdatedAt?: string
+  syncedTitle?: string
+  syncedNotes?: string
+  syncedDueDate?: string | null
+  syncedPriority?: PlanTaskPriority
+  remoteEtag?: string
 }
 
 export type EmailTaskProvider = 'gmail' | 'outlook'

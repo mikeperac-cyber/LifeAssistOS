@@ -52,7 +52,7 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.includes('coaching') || name === 'get_coaching_context') return 'coaching'
   if (name.includes('vault')) return 'vault'
   if (name === 'list_today' || name === 'capture_inbox' || name === 'create_task' || name === 'create_email_followup_task' || name === 'update_task' ||
-    name === 'complete_task' || name === 'clear_task_export_retry_guard' || name === 'schedule_agent_task' || name === 'list_scheduled_agent_tasks') {
+    name === 'complete_task' || name === 'clear_task_export_retry_guard' || name === 'clear_task_export_sync_retry_guard' || name === 'schedule_agent_task' || name === 'list_scheduled_agent_tasks') {
     return 'planning'
   }
   return null
