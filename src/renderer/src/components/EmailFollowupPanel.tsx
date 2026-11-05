@@ -206,7 +206,7 @@ function EmailFollowupPanel<TSettings extends { connected: boolean }>({
         <h3 id={headingId}>{providerName} follow-ups</h3>
         {settings?.connected && loaded && <span>{messages.length} messages</span>}
       </div>
-      <p className="today-email-note">Each search page and local task asks for approval. The task stores only the message ID and a title based on its subject; email text is not copied into task notes. Search results stay in Today memory.</p>
+      <p className="today-email-note">Each search page and local task asks for approval. The task stores only the message ID and a title based on its subject; email text is not copied into task notes or chat history.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking {providerName} connection…</p>
       ) : !settings.connected ? (

@@ -98,10 +98,13 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const microsoftMailConnected = item.id === 'microsoft_mail' && microsoftMailSettings?.connected === true
           const microsoftMailNeedsReconnect = item.id === 'microsoft_mail' && !microsoftMailSettings?.connected && microsoftMailSettings?.tokenStored === true
           const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected
+          const emailSearchConnected = (item.id === 'google_gmail' && gmailConnected) || (item.id === 'microsoft_mail' && microsoftMailConnected)
           const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect
           const status = connectedStatus ? 'ready' : item.status
           const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
-          const actionLabel = item.id === 'helper'
+          const actionLabel = emailSearchConnected
+            ? 'Search email'
+            : item.id === 'helper'
             ? 'Use in Chat'
             : item.id === 'files'
               ? 'Manage folders'
@@ -119,7 +122,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               <div className="integration-access">{item.access}</div>
-              <button className="ghost-button" type="button" onClick={() => onOpen(item.id)}>{actionLabel}</button>
+              <button className="ghost-button" type="button" onClick={() => onOpen(emailSearchConnected ? 'email' : item.id)}>{actionLabel}</button>
             </article>
           )
         })}

@@ -3473,6 +3473,15 @@ summary:focus-visible {
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
 .today-google-tasks { margin-top: 14px; }
 .today-email-panel { margin-top: 14px; }
+.email-search-view { display: flex; flex-direction: column; gap: 14px; max-width: 1240px; margin: 0 auto; }
+.email-search-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 2px 1px; }
+.email-search-header h2 { margin: 4px 0 6px; font-size: 22px; letter-spacing: -0.035em; }
+.email-search-header p { max-width: 670px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.email-search-boundary { display: flex; max-width: 290px; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid rgba(var(--accent-rgb), .2); border-radius: 9px; background: var(--accent-dim); color: var(--muted); font-size: 10px; line-height: 1.45; }
+.email-search-boundary strong { color: var(--accent); font-size: 10px; }
+.email-search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); align-items: start; gap: 14px; }
+.email-search-grid .today-email-panel { min-width: 0; margin-top: 0; }
+.email-search-task-warning { margin: 0; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); color: var(--amber); font-size: 10px; line-height: 1.45; }
 .today-email-note { max-width: 780px; margin: -3px 0 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
 .today-email-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .today-email-search input { flex: 1 1 260px; min-width: 140px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
@@ -3633,6 +3642,8 @@ summary:focus-visible {
 @media (max-width: 680px) {
   .coach-header { flex-direction: column; }
   .coach-header-actions { width: 100%; }
+  .email-search-header { flex-direction: column; }
+  .email-search-boundary { max-width: none; }
   .coach-goal-form { grid-template-columns: 1fr 1fr; }
   .coach-goal-form input:first-child { grid-column: span 2; }
 }

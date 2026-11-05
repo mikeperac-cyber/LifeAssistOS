@@ -4,6 +4,7 @@ import type { ChatMode, InboxItem, MemoryFact, PlanTask, VaultQuickSearchResult 
 const VIEW_KEYWORDS: Record<View, string> = {
   chat: 'assistant conversation conversations ask write create new',
   today: 'task tasks inbox capture reminder reminders plan',
+  email: 'mail messages gmail outlook communication follow up followup correspondence',
   coach: 'goal goals habits reflection personal business',
   scheduled: 'schedule schedules recurring automatic reminder',
   research: 'sources papers links web citations',

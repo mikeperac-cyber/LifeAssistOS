@@ -7,6 +7,10 @@ export const VIEW_META = {
     label: 'Today',
     description: 'Your next actions and capture inbox, stored locally.'
   },
+  email: {
+    label: 'Email',
+    description: 'Search connected Gmail or Outlook and create local follow-up tasks with per-action approval.'
+  },
   coach: {
     label: 'Coach',
     description: 'Personal life and Business / LB English coaching, private by default.'
@@ -61,6 +65,7 @@ export type View = keyof typeof VIEW_META
 
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
   { label: 'Workspace', items: ['chat', 'today', 'coach'] },
+  { label: 'Communication', items: ['email'] },
   { label: 'Knowledge', items: ['memory', 'research', 'vault', 'teaching'] },
   { label: 'Tools', items: ['scheduled', 'workflows', 'skills', 'integrations', 'finances'] },
   { label: 'System', items: ['activity', 'settings'] }
@@ -87,6 +92,7 @@ export function resolveIntegrationTargetView(id: string): View {
   if (id === 'finance' || id === 'finances') return 'finances'
   if (
     id === 'today' ||
+    id === 'email' ||
     id === 'research' ||
     id === 'vault' ||
     id === 'teaching' ||

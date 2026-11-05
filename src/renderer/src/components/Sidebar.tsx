@@ -188,6 +188,7 @@ function iconForView(view: View): React.JSX.Element {
   const glyphs: Record<Exclude<View, 'chat' | 'memory' | 'finances' | 'workflows' | 'settings' | 'activity'>, string> = {
     coach: '✧',
     today: '◷',
+    email: '✉',
     scheduled: '◴',
     research: '⌕',
     vault: '▣',

@@ -12,6 +12,7 @@ describe('global search helpers', () => {
   it('finds sections through common user terms and keeps each route unique', () => {
     expect(searchNavigationViews('budget')).toContain('finances')
     expect(searchNavigationViews('gmail connection')).toContain('integrations')
+    expect(searchNavigationViews('outlook email')).toContain('email')
     expect(searchNavigationViews('capture task')).toContain('today')
     expect(new Set(searchNavigationViews('')).size).toBe(searchNavigationViews('').length)
   })

@@ -138,6 +138,7 @@ describe('IntegrationsView routing', () => {
     expect(resolveIntegrationTargetView('helper')).toBe('chat')
     expect(resolveIntegrationTargetView('research')).toBe('research')
     expect(resolveIntegrationTargetView('today')).toBe('today')
+    expect(resolveIntegrationTargetView('email')).toBe('email')
     expect(resolveIntegrationTargetView('vault')).toBe('vault')
     expect(resolveIntegrationTargetView('files')).toBe('settings')
     expect(resolveIntegrationTargetView('mcp')).toBe('settings')

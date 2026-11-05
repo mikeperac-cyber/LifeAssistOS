@@ -82,6 +82,7 @@ const TodayView = lazy(() => import('./components/TodayView').then((module) => (
 const TeachingView = lazy(() => import('./components/TeachingView').then((module) => ({ default: module.TeachingView })))
 const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
+const ConnectedEmailView = lazy(() => import('./components/ConnectedEmailView').then((module) => ({ default: module.ConnectedEmailView })))
 const QuickCaptureDialog = lazy(() => import('./components/QuickCaptureDialog').then((module) => ({ default: module.QuickCaptureDialog })))
 const GlobalSearchDialog = lazy(() => import('./components/GlobalSearchDialog').then((module) => ({ default: module.GlobalSearchDialog })))
 
@@ -140,6 +141,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
 const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail']
+const EMAIL_STARTUP_KEYS: StartupLoadKey[] = ['gmail', 'microsoftMail']
 
 let localSequence = 0
 
@@ -1647,6 +1649,16 @@ export default function App(): React.JSX.Element {
             onMicrosoftCalendarSettingsRefresh={setMicrosoftCalendarSettings}
             onMicrosoftMailSettingsRefresh={setMicrosoftMailSettings}
           />}
+          {view === 'email' && gateStartupView(EMAIL_STARTUP_KEYS, 'connected email accounts', (
+            <ConnectedEmailView
+              googleGmailSettings={googleGmailSettings}
+              microsoftMailSettings={microsoftMailSettings}
+              disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
+              onOpenSettings={() => setView('settings')}
+              onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
+              onMicrosoftMailSettingsRefresh={setMicrosoftMailSettings}
+            />
+          ))}
           {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
               tasks={scheduledTasks}
