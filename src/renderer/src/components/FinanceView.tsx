@@ -191,7 +191,7 @@ export function FinanceView({
         </form>
       )}
 
-      {loading && <div className="finance-empty">Loading report…</div>}
+      {loading && <div className="finance-empty" role="status">Loading report…</div>}
       {!loading && report && report.totals.length === 0 && (
         <div className="finance-empty">No transactions recorded for this {period}. Add an entry or ask Mike Assist to record one.</div>
       )}

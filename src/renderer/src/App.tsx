@@ -69,6 +69,54 @@ const TeachingView = lazy(() => import('./components/TeachingView').then((module
 const CoachView = lazy(() => import('./components/CoachView').then((module) => ({ default: module.CoachView })))
 const IntegrationsView = lazy(() => import('./components/IntegrationsView').then((module) => ({ default: module.IntegrationsView })))
 
+type StartupLoadKey =
+  | 'audit'
+  | 'auditIntegrity'
+  | 'chat'
+  | 'grants'
+  | 'domains'
+  | 'settings'
+  | 'localApi'
+  | 'webSearch'
+  | 'calendar'
+  | 'gmail'
+  | 'drive'
+  | 'speech'
+  | 'workflows'
+  | 'scheduledTasks'
+  | 'skills'
+
+type StartupLoadState = { status: 'loading' | 'loaded' | 'error'; error?: string }
+
+const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
+  audit: 'Activity log',
+  auditIntegrity: 'Activity log integrity',
+  chat: 'Chat history',
+  grants: 'Approved folders',
+  domains: 'Allowed domains',
+  settings: 'Settings',
+  localApi: 'Local API status',
+  webSearch: 'Web search settings',
+  calendar: 'Google Calendar settings',
+  gmail: 'Gmail settings',
+  drive: 'Google Drive settings',
+  speech: 'Speech settings',
+  workflows: 'Workflows',
+  scheduledTasks: 'Scheduled tasks',
+  skills: 'Skills'
+}
+
+const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'speech'
+]
+
+const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
+  'chat', 'settings', 'workflows', 'scheduledTasks', 'skills', 'speech'
+]
+
+const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive']
+
 let localSequence = 0
 
 function localId(): string {
@@ -78,6 +126,27 @@ function localId(): string {
 
 function systemMessage(text: string): ChatMessage {
   return { id: localId(), role: 'system', text, at: new Date().toISOString() }
+}
+
+function StartupLoadNotice({
+  label,
+  loading,
+  error,
+  onRetry
+}: {
+  label: string
+  loading: boolean
+  error: string
+  onRetry: () => void
+}): React.JSX.Element {
+  return (
+    <div className={`startup-load-notice ${loading ? 'is-loading' : 'has-error'}`}>
+      <p role={loading ? 'status' : 'alert'}>
+        {loading ? `Loading ${label}…` : error || `Could not load ${label}.`}
+      </p>
+      {!loading && <button className="ghost-button" type="button" onClick={onRetry}>Retry</button>}
+    </div>
+  )
 }
 
 function speakWithLocalVoice(text: string): void {
@@ -147,6 +216,7 @@ export default function App(): React.JSX.Element {
   const [permission, setPermission] = useState<PermissionRequest | null>(null)
   const [busy, setBusy] = useState(false)
   const [appWarning, setAppWarning] = useState('')
+  const [startupLoads, setStartupLoads] = useState<Partial<Record<StartupLoadKey, StartupLoadState>>>({})
   const [step, setStep] = useState<{ index: number; max: number } | null>(null)
   const [grants, setGrants] = useState<FolderGrant[]>([])
   const [allowedDomains, setAllowedDomains] = useState<string[]>([])
@@ -184,7 +254,7 @@ export default function App(): React.JSX.Element {
   })
   const [financePeriod, setFinancePeriod] = useState<'week' | 'month'>('month')
   const [financeReport, setFinanceReport] = useState<FinanceReport | null>(null)
-  const [financeLoading, setFinanceLoading] = useState(false)
+  const [financeLoading, setFinanceLoading] = useState(true)
   const [financeError, setFinanceError] = useState('')
   const [financeEntryBusy, setFinanceEntryBusy] = useState(false)
   const [financeRefresh, setFinanceRefresh] = useState(0)
@@ -198,6 +268,7 @@ export default function App(): React.JSX.Element {
   const [queueRunning, setQueueRunning] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const streaming = useRef(new Map<string, string>())
+  const startupReloaders = useRef(new Map<StartupLoadKey, () => void>())
   const busyRef = useRef(false)
   const queuedTasksRef = useRef<string[]>([])
   const queueRunningRef = useRef(false)
@@ -237,49 +308,66 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     let alive = true
-    const loadFailures = new Set<string>()
-    const reportLoadFailure = (label: string, error: unknown): void => {
-      const detail = error instanceof Error ? error.message : String(error)
-      loadFailures.add(`${label}: ${detail}`)
-      setAppWarning(`Some app data could not be loaded: ${[...loadFailures].join('; ')}`)
-    }
-    const loadInitial = <T,>(label: string, request: () => Promise<T>, apply: (value: T) => void): void => {
-      void Promise.resolve().then(request).then((value) => {
-        if (alive) apply(value)
-      }).catch((error: unknown) => {
-        if (alive) reportLoadFailure(label, error)
-      })
+    const loadFailures = new Map<StartupLoadKey, string>()
+    const loadInitial = <T,>(key: StartupLoadKey, request: () => Promise<T>, apply: (value: T) => void): void => {
+      const retry = (): void => {
+        if (!alive) return
+        setStartupLoads((current) => ({ ...current, [key]: { status: 'loading' } }))
+        void Promise.resolve().then(request).then((value) => {
+          if (!alive) return
+          apply(value)
+          setStartupLoads((current) => ({ ...current, [key]: { status: 'loaded' } }))
+          loadFailures.delete(key)
+          setAppWarning((current) => {
+            if (!current.startsWith('Some app data could not be loaded:')) return current
+            const remaining = [...loadFailures.values()]
+            return remaining.length > 0 ? `Some app data could not be loaded: ${remaining.join('; ')}` : ''
+          })
+        }).catch((error: unknown) => {
+          if (!alive) return
+          const detail = error instanceof Error ? error.message : String(error)
+          const failure = `${STARTUP_LOAD_LABELS[key]}: ${detail}`
+          loadFailures.set(key, failure)
+          setStartupLoads((current) => ({ ...current, [key]: { status: 'error', error: detail } }))
+          setAppWarning(`Some app data could not be loaded: ${[...loadFailures.values()].join('; ')}`)
+        })
+      }
+      startupReloaders.current.set(key, retry)
+      retry()
     }
 
-    loadInitial('Activity log', () => window.assist.getAudit(), setAudit)
-    loadInitial('Activity log integrity', () => window.assist.getAuditIntegrity(), setAuditIntegrity)
-    loadInitial('Chat history', () => window.assist.getChatState(), (result) => {
-      if (result.ok && result.state) {
-        setSessions(result.state.sessions)
-        setActiveSessionId(result.state.activeSessionId)
-        setTimeline(timelineFor(result.state.messages))
-      } else {
-        reportLoadFailure('Chat history', result.error ?? 'The chat store is not ready.')
-      }
+    loadInitial('audit', () => window.assist.getAudit(), (events) => {
+      setAudit((current) => {
+        const loadedIds = new Set(events.map((event) => event.id))
+        return [...events, ...current.filter((event) => !loadedIds.has(event.id))]
+      })
     })
-    loadInitial('Approved folders', () => window.assist.getGrants(), setGrants)
-    loadInitial('Allowed domains', () => window.assist.getAllowedDomains(), setAllowedDomains)
-    loadInitial('Settings', () => window.assist.getSettings(), (value) => {
+    loadInitial('auditIntegrity', () => window.assist.getAuditIntegrity(), setAuditIntegrity)
+    loadInitial('chat', () => window.assist.getChatState(), (result) => {
+      if (!result.ok || !result.state) throw new Error(result.error ?? 'The chat store is not ready.')
+      setSessions(result.state.sessions)
+      setActiveSessionId(result.state.activeSessionId)
+      setTimeline(timelineFor(result.state.messages))
+    })
+    loadInitial('grants', () => window.assist.getGrants(), setGrants)
+    loadInitial('domains', () => window.assist.getAllowedDomains(), setAllowedDomains)
+    loadInitial('settings', () => window.assist.getSettings(), (value) => {
       setSettings(value)
       setOnboardingOpen(!value.onboardingComplete)
     })
-    loadInitial('Local API status', () => window.assist.getLocalApiStatus(), setLocalApiStatus)
-    loadInitial('Web search settings', () => window.assist.getWebSearchSettings(), setWebSearchSettings)
-    loadInitial('Google Calendar settings', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
-    loadInitial('Gmail settings', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
-    loadInitial('Google Drive settings', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
-    loadInitial('Speech settings', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
-    loadInitial('Workflows', () => window.assist.getWorkflows(), setWorkflows)
-    loadInitial('Scheduled tasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
-    loadInitial('Skills', () => window.assist.getSkills(), setSkills)
+    loadInitial('localApi', () => window.assist.getLocalApiStatus(), setLocalApiStatus)
+    loadInitial('webSearch', () => window.assist.getWebSearchSettings(), setWebSearchSettings)
+    loadInitial('calendar', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
+    loadInitial('gmail', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
+    loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
+    loadInitial('speech', () => window.assist.getSpeechEndpoint(), setSpeechEndpoint)
+    loadInitial('workflows', () => window.assist.getWorkflows(), setWorkflows)
+    loadInitial('scheduledTasks', () => window.assist.getScheduledTasks(), setScheduledTasks)
+    loadInitial('skills', () => window.assist.getSkills(), setSkills)
 
     return () => {
       alive = false
+      startupReloaders.current.clear()
     }
   }, [])
 
@@ -1080,6 +1168,32 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const retryStartupLoad = (key: StartupLoadKey): void => {
+    startupReloaders.current.get(key)?.()
+  }
+
+  const gateStartupView = (
+    keys: StartupLoadKey[],
+    label: string,
+    content: React.ReactNode
+  ): React.ReactNode => {
+    const failedKeys = keys.filter((key) => startupLoads[key]?.status === 'error')
+    const pending = keys.some((key) => startupLoads[key]?.status !== 'loaded')
+    if (failedKeys.length > 0) {
+      const details = failedKeys.map((key) => `${STARTUP_LOAD_LABELS[key]}: ${startupLoads[key]?.error ?? 'load failed'}`).join('; ')
+      return (
+        <StartupLoadNotice
+          label={label}
+          loading={false}
+          error={`Could not load ${label}. ${details}`}
+          onRetry={() => failedKeys.forEach((key) => retryStartupLoad(key))}
+        />
+      )
+    }
+    if (pending) return <StartupLoadNotice label={label} loading error="" onRetry={() => {}} />
+    return content
+  }
+
   const preset = settings ? presetFor(settings.provider.preset) : null
 
   return (
@@ -1215,7 +1329,7 @@ export default function App(): React.JSX.Element {
 
         <div className="content">
           <Suspense fallback={<div className="view-loading" role="status">Loading section…</div>}>
-          {view === 'chat' && (
+          {view === 'chat' && gateStartupView(CHAT_STARTUP_KEYS, 'chat data', (
             <ChatView
               items={timeline}
               chatMode={chatMode}
@@ -1240,10 +1354,10 @@ export default function App(): React.JSX.Element {
               onDeleteMessage={(messageId) => void deleteMessageFromActiveChat(messageId)}
               onCitationClick={() => setView('memory')}
             />
-          )}
+          ))}
 
           {view === 'today' && <TodayView />}
-          {view === 'scheduled' && (
+          {view === 'scheduled' && gateStartupView(['scheduledTasks'], 'scheduled tasks', (
             <ScheduledTasksView
               tasks={scheduledTasks}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
@@ -1252,18 +1366,25 @@ export default function App(): React.JSX.Element {
               onRemove={removeScheduledTask}
               onRun={runScheduledTask}
             />
-          )}
+          ))}
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
-          {view === 'integrations' && <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />}
+          {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+          ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView />}
           {view === 'teaching' && <TeachingView onStart={startTeachingPack} />}
 
           {view === 'finances' && (
             <>
-              {financeError && <div className="finance-error" role="alert">{financeError}</div>}
+              {financeError && (
+                <div className="finance-error" role="alert">
+                  <span>{financeError}</span>
+                  <button className="ghost-button" type="button" onClick={() => setFinanceRefresh((version) => version + 1)}>Retry</button>
+                </div>
+              )}
               <FinanceView
-                report={financeReport}
+                report={financeError ? null : financeReport}
                 period={financePeriod}
                 loading={financeLoading}
                 disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
@@ -1274,7 +1395,7 @@ export default function App(): React.JSX.Element {
             </>
           )}
 
-          {view === 'workflows' && (
+          {view === 'workflows' && gateStartupView(['workflows'], 'saved workflows', (
             <WorkflowsView
               workflows={workflows}
               runningId={workflowRunningId}
@@ -1283,9 +1404,9 @@ export default function App(): React.JSX.Element {
               onRemove={removeWorkflow}
               onCancel={cancel}
             />
-          )}
+          ))}
 
-          {view === 'skills' && (
+          {view === 'skills' && gateStartupView(['skills'], 'saved skills', (
             <SkillsView
               skills={skills}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
@@ -1293,7 +1414,7 @@ export default function App(): React.JSX.Element {
               onToggle={setSkillEnabled}
               onDelete={deleteSkill}
             />
-          )}
+          ))}
 
           {view === 'memory' && (
             <MemoryView
@@ -1303,13 +1424,13 @@ export default function App(): React.JSX.Element {
             />
           )}
 
-          {view === 'activity' && (
+          {view === 'activity' && gateStartupView(ACTIVITY_STARTUP_KEYS, 'the activity log', (
             <ActivityView events={audit} integrity={auditIntegrity} onExport={exportAudit} />
-          )}
+          ))}
 
-          {view === 'settings' && settings && (
+          {view === 'settings' && gateStartupView(SETTINGS_STARTUP_KEYS, 'saved settings', (
             <SettingsView
-              settings={settings}
+              settings={settings!}
               theme={appTheme}
               onThemeChange={setAppTheme}
               webSearchSettings={webSearchSettings}
@@ -1342,14 +1463,7 @@ export default function App(): React.JSX.Element {
               localApiStatus={localApiStatus}
               onSetLocalApiEnabled={setLocalApiEnabled}
             />
-          )}
-
-          {view === 'settings' && !settings && (
-            <div className="audit-empty">
-              <div className="audit-empty-mark">◇</div>
-              <p>Loading settings…</p>
-            </div>
-          )}
+          ))}
           </Suspense>
         </div>
       </main>

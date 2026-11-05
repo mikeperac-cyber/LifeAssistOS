@@ -636,6 +636,33 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+.startup-load-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 18px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.startup-load-notice.has-error {
+  border-color: var(--red-dim);
+  background: var(--red-dim);
+  color: var(--red);
+}
+
+.startup-load-notice p {
+  flex: 1 1 100%;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Chat ---------- */
 
 .chat {
@@ -2335,11 +2362,21 @@ summary:focus-visible {
 }
 
 .finance-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   max-width: 1080px;
   margin: 0 auto 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--red-dim);
+  border-radius: 9px;
+  background: var(--red-dim);
   color: var(--red);
   font-size: 12px;
 }
+
+.finance-error span { overflow-wrap: anywhere; }
 
 .workflow-view {
   height: 100%;

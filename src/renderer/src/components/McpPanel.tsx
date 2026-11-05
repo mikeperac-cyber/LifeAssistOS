@@ -18,6 +18,8 @@ const STATUS_LABELS: Record<McpServerInfo['status'], string> = {
 export function McpPanel(): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
@@ -34,9 +36,17 @@ export function McpPanel(): React.JSX.Element {
   const [importText, setImportText] = useState('')
 
   const refresh = useCallback(async (): Promise<void> => {
-    const list = await window.assist.getMcpServers()
-    setServers(list)
-    setLoaded(true)
+    setLoading(true)
+    setLoadError('')
+    try {
+      const list = await window.assist.getMcpServers()
+      setServers(list)
+      setLoaded(true)
+    } catch (caught) {
+      setLoadError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -45,7 +55,7 @@ export function McpPanel(): React.JSX.Element {
 
   const run = useCallback(
     async (action: () => Promise<McpMutationResult>): Promise<boolean> => {
-      if (busy) return false
+      if (busy || !loaded) return false
       setBusy(true)
       setError('')
       setNotice('')
@@ -66,12 +76,12 @@ export function McpPanel(): React.JSX.Element {
         setBusy(false)
       }
     },
-    [busy]
+    [busy, loaded]
   )
 
   const addServer = async (): Promise<void> => {
     const trimmed = name.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busy || !loaded) return
     const applied = await run(async () => {
       if (transport === 'stdio') {
         return window.assist.addMcpServer({
@@ -100,7 +110,7 @@ export function McpPanel(): React.JSX.Element {
   }
 
   const importConfig = async (): Promise<void> => {
-    if (!importText.trim() || busy) return
+    if (!importText.trim() || busy || !loaded) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -149,7 +159,14 @@ export function McpPanel(): React.JSX.Element {
       </div>
 
       <div className="mcp-server-list">
-        {servers.map((server) => (
+        {loading && <p className="muted" role="status">Loading configured MCP connections…</p>}
+        {!loading && loadError && (
+          <div className="integration-load-error">
+            <p role="alert">{loadError}</p>
+            <button className="ghost-button" type="button" disabled={loading} onClick={() => void refresh()}>Retry</button>
+          </div>
+        )}
+        {!loading && !loadError && servers.map((server) => (
           <div className="mcp-server-row" key={server.id}>
             <div className="mcp-server-main">
               <span className={`mcp-status mcp-${server.status}`} aria-label={`Server status: ${STATUS_LABELS[server.status]}`}>
@@ -207,7 +224,7 @@ export function McpPanel(): React.JSX.Element {
             </div>
           </div>
         ))}
-        {loaded && servers.length === 0 && (
+        {!loading && !loadError && loaded && servers.length === 0 && (
           <p className="muted mcp-empty">No connections yet. Add one below, or paste an mcpServers JSON block.</p>
         )}
       </div>
@@ -215,13 +232,13 @@ export function McpPanel(): React.JSX.Element {
       <div className="mcp-add-controls">
         {!addOpen ? (
           <div className="settings-actions">
-            <button className="ghost-button" type="button" onClick={() => setAddOpen(true)}>
+            <button className="ghost-button" type="button" disabled={!loaded || loading} onClick={() => setAddOpen(true)}>
               Add connection…
             </button>
-            <button className="ghost-button" type="button" onClick={() => setImportOpen((open) => !open)}>
+            <button className="ghost-button" type="button" disabled={!loaded || loading} onClick={() => setImportOpen((open) => !open)}>
               {importOpen ? 'Hide import' : 'Import JSON…'}
             </button>
-            <button className="ghost-button" type="button" disabled={busy} onClick={() => {
+            <button className="ghost-button" type="button" disabled={busy || !loaded || loading} onClick={() => {
               setNotice('')
               void run(async () => {
                 const results = await Promise.all(servers.filter((server) => server.enabled).map((server) => window.assist.refreshMcpServer(server.id)))
