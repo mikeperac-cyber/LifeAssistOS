@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings, PublicMicrosoftMailSettings, PublicMicrosoftOneDriveSettings } from '../../../shared/ipc'
+import type { PublicGoogleCalendarSettings, PublicGoogleGmailSettings, PublicGoogleDriveSettings, PublicGoogleTasksSettings, PublicMicrosoftTodoSettings, PublicMicrosoftCalendarSettings, PublicMicrosoftMailSettings, PublicMicrosoftOneDriveSettings, PublicNotionSettings } from '../../../shared/ipc'
 import type { McpServerInfo } from '../../../shared/types'
 export { resolveIntegrationTargetView } from '../navigation'
 
@@ -20,6 +20,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'research', title: 'Research Desk', category: 'Knowledge', description: 'Allowlisted web sources captured as untrusted local research.', access: 'HTTPS allowlist + approval', status: 'ready', tone: 'purple' },
   { id: 'files', title: 'Approved files', category: 'Workspace', description: 'Analyze text, PDFs, Word documents, and Excel workbooks inside folders you have approved.', access: 'Grant-scoped reads · model receives extracted text', status: 'local', tone: 'teal' },
   { id: 'web_search', title: 'Web Search', category: 'Knowledge', description: 'Optional Tavily source discovery with a permission card for every query.', access: 'Tavily API + per-search approval', status: 'available', tone: 'blue' },
+  { id: 'notion', title: 'Notion', category: 'Knowledge', description: 'Search shared page titles and read selected page content. Page changes are not available.', access: 'Read-only token · approval for every search and page read', status: 'available', tone: 'purple' },
   { id: 'browser', title: 'Interactive Browser', category: 'Web actions', description: 'Visible, isolated browser for inspecting pages and acting on exact allowlisted HTTPS domains.', access: 'Exact domain allowlist · per-action approval', status: 'available', tone: 'purple' },
   { id: 'google_calendar', title: 'Google Calendar', category: 'Planning', description: 'View today’s events, create local prep tasks, or open a meeting-prep draft that can use approved Drive files and local notes.', access: 'Owned event scope · approval for reads, changes, task creation, and Drive access', status: 'available', tone: 'teal' },
   { id: 'google_gmail', title: 'Gmail', category: 'Communication', description: 'Search and read messages in Chat, create drafts or send with typed confirmation, and add local follow-up tasks from Today.', access: 'Read + draft approval · typed SEND · separate local task approval', status: 'available', tone: 'blue' },
@@ -36,7 +37,7 @@ const INTEGRATIONS: IntegrationCard[] = [
   { id: 'drafts', title: 'Draft workspace', category: 'Communication', description: 'Local unsent email and calendar drafts only.', access: 'Approved local writes', status: 'local', tone: 'blue' }
 ]
 
-export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, microsoftOneDriveSettings }: {
+export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSettings, googleDriveSettings, googleTasksSettings, microsoftTodoSettings, microsoftCalendarSettings, microsoftMailSettings, microsoftOneDriveSettings, notionSettings }: {
   onOpen: (id: string) => void
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
@@ -46,6 +47,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
   microsoftCalendarSettings: PublicMicrosoftCalendarSettings | null
   microsoftMailSettings: PublicMicrosoftMailSettings | null
   microsoftOneDriveSettings: PublicMicrosoftOneDriveSettings | null
+  notionSettings: PublicNotionSettings | null
 }): React.JSX.Element {
   const [servers, setServers] = useState<McpServerInfo[]>([])
   const [loading, setLoading] = useState(true)
@@ -101,12 +103,14 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
           const microsoftMailNeedsReconnect = item.id === 'microsoft_mail' && !microsoftMailSettings?.connected && microsoftMailSettings?.tokenStored === true
           const microsoftOneDriveConnected = item.id === 'microsoft_onedrive' && microsoftOneDriveSettings?.connected === true
           const microsoftOneDriveNeedsReconnect = item.id === 'microsoft_onedrive' && !microsoftOneDriveSettings?.connected && microsoftOneDriveSettings?.tokenStored === true
+          const notionConfigured = item.id === 'notion' && notionSettings?.ready === true
+          const notionNeedsUnlock = item.id === 'notion' && notionSettings?.hasApiKey === true && notionSettings.ready === false
           const connectedStatus = calendarConnected || gmailConnected || driveConnected || tasksConnected || microsoftTodoConnected || microsoftCalendarConnected || microsoftMailConnected || microsoftOneDriveConnected
           const emailSearchConnected = (item.id === 'google_gmail' && gmailConnected) || (item.id === 'microsoft_mail' && microsoftMailConnected)
           const browseFilesConnected = (item.id === 'google_drive' && driveConnected) || (item.id === 'microsoft_onedrive' && microsoftOneDriveConnected)
-          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect || microsoftOneDriveNeedsReconnect
-          const status = connectedStatus ? 'ready' : item.status
-          const statusLabel = connectedStatus ? 'connected' : reconnectStatus ? 'reconnect' : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
+          const reconnectStatus = calendarNeedsReconnect || gmailNeedsReconnect || driveNeedsReconnect || tasksNeedsReconnect || microsoftTodoNeedsReconnect || microsoftCalendarNeedsReconnect || microsoftMailNeedsReconnect || microsoftOneDriveNeedsReconnect || notionNeedsUnlock
+          const status = connectedStatus || notionConfigured ? 'ready' : item.status
+          const statusLabel = notionConfigured ? 'configured' : connectedStatus ? 'connected' : reconnectStatus ? (notionNeedsUnlock ? 'unlock needed' : 'reconnect') : status === 'local' ? 'on device' : status === 'available' ? 'optional' : 'ready'
           const actionLabel = emailSearchConnected
             ? 'Search email'
             : browseFilesConnected
@@ -115,7 +119,7 @@ export function IntegrationsView({ onOpen, googleCalendarSettings, googleGmailSe
             ? 'Use in Chat'
             : item.id === 'files'
               ? 'Manage folders'
-              : ['drafts', 'web_search', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar', 'microsoft_mail', 'microsoft_onedrive'].includes(item.id)
+              : ['drafts', 'web_search', 'notion', 'browser', 'google_calendar', 'google_gmail', 'google_drive', 'google_tasks', 'microsoft_todo', 'microsoft_calendar', 'microsoft_mail', 'microsoft_onedrive'].includes(item.id)
                 ? 'Open settings'
                 : 'Open'
 

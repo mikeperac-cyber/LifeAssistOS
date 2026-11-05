@@ -25,6 +25,7 @@ const DATA_FILES = [
 const OPTIONAL_DATA_FILES = [
   'mcp-servers.json',
   'web-search.json',
+  'notion.json',
   'google-calendar.json',
   'google-gmail.json',
   'google-drive.json',

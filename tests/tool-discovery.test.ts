@@ -85,6 +85,20 @@ describe('tool discovery', () => {
     expect(optionalToolDomain('microsoft_onedrive_read_file')).toBe('drive')
   })
 
+  it('finds optional Notion search and page-read tools only for Notion requests', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('notion_search_pages', 'Search connected Notion page titles after approval.'))
+      .register(catalogTool('notion_read_page', 'Read a selected Notion page after approval.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const result = await discovery.run(
+      { query: 'search my Notion notes', limit: 4 },
+      { kind: 'none', signal: new AbortController().signal }
+    ) as { tools: Array<{ name: string }> }
+    expect(result.tools.map((tool) => tool.name)).toContain('notion_search_pages')
+    expect(result.tools.map((tool) => tool.name)).toContain('notion_read_page')
+    expect(optionalToolDomain('notion_search_pages')).toBe('notion')
+  })
+
   it('finds the approval-gated email follow-up task for email task requests', async () => {
     const registry = new ToolRegistry()
       .register(catalogTool('create_email_followup_task', 'Create a local Today task from a selected Gmail or Outlook email after approval.'))

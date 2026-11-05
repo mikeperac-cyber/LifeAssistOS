@@ -59,6 +59,12 @@ export interface PublicWebSearchSettings {
   apiKeyStored: boolean
 }
 
+export interface PublicNotionSettings {
+  hasApiKey: boolean
+  apiKeyStored: boolean
+  ready: boolean
+}
+
 export interface PublicGoogleCalendarSettings {
   clientId: string
   connected: boolean
@@ -212,6 +218,12 @@ export interface WebSearchSettingsResult {
   ok: boolean
   error?: string
   settings?: PublicWebSearchSettings
+}
+
+export interface NotionSettingsResult {
+  ok: boolean
+  error?: string
+  settings?: PublicNotionSettings
 }
 
 export interface GoogleCalendarSettingsResult {
@@ -712,6 +724,8 @@ export interface AssistApi {
   testProvider(): Promise<ProviderStatus>
   getWebSearchSettings(): Promise<PublicWebSearchSettings>
   updateWebSearchApiKey(apiKey: string | null): Promise<WebSearchSettingsResult>
+  getNotionSettings(): Promise<PublicNotionSettings>
+  updateNotionApiKey(apiKey: string | null): Promise<NotionSettingsResult>
   getGoogleCalendarSettings(): Promise<PublicGoogleCalendarSettings>
   updateGoogleCalendarClientId(clientId: string): Promise<GoogleCalendarSettingsResult>
   connectGoogleCalendar(): Promise<GoogleCalendarSettingsResult>

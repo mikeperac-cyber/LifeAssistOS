@@ -39,6 +39,7 @@ import type {
   LocalApiResult,
   LocalApiStatus,
   PublicWebSearchSettings,
+  PublicNotionSettings,
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
@@ -50,6 +51,7 @@ import type {
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
+  NotionSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
@@ -103,6 +105,7 @@ type StartupLoadKey =
   | 'settings'
   | 'localApi'
   | 'webSearch'
+  | 'notion'
   | 'calendar'
   | 'gmail'
   | 'drive'
@@ -127,6 +130,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   settings: 'Settings',
   localApi: 'Local API status',
   webSearch: 'Web search settings',
+  notion: 'Notion settings',
   calendar: 'Google Calendar settings',
   gmail: 'Gmail settings',
   drive: 'Google Drive settings',
@@ -142,7 +146,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'notion', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -150,7 +154,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'notion']
 const EMAIL_STARTUP_KEYS: StartupLoadKey[] = ['gmail', 'microsoftMail']
 
 let localSequence = 0
@@ -258,6 +262,7 @@ export default function App(): React.JSX.Element {
   const [localApiStatus, setLocalApiStatus] = useState<LocalApiStatus | null>(null)
   const [localApiActivity, setLocalApiActivity] = useState<{ summary?: string } | null>(null)
   const [webSearchSettings, setWebSearchSettings] = useState<PublicWebSearchSettings | null>(null)
+  const [notionSettings, setNotionSettings] = useState<PublicNotionSettings | null>(null)
   const [googleCalendarSettings, setGoogleCalendarSettings] = useState<PublicGoogleCalendarSettings | null>(null)
   const [googleGmailSettings, setGoogleGmailSettings] = useState<PublicGoogleGmailSettings | null>(null)
   const [googleDriveSettings, setGoogleDriveSettings] = useState<PublicGoogleDriveSettings | null>(null)
@@ -431,6 +436,7 @@ export default function App(): React.JSX.Element {
     })
     loadInitial('localApi', () => window.assist.getLocalApiStatus(), setLocalApiStatus)
     loadInitial('webSearch', () => window.assist.getWebSearchSettings(), setWebSearchSettings)
+    loadInitial('notion', () => window.assist.getNotionSettings(), setNotionSettings)
     loadInitial('calendar', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
     loadInitial('gmail', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
     loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
@@ -1084,6 +1090,12 @@ export default function App(): React.JSX.Element {
     return result
   }, [])
 
+  const updateNotionApiKey = useCallback(async (apiKey: string | null): Promise<NotionSettingsResult> => {
+    const result = await window.assist.updateNotionApiKey(apiKey)
+    if (result.ok && result.settings) setNotionSettings(result.settings)
+    return result
+  }, [])
+
   const updateGoogleCalendarClientId = useCallback(async (clientId: string): Promise<GoogleCalendarSettingsResult> => {
     const result = await window.assist.updateGoogleCalendarClientId(clientId)
     if (result.ok && result.settings) setGoogleCalendarSettings(result.settings)
@@ -1302,6 +1314,7 @@ export default function App(): React.JSX.Element {
       void Promise.all([
         window.assist.getSettings().then(setSettings),
         window.assist.getWebSearchSettings().then(setWebSearchSettings),
+        window.assist.getNotionSettings().then(setNotionSettings),
         window.assist.getGoogleCalendarSettings().then(setGoogleCalendarSettings),
         window.assist.getGoogleGmailSettings().then(setGoogleGmailSettings),
         window.assist.getGoogleDriveSettings().then(setGoogleDriveSettings),
@@ -1744,7 +1757,7 @@ export default function App(): React.JSX.Element {
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'work' && <WorkView onNavigate={setView} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} notionSettings={notionSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
           {view === 'vault' && <VaultView initialDocument={pendingVaultDocument} onInitialDocumentConsumed={clearPendingVaultDocument} />}
@@ -1816,6 +1829,7 @@ export default function App(): React.JSX.Element {
               theme={appTheme}
               onThemeChange={setAppTheme}
               webSearchSettings={webSearchSettings}
+              notionSettings={notionSettings}
               googleCalendarSettings={googleCalendarSettings}
               googleGmailSettings={googleGmailSettings}
               googleDriveSettings={googleDriveSettings}
@@ -1827,6 +1841,7 @@ export default function App(): React.JSX.Element {
               grants={grants}
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
+              onUpdateNotionApiKey={updateNotionApiKey}
               onUpdateGoogleCalendarClientId={updateGoogleCalendarClientId}
               onConnectGoogleCalendar={connectGoogleCalendar}
               onDisconnectGoogleCalendar={disconnectGoogleCalendar}

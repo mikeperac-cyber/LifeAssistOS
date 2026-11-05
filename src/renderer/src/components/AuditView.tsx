@@ -227,6 +227,8 @@ export function summarizeEvent(event: AuditEvent): string {
       return 'local API server disabled'
     case 'web_search.settings_changed':
       return data.configured ? 'API key configured' : 'web search settings updated'
+    case 'notion.settings_changed':
+      return data.configured ? 'Notion token configured' : 'Notion token cleared'
     case 'google_calendar.settings_changed':
       return 'Google Calendar settings updated'
     case 'google_calendar.connected':

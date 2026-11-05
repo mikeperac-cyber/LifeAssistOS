@@ -149,6 +149,8 @@ export function describeEvent(event: AuditEvent): string {
       return 'Local API server disabled'
     case 'web_search.settings_changed':
       return 'Web search settings updated'
+    case 'notion.settings_changed':
+      return 'Notion connection settings updated'
     case 'google_calendar.settings_changed':
       return 'Google Calendar settings updated'
     case 'google_calendar.connected':

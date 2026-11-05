@@ -6,6 +6,7 @@ import type {
   BackupResult,
   PublicSettings,
   PublicWebSearchSettings,
+  PublicNotionSettings,
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
@@ -19,6 +20,7 @@ import type {
   SettingsPatch,
   SettingsResult,
   WebSearchSettingsResult,
+  NotionSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
@@ -59,6 +61,7 @@ export interface SettingsViewProps {
   theme: AppTheme
   onThemeChange: (theme: AppTheme) => void
   webSearchSettings: PublicWebSearchSettings | null
+  notionSettings: PublicNotionSettings | null
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleDriveSettings: PublicGoogleDriveSettings | null
@@ -70,6 +73,7 @@ export interface SettingsViewProps {
   grants: FolderGrant[]
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
+  onUpdateNotionApiKey: (apiKey: string | null) => Promise<NotionSettingsResult>
   onUpdateGoogleCalendarClientId: (clientId: string) => Promise<GoogleCalendarSettingsResult>
   onConnectGoogleCalendar: () => Promise<GoogleCalendarSettingsResult>
   onDisconnectGoogleCalendar: () => Promise<GoogleCalendarSettingsResult>
@@ -122,6 +126,7 @@ export function SettingsView({
   theme,
   onThemeChange,
   webSearchSettings,
+  notionSettings,
   googleCalendarSettings,
   googleGmailSettings,
   googleDriveSettings,
@@ -133,6 +138,7 @@ export function SettingsView({
   grants,
   onSave,
   onUpdateWebSearchApiKey,
+  onUpdateNotionApiKey,
   onUpdateGoogleCalendarClientId,
   onConnectGoogleCalendar,
   onDisconnectGoogleCalendar,
@@ -200,6 +206,9 @@ export function SettingsView({
   const [webSearchKey, setWebSearchKey] = useState('')
   const [webSearchBusy, setWebSearchBusy] = useState(false)
   const [webSearchMessage, setWebSearchMessage] = useState('')
+  const [notionKey, setNotionKey] = useState('')
+  const [notionBusy, setNotionBusy] = useState(false)
+  const [notionMessage, setNotionMessage] = useState('')
   const [googleClientId, setGoogleClientId] = useState(googleCalendarSettings?.clientId ?? '')
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false)
   const [googleCalendarMessage, setGoogleCalendarMessage] = useState('')
@@ -606,6 +615,42 @@ export function SettingsView({
     }
   }
 
+  async function saveNotionKey(): Promise<void> {
+    const key = notionKey.trim()
+    if (!key) {
+      setNotionMessage('Enter the Notion integration token, or leave the field blank to keep the saved token.')
+      return
+    }
+    setNotionBusy(true)
+    setNotionMessage('')
+    try {
+      const result = await onUpdateNotionApiKey(key)
+      if (!result.ok) setNotionMessage(result.error ?? 'Could not save the Notion integration token.')
+      else {
+        setNotionKey('')
+        setNotionMessage('Notion is configured. Each search and page read still asks for approval.')
+      }
+    } catch (error) {
+      setNotionMessage(errorText(error))
+    } finally {
+      setNotionBusy(false)
+    }
+  }
+
+  async function clearNotionKey(): Promise<void> {
+    setNotionBusy(true)
+    setNotionMessage('')
+    try {
+      const result = await onUpdateNotionApiKey(null)
+      if (!result.ok) setNotionMessage(result.error ?? 'Could not clear the Notion integration token.')
+      else setNotionMessage('Notion token cleared.')
+    } catch (error) {
+      setNotionMessage(errorText(error))
+    } finally {
+      setNotionBusy(false)
+    }
+  }
+
   async function connectGoogleCalendar(): Promise<void> {
     const clientId = googleClientId.trim()
     if (!clientId) {
@@ -937,6 +982,57 @@ export function SettingsView({
             </label>
           ))}
         </fieldset>
+      </section>
+
+      <section className="settings-section">
+        <div className="section-head">
+          <h2>Notion</h2>
+          <p>
+            Add a Notion integration token to search page titles and read selected page content. Create an integration in the{' '}
+            <a href="https://developers.notion.com/guides/authorization/overview" target="_blank" rel="noreferrer">Notion developer portal</a>{' '}
+            Select read-content access only, and share the pages you want it to access with that integration. Mike Assist is read-only; every search and page read asks for approval.
+            If you use a result in Chat, its title or approved page content is sent to your configured model provider. The token is never returned to the renderer; it is encrypted with OS storage when available and kept for this app session only otherwise.
+          </p>
+        </div>
+
+        {notionSettings ? (
+          <div className="web-search-settings">
+            <label className="field field-wide">
+              <span className="field-label">
+                Notion integration token
+                {notionSettings.hasApiKey && (
+                  <span className="field-tag">
+                    {!notionSettings.ready && notionSettings.apiKeyStored
+                      ? 'saved token unavailable'
+                      : notionSettings.apiKeyStored ? 'stored securely' : 'session only'}
+                  </span>
+                )}
+              </span>
+              <input
+                type="password"
+                value={notionKey}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setNotionKey(event.target.value)}
+                placeholder={notionSettings.hasApiKey ? 'Leave blank to keep the current token' : 'Paste your Notion integration token'}
+              />
+              <span className="field-hint">Grant access only to the Notion pages this connection should read. Mike Assist does not create or edit Notion content.</span>
+            </label>
+            <div className="settings-actions">
+              <button className="primary-button" type="button" onClick={() => void saveNotionKey()} disabled={notionBusy || !notionKey.trim()}>
+                {notionBusy ? 'Saving…' : 'Save token'}
+              </button>
+              {notionSettings.hasApiKey && (
+                <button className="ghost-button" type="button" onClick={() => void clearNotionKey()} disabled={notionBusy}>
+                  Clear token
+                </button>
+              )}
+              {notionMessage && <span className="settings-status" role="status">{notionMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading Notion settings…</p>
+        )}
       </section>
 
       <section className="settings-section">

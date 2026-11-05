@@ -179,6 +179,7 @@ export type AuditType =
   | 'local_api.enabled'
   | 'local_api.disabled'
   | 'web_search.settings_changed'
+  | 'notion.settings_changed'
   | 'google_calendar.settings_changed'
   | 'google_calendar.connected'
   | 'google_calendar.disconnected'
