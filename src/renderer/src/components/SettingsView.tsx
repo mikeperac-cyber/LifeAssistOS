@@ -37,6 +37,7 @@ import { McpPanel } from './McpPanel'
 import { APP_THEMES, type AppTheme } from '../theme'
 import { MicrosoftMailSettingsCard } from './MicrosoftMailSettingsCard'
 import { MicrosoftOneDriveSettingsCard } from './MicrosoftOneDriveSettingsCard'
+import { AccessibleDialog } from './AccessibleDialog'
 
 type Access = 'read' | 'read-write'
 
@@ -206,10 +207,12 @@ export function SettingsView({
   const [googleGmailBusy, setGoogleGmailBusy] = useState(false)
   const [googleGmailMessage, setGoogleGmailMessage] = useState('')
   const [googleGmailConsentOpen, setGoogleGmailConsentOpen] = useState(false)
+  const googleGmailConsentTitleRef = useRef<HTMLHeadingElement>(null)
   const [googleDriveClientId, setGoogleDriveClientId] = useState(googleDriveSettings?.clientId ?? '')
   const [googleDriveBusy, setGoogleDriveBusy] = useState(false)
   const [googleDriveMessage, setGoogleDriveMessage] = useState('')
   const [googleDriveConsentOpen, setGoogleDriveConsentOpen] = useState(false)
+  const googleDriveConsentTitleRef = useRef<HTMLHeadingElement>(null)
   const [googleTasksClientId, setGoogleTasksClientId] = useState(
     googleTasksSettings?.clientId || googleCalendarSettings?.clientId || googleGmailSettings?.clientId || googleDriveSettings?.clientId || ''
   )
@@ -1765,52 +1768,48 @@ export function SettingsView({
       </section>
 
       {googleGmailConsentOpen && (
-        <div className="modal-backdrop">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="gmail-consent-title" aria-describedby="gmail-consent-copy">
-            <div className="modal-top">
-              <span className="modal-kicker"><span className="shield-dot" /> Gmail data use</span>
-            </div>
-            <h2 id="gmail-consent-title">Before connecting Gmail</h2>
-            <p id="gmail-consent-copy" className="modal-summary">
-              Mike Assist will request permission to read your messages and create or send mail. When you approve a Gmail action, the relevant email content is sent to your configured model provider, which may be a remote service. Gmail results and the assistant’s reply stay in memory for this session and are not saved to local chat history. Search, read, and draft actions each need approval; sending also requires you to type SEND. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
-            </p>
-            <p className="field-hint">
-              Google Workspace data is used only for the Gmail features shown in Mike Assist and is handled under Google’s Limited Use requirements. Read the <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy" target="_blank" rel="noreferrer">Google Workspace User Data Policy</a>.
-            </p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" type="button" onClick={() => setGoogleGmailConsentOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" type="button" onClick={() => void connectGoogleGmail()} disabled={googleGmailBusy}>
-                Continue to Google sign-in
-              </button>
-            </div>
-          </section>
-        </div>
+        <AccessibleDialog className="modal" labelledBy="gmail-consent-title" describedBy="gmail-consent-copy" initialFocusRef={googleGmailConsentTitleRef} onCancel={() => setGoogleGmailConsentOpen(false)}>
+          <div className="modal-top">
+            <span className="modal-kicker"><span className="shield-dot" /> Gmail data use</span>
+          </div>
+          <h2 id="gmail-consent-title" ref={googleGmailConsentTitleRef} tabIndex={-1}>Before connecting Gmail</h2>
+          <p id="gmail-consent-copy" className="modal-summary">
+            Mike Assist will request permission to read your messages and create or send mail. When you approve a Gmail action, the relevant email content is sent to your configured model provider, which may be a remote service. Gmail results and the assistant’s reply stay in memory for this session and are not saved to local chat history. Search, read, and draft actions each need approval; sending also requires you to type SEND. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
+          </p>
+          <p className="field-hint">
+            Google Workspace data is used only for the Gmail features shown in Mike Assist and is handled under Google’s Limited Use requirements. Read the <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy" target="_blank" rel="noreferrer">Google Workspace User Data Policy</a>.
+          </p>
+          <div className="modal-actions">
+            <button className="btn btn-ghost" type="button" onClick={() => setGoogleGmailConsentOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" type="button" onClick={() => void connectGoogleGmail()} disabled={googleGmailBusy}>
+              Continue to Google sign-in
+            </button>
+          </div>
+        </AccessibleDialog>
       )}
       {googleDriveConsentOpen && (
-        <div className="modal-backdrop">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="drive-consent-title" aria-describedby="drive-consent-copy">
-            <div className="modal-top">
-              <span className="modal-kicker"><span className="shield-dot" /> Google Drive data use</span>
-            </div>
-            <h2 id="drive-consent-title">Before connecting Google Drive</h2>
-            <p id="drive-consent-copy" className="modal-summary">
-              Google will grant Mike Assist read-only access to Drive files broadly. Search and file reads each ask for approval. If approved, file names and selected text extracts are sent to your configured model provider, which may be remote, and can be stored in chat history. Mike Assist cannot edit or delete Drive files. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
-            </p>
-            <p className="field-hint">
-              Google classifies this as a restricted Drive scope. Public OAuth apps using it need verification; sending or storing restricted Drive data through servers requires a security assessment. See the <a href="https://developers.google.com/workspace/drive/api/guides/api-specific-auth" target="_blank" rel="noreferrer">scope guidance</a>.
-            </p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" type="button" onClick={() => setGoogleDriveConsentOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" type="button" onClick={() => void connectGoogleDrive()} disabled={googleDriveBusy}>
-                Continue to Google sign-in
-              </button>
-            </div>
-          </section>
-        </div>
+        <AccessibleDialog className="modal" labelledBy="drive-consent-title" describedBy="drive-consent-copy" initialFocusRef={googleDriveConsentTitleRef} onCancel={() => setGoogleDriveConsentOpen(false)}>
+          <div className="modal-top">
+            <span className="modal-kicker"><span className="shield-dot" /> Google Drive data use</span>
+          </div>
+          <h2 id="drive-consent-title" ref={googleDriveConsentTitleRef} tabIndex={-1}>Before connecting Google Drive</h2>
+          <p id="drive-consent-copy" className="modal-summary">
+            Google will grant Mike Assist read-only access to Drive files broadly. Search and file reads each ask for approval. If approved, file names and selected text extracts are sent to your configured model provider, which may be remote, and can be stored in chat history. Mike Assist cannot edit or delete Drive files. Disconnecting in Settings clears the token locally; removing Mike Assist in your Google Account revokes the project grant for connected services.
+          </p>
+          <p className="field-hint">
+            Google classifies this as a restricted Drive scope. Public OAuth apps using it need verification; sending or storing restricted Drive data through servers requires a security assessment. See the <a href="https://developers.google.com/workspace/drive/api/guides/api-specific-auth" target="_blank" rel="noreferrer">scope guidance</a>.
+          </p>
+          <div className="modal-actions">
+            <button className="btn btn-ghost" type="button" onClick={() => setGoogleDriveConsentOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn btn-primary" type="button" onClick={() => void connectGoogleDrive()} disabled={googleDriveBusy}>
+              Continue to Google sign-in
+            </button>
+          </div>
+        </AccessibleDialog>
       )}
     </div>
   )

@@ -66,6 +66,7 @@ import type {
 import { presetFor } from '../../shared/presets'
 import { buildWorkflowDraftFromTurn } from '../../shared/workflow-params'
 import { speakWithLocalVoice } from './local-speech'
+import { AccessibleDialog } from './components/AccessibleDialog'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
 import { Sidebar } from './components/Sidebar'
@@ -266,6 +267,7 @@ export default function App(): React.JSX.Element {
   const [microsoftOneDriveSettings, setMicrosoftOneDriveSettings] = useState<PublicMicrosoftOneDriveSettings | null>(null)
   const [speechEndpoint, setSpeechEndpoint] = useState('')
   const [onboardingOpen, setOnboardingOpen] = useState(false)
+  const onboardingTitleRef = useRef<HTMLHeadingElement>(null)
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(() => {
     try {
       return localStorage.getItem('mike-assist-voice-chat') === 'enabled'
@@ -1860,47 +1862,40 @@ export default function App(): React.JSX.Element {
         </div>
       </main>
 
-      {onboardingOpen && (
-        <div className="modal-backdrop onboarding-backdrop">
-          <section
-            className="modal onboarding-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="onboarding-title"
-          >
-            <span className="modal-kicker"><span className="shield-dot" /> First-run setup</span>
-            <h2 id="onboarding-title">Welcome to Mike Assist</h2>
-            <p className="onboarding-copy">
-              Your chat history stays on this device. The model can only use approved folders;
-              every write shows a preview and waits for your approval.
-            </p>
-            <ol className="onboarding-steps">
-              <li>Choose a local model in Settings, or connect another compatible provider.</li>
-              <li>Add folders you want Mike Assist to read. Use read-only access when possible.</li>
-              <li>Allow web domains individually. Fetched pages are treated as untrusted data.</li>
-              <li>Optional voice input uses a local transcription server you configure.</li>
-              <li>Finance entries, saved workflow steps, and remembered facts stay local; writes still require approval.</li>
-              <li>In chat use <code>/remember [scope] fact</code>, <code>/recall keywords</code>, or <code>/ask question</code>.</li>
-            </ol>
-            <div className="modal-actions">
-              <button
-                className="btn btn-ghost"
-                type="button"
-                onClick={() => {
-                  setView('settings')
-                  void completeOnboarding()
-                }}
-              >
-                Open settings
-              </button>
-              <button className="btn btn-primary" type="button" onClick={() => void completeOnboarding()}>
-                Start chatting
-              </button>
-            </div>
-          </section>
-        </div>
+      {onboardingOpen && !permission && (
+        <AccessibleDialog className="modal onboarding-modal" labelledBy="onboarding-title" initialFocusRef={onboardingTitleRef}>
+          <span className="modal-kicker"><span className="shield-dot" /> First-run setup</span>
+          <h2 id="onboarding-title" ref={onboardingTitleRef} tabIndex={-1}>Welcome to Mike Assist</h2>
+          <p className="onboarding-copy">
+            Your chat history stays on this device. The model can only use approved folders;
+            every write shows a preview and waits for your approval.
+          </p>
+          <ol className="onboarding-steps">
+            <li>Choose a local model in Settings, or connect another compatible provider.</li>
+            <li>Add folders you want Mike Assist to read. Use read-only access when possible.</li>
+            <li>Allow web domains individually. Fetched pages are treated as untrusted data.</li>
+            <li>Optional voice input uses a local transcription server you configure.</li>
+            <li>Finance entries, saved workflow steps, and remembered facts stay local; writes still require approval.</li>
+            <li>In chat use <code>/remember [scope] fact</code>, <code>/recall keywords</code>, or <code>/ask question</code>.</li>
+          </ol>
+          <div className="modal-actions">
+            <button
+              className="btn btn-ghost"
+              type="button"
+              onClick={() => {
+                setView('settings')
+                void completeOnboarding()
+              }}
+            >
+              Open settings
+            </button>
+            <button className="btn btn-primary" type="button" onClick={() => void completeOnboarding()}>
+              Start chatting
+            </button>
+          </div>
+        </AccessibleDialog>
       )}
-      {permission && <ApprovalModal request={permission} onRespond={respond} />}
+      {permission && <ApprovalModal key={permission.id} request={permission} onRespond={respond} />}
     </div>
   )
 }
