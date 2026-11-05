@@ -559,6 +559,10 @@ export default function App(): React.JSX.Element {
           setAppWarning(event.message)
           break
 
+        case 'quick_capture_requested':
+          setQuickCaptureOpen(true)
+          break
+
         case 'busy':
           busyRef.current = event.busy
           setBusy(event.busy)

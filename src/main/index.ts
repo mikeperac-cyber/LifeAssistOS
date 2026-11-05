@@ -3022,6 +3022,17 @@ function createWindow(): void {
             mainWindow.show()
             mainWindow.focus()
           },
+          onQuickCapture: () => {
+            const requestQuickCapture = (): void => sendToRenderer({ type: 'quick_capture_requested' })
+            if (!mainWindow || mainWindow.isDestroyed()) {
+              createWindow()
+              mainWindow?.once('ready-to-show', requestQuickCapture)
+              return
+            }
+            mainWindow.show()
+            mainWindow.focus()
+            requestQuickCapture()
+          },
           onQuitApp: () => {
             isQuitting = true
             app.quit()

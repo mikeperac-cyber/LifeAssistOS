@@ -841,6 +841,7 @@ export type AssistEvent =
   | { type: 'busy'; busy: boolean }
   | { type: 'step'; index: number; max: number }
   | { type: 'local_api_activity'; active: boolean; summary?: string }
+  | { type: 'quick_capture_requested' }
   | { type: 'today_changed' }
   | { type: 'scheduled_tasks_changed' }
 

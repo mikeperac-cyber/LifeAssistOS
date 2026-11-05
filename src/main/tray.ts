@@ -16,6 +16,7 @@ export interface TrayHost {
   Menu: typeof ElectronMenu
   nativeImage: typeof ElectronNativeImage
   onOpenWindow: () => void
+  onQuickCapture: () => void
   onQuitApp: () => void
 }
 
@@ -31,6 +32,10 @@ export class SystemTrayManager {
       this.tray = new this.host.Tray(icon)
       this.tray.setToolTip('Mike Assist')
       const menu = this.host.Menu.buildFromTemplate([
+        {
+          label: 'Quick capture',
+          click: () => this.host.onQuickCapture()
+        },
         {
           label: 'Open Mike Assist',
           click: () => this.host.onOpenWindow()
