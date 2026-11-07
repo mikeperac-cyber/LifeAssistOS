@@ -398,139 +398,144 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
           </div>
         </section>
       </div>
-      <section className="today-card today-google-tasks" aria-labelledby="google-tasks-title">
-        <div className="today-card-head">
-          <h3 id="google-tasks-title">Google Tasks</h3>
-          {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
-        </div>
-        <p className="today-google-tasks-note">Copy tasks between Google Tasks and Today. Reads and writes require approval.</p>
-        <details className="today-connection-details">
-          <summary>Sync and data details</summary>
-          <p>Copies are one-time, so later provider edits do not sync. Updates check the saved remote version before writing. Priority stays local. Approved task details you send in Chat may go to your configured model provider.</p>
-        </details>
-        {googleTasksSettings === null ? (
-          <p className="muted" role="status">Checking Google Tasks connection…</p>
-        ) : !googleTasksSettings.connected ? (
-          <div className="today-google-tasks-empty">
-            <p>Connect Google Tasks to view a list alongside your local tasks.</p>
-            <button className="ghost-button" type="button" onClick={onOpenSettings} disabled={disabled}>Open Settings</button>
-          </div>
-        ) : (
-          <>
-            <div className="today-google-tasks-controls">
-              <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists()} disabled={disabled || googleTasksReadBusy}>
-                {googleTasksReadBusy ? 'Waiting…' : googleTaskListsLoaded ? 'Refresh lists' : 'Load task lists'}
-              </button>
-              {googleTaskLists.length > 0 && (
-                <>
-                  <label className="today-google-task-list-select">
-                    <span className="sr-only">Google Tasks list</span>
-                    <select
-                      value={selectedGoogleTaskListId}
-                      disabled={disabled || googleTasksReadBusy}
-                      onChange={(event) => {
-                        setSelectedGoogleTaskListId(event.target.value)
-                        setGoogleTasks([])
-                        setGoogleTasksLoaded(false)
-                        setGoogleTasksPageToken(undefined)
-                        setGoogleTasksError('')
-                      }}
-                    >
-                      {googleTaskLists.map((list) => <option key={list.id} value={list.id}>{list.title}</option>)}
-                    </select>
-                  </label>
-                  <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks()} disabled={disabled || googleTasksReadBusy || !selectedGoogleTaskListId}>
-                    {googleTasksReadBusy ? 'Waiting…' : 'Load open tasks'}
-                  </button>
-                </>
-              )}
-              {googleTaskListsPageToken && (
-                <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists(googleTaskListsPageToken)} disabled={disabled || googleTasksReadBusy}>Load more lists</button>
-              )}
+      <section className="today-connected-services" aria-labelledby="today-connected-title">
+        <div className="today-connected-services-head"><h3 id="today-connected-title">Connected services</h3></div>
+        <div className="today-connected-services-grid">
+          <section className="today-card today-google-tasks" aria-labelledby="google-tasks-title">
+            <div className="today-card-head">
+              <h3 id="google-tasks-title">Google Tasks</h3>
+              {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
             </div>
-            {googleTaskListsLoaded && selectedGoogleTaskListId && (
-              <TaskExportControl
-                provider="google_tasks"
-                providerLabel="Google Tasks"
-                canWrite={googleTasksSettings.taskWriteEnabled}
-                taskListId={selectedGoogleTaskListId}
-                taskListTitle={googleTaskLists.find((list) => list.id === selectedGoogleTaskListId)?.title ?? ''}
-                tasks={snapshot.tasks}
-                disabled={disabled || googleTasksReadBusy}
-                onOpenSettings={onOpenSettings}
-              />
-            )}
-            {googleTaskListsLoaded && googleTaskLists.length === 0 && <p className="muted">No Google Tasks lists were found.</p>}
-            {googleTasks.length > 0 ? (
-              <div className="today-google-task-list">
-                {googleTasks.map((item) => (
-                  <article className="today-google-task" key={`${selectedGoogleTaskListId}:${item.id}`}>
-                    <div className="today-google-task-copy">
-                      <strong>{item.title}</strong>
-                      {item.due && <span>Due {formatTaskDue(item.due)}</span>}
-                      {item.notes && <p>{item.notes}{item.notesTruncated && <span> Note shortened to 4,000 characters.</span>}</p>}
-                    </div>
-                    <RemoteTaskImportButton
-                      provider="google_tasks"
-                      taskListId={selectedGoogleTaskListId}
-                      task={item}
-                      alreadyImported={isRemoteTaskImported(snapshot.tasks, 'google_tasks', selectedGoogleTaskListId, item.id)}
-                      disabled={disabled || googleTasksReadBusy}
-                      onSnapshot={setSnapshot}
-                    />
-                  </article>
-                ))}
-                {googleTasksPageToken && (
-                  <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks(googleTasksPageToken)} disabled={disabled || googleTasksReadBusy}>Load more tasks</button>
-                )}
+            <p className="today-google-tasks-note">Copy tasks between Google Tasks and Today. Reads and writes require approval.</p>
+            <details className="today-connection-details">
+              <summary>Sync and data details</summary>
+              <p>Copies are one-time, so later provider edits do not sync. Updates check the saved remote version before writing. Priority stays local. Approved task details you send in Chat may go to your configured model provider.</p>
+            </details>
+            {googleTasksSettings === null ? (
+              <p className="muted" role="status">Checking Google Tasks connection…</p>
+            ) : !googleTasksSettings.connected ? (
+              <div className="today-google-tasks-empty">
+                <p>Connect Google Tasks to view a list alongside your local tasks.</p>
+                <button className="ghost-button" type="button" onClick={onOpenSettings} disabled={disabled}>Open Settings</button>
               </div>
-            ) : googleTasksLoaded ? (
-              <p className="muted">There are no open tasks in this Google Tasks list.</p>
-            ) : googleTaskListsLoaded && googleTaskLists.length > 0 ? (
-              <p className="muted">Choose a list, then load its open tasks.</p>
-            ) : null}
-            {googleTasksError && <p className="status-error" role="alert">{googleTasksError}</p>}
-          </>
-        )}
+            ) : (
+              <>
+                <div className="today-google-tasks-controls">
+                  <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists()} disabled={disabled || googleTasksReadBusy}>
+                    {googleTasksReadBusy ? 'Waiting…' : googleTaskListsLoaded ? 'Refresh lists' : 'Load task lists'}
+                  </button>
+                  {googleTaskLists.length > 0 && (
+                    <>
+                      <label className="today-google-task-list-select">
+                        <span className="sr-only">Google Tasks list</span>
+                        <select
+                          value={selectedGoogleTaskListId}
+                          disabled={disabled || googleTasksReadBusy}
+                          onChange={(event) => {
+                            setSelectedGoogleTaskListId(event.target.value)
+                            setGoogleTasks([])
+                            setGoogleTasksLoaded(false)
+                            setGoogleTasksPageToken(undefined)
+                            setGoogleTasksError('')
+                          }}
+                        >
+                          {googleTaskLists.map((list) => <option key={list.id} value={list.id}>{list.title}</option>)}
+                        </select>
+                      </label>
+                      <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks()} disabled={disabled || googleTasksReadBusy || !selectedGoogleTaskListId}>
+                        {googleTasksReadBusy ? 'Waiting…' : 'Load open tasks'}
+                      </button>
+                    </>
+                  )}
+                  {googleTaskListsPageToken && (
+                    <button className="ghost-button" type="button" onClick={() => void loadGoogleTaskLists(googleTaskListsPageToken)} disabled={disabled || googleTasksReadBusy}>Load more lists</button>
+                  )}
+                </div>
+                {googleTaskListsLoaded && selectedGoogleTaskListId && (
+                  <TaskExportControl
+                    provider="google_tasks"
+                    providerLabel="Google Tasks"
+                    canWrite={googleTasksSettings.taskWriteEnabled}
+                    taskListId={selectedGoogleTaskListId}
+                    taskListTitle={googleTaskLists.find((list) => list.id === selectedGoogleTaskListId)?.title ?? ''}
+                    tasks={snapshot.tasks}
+                    disabled={disabled || googleTasksReadBusy}
+                    onOpenSettings={onOpenSettings}
+                  />
+                )}
+                {googleTaskListsLoaded && googleTaskLists.length === 0 && <p className="muted">No Google Tasks lists were found.</p>}
+                {googleTasks.length > 0 ? (
+                  <div className="today-google-task-list">
+                    {googleTasks.map((item) => (
+                      <article className="today-google-task" key={`${selectedGoogleTaskListId}:${item.id}`}>
+                        <div className="today-google-task-copy">
+                          <strong>{item.title}</strong>
+                          {item.due && <span>Due {formatTaskDue(item.due)}</span>}
+                          {item.notes && <p>{item.notes}{item.notesTruncated && <span> Note shortened to 4,000 characters.</span>}</p>}
+                        </div>
+                        <RemoteTaskImportButton
+                          provider="google_tasks"
+                          taskListId={selectedGoogleTaskListId}
+                          task={item}
+                          alreadyImported={isRemoteTaskImported(snapshot.tasks, 'google_tasks', selectedGoogleTaskListId, item.id)}
+                          disabled={disabled || googleTasksReadBusy}
+                          onSnapshot={setSnapshot}
+                        />
+                      </article>
+                    ))}
+                    {googleTasksPageToken && (
+                      <button className="ghost-button" type="button" onClick={() => void loadGoogleTasks(googleTasksPageToken)} disabled={disabled || googleTasksReadBusy}>Load more tasks</button>
+                    )}
+                  </div>
+                ) : googleTasksLoaded ? (
+                  <p className="muted">There are no open tasks in this Google Tasks list.</p>
+                ) : googleTaskListsLoaded && googleTaskLists.length > 0 ? (
+                  <p className="muted">Choose a list, then load its open tasks.</p>
+                ) : null}
+                {googleTasksError && <p className="status-error" role="alert">{googleTasksError}</p>}
+              </>
+            )}
+          </section>
+          <MicrosoftTodoPanel
+            settings={microsoftTodoSettings}
+            todayTasks={snapshot.tasks}
+            disabled={disabled}
+            onOpenSettings={onOpenSettings}
+            onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
+            onSnapshot={setSnapshot}
+          />
+          <GoogleCalendarPanel
+            settings={googleCalendarSettings}
+            todayTasks={snapshot.tasks}
+            disabled={disabled}
+            onOpenSettings={onOpenSettings}
+            onPrepareMeeting={onPrepareMeeting}
+            onSettingsRefresh={onGoogleCalendarSettingsRefresh}
+          />
+          <MicrosoftCalendarPanel
+            settings={microsoftCalendarSettings}
+            todayTasks={snapshot.tasks}
+            disabled={disabled}
+            onOpenSettings={onOpenSettings}
+            onPrepareMeeting={onPrepareMeeting}
+            onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}
+          />
+          <GoogleGmailFollowupPanel
+            settings={googleGmailSettings}
+            todayTasks={snapshot.tasks}
+            disabled={disabled}
+            onOpenSettings={onOpenSettings}
+            onSettingsRefresh={onGoogleGmailSettingsRefresh}
+          />
+          <OutlookMailFollowupPanel
+            settings={microsoftMailSettings}
+            todayTasks={snapshot.tasks}
+            disabled={disabled}
+            onOpenSettings={onOpenSettings}
+            onSettingsRefresh={onMicrosoftMailSettingsRefresh}
+          />
+        </div>
       </section>
-      <MicrosoftTodoPanel
-        settings={microsoftTodoSettings}
-        todayTasks={snapshot.tasks}
-        disabled={disabled}
-        onOpenSettings={onOpenSettings}
-        onSettingsRefresh={onMicrosoftTodoSettingsRefresh}
-        onSnapshot={setSnapshot}
-      />
-      <GoogleCalendarPanel
-        settings={googleCalendarSettings}
-        todayTasks={snapshot.tasks}
-        disabled={disabled}
-        onOpenSettings={onOpenSettings}
-        onPrepareMeeting={onPrepareMeeting}
-        onSettingsRefresh={onGoogleCalendarSettingsRefresh}
-      />
-      <MicrosoftCalendarPanel
-        settings={microsoftCalendarSettings}
-        todayTasks={snapshot.tasks}
-        disabled={disabled}
-        onOpenSettings={onOpenSettings}
-        onPrepareMeeting={onPrepareMeeting}
-        onSettingsRefresh={onMicrosoftCalendarSettingsRefresh}
-      />
-      <GoogleGmailFollowupPanel
-        settings={googleGmailSettings}
-        todayTasks={snapshot.tasks}
-        disabled={disabled}
-        onOpenSettings={onOpenSettings}
-        onSettingsRefresh={onGoogleGmailSettingsRefresh}
-      />
-      <OutlookMailFollowupPanel
-        settings={microsoftMailSettings}
-        todayTasks={snapshot.tasks}
-        disabled={disabled}
-        onOpenSettings={onOpenSettings}
-        onSettingsRefresh={onMicrosoftMailSettingsRefresh}
-      />
       {error && <p className="status-error today-error" role="alert">{error}</p>}
       </>}
     </div>

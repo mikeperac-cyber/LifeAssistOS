@@ -2525,7 +2525,7 @@ dialog.modal::backdrop {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  max-width: 1080px;
+  max-width: var(--view-wide-max);
   margin: 0 auto 18px;
 }
 
@@ -2568,7 +2568,7 @@ dialog.modal::backdrop {
 .finance-section,
 .finance-entry-form,
 .finance-empty {
-  max-width: 1080px;
+  max-width: var(--view-wide-max);
   margin: 0 auto 14px;
 }
 
@@ -2735,7 +2735,7 @@ dialog.modal::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  max-width: 1080px;
+  max-width: var(--view-wide-max);
   margin: 0 auto 12px;
   padding: 10px 12px;
   border: 1px solid var(--red-dim);
@@ -3642,7 +3642,11 @@ dialog.modal::backdrop {
 .today-header { margin-bottom: 17px; }
 .reminder-help { margin-top: 5px !important; color: var(--faint) !important; font-size: 10px !important; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
-.today-google-tasks { margin-top: 14px; }
+.today-connected-services { margin-top: 19px; }
+.today-connected-services-head { margin-bottom: 10px; }
+.today-connected-services-head h3 { margin: 0; color: var(--muted); font-size: 12px; font-weight: 650; letter-spacing: .02em; }
+.today-connected-services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr)); align-items: start; gap: 14px; }
+.today-connected-services-grid > * { min-width: 0; margin: 0; }
 .today-email-panel { margin-top: 14px; }
 .email-search-view { display: flex; width: 100%; max-width: var(--view-standard-max); min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; gap: 14px; margin-inline: auto; padding: 24px var(--view-gutter) 40px; overflow-y: auto; }
 .email-search-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 2px 1px; }
