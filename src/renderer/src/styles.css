@@ -836,9 +836,11 @@ summary:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  max-width: 840px;
+  width: 100%;
+  max-width: var(--view-reading-max);
+  min-width: 0;
   margin: 0 auto;
-  padding: 28px 28px 24px;
+  padding: 28px var(--view-gutter) 24px;
 }
 
 .empty {
@@ -1365,7 +1367,7 @@ summary:focus-visible {
 /* ---------- Composer ---------- */
 
 .composer-wrap {
-  padding: 10px 28px 16px;
+  padding: 10px var(--view-gutter) 16px;
   background: linear-gradient(to top, var(--bg) 55%, rgba(9, 12, 18, 0));
 }
 
@@ -1373,7 +1375,7 @@ summary:focus-visible {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  max-width: 840px;
+  max-width: min(var(--view-wide-max), 1180px);
   margin: 0 auto;
   padding: 8px 8px 8px 12px;
   border: 1px solid var(--line);
@@ -5709,7 +5711,7 @@ dialog.modal::backdrop {
 
 .composer-footer {
   display: flex;
-  max-width: 840px;
+  max-width: min(var(--view-wide-max), 1180px);
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -6481,7 +6483,7 @@ dialog.modal::backdrop {
 
 .composer {
   display: flex;
-  width: min(100%, 960px);
+  width: 100%;
   flex-direction: column;
   align-items: stretch;
   gap: 8px;
@@ -6505,7 +6507,7 @@ dialog.modal::backdrop {
   border-bottom: 0;
 }
 
-.composer-settings-controls { display: flex; min-width: 0; flex: 1 1 460px; align-items: center; flex-wrap: wrap; gap: 6px; }
+.composer-settings-controls { display: flex; min-width: 0; flex: 1 1 460px; align-items: center; flex-wrap: nowrap; gap: 6px; }
 .composer-actions { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 7px; margin-left: auto; }
 
 .composer-mode-control,
@@ -6582,7 +6584,7 @@ dialog.modal::backdrop {
     max-height: 48vh;
   }
 
-  .composer-settings-controls { flex-basis: 100%; }
+  .composer-settings-controls { flex-basis: 100%; flex-wrap: wrap; }
   .composer-toolbar-divider { display: none; }
 }
 
