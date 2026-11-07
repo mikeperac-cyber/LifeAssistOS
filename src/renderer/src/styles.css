@@ -3467,9 +3467,11 @@ dialog.modal :focus-visible {
 
   .skills-layout {
     grid-template-columns: 1fr;
+    flex: 0 0 auto;
   }
 
   .skills-list {
+    min-height: 96px;
     max-height: 240px;
   }
 }
@@ -3716,7 +3718,7 @@ dialog.modal :focus-visible {
 .cloud-files-search-row { display: flex; align-items: center; gap: 8px; }
 .cloud-files-search-row input { min-width: 0; flex: 1; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
 .cloud-files-search-row button { flex: 0 0 auto; padding: 8px 11px; font-size: 10px; }
-.cloud-files-layout { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); align-items: stretch; flex: 1 1 auto; min-height: 0; gap: 13px; }
+.cloud-files-layout { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); align-items: stretch; flex: 1 0 auto; min-height: 380px; gap: 13px; }
 .cloud-files-results, .cloud-files-reader { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
 .cloud-files-reader { overflow-y: auto; }
 .cloud-files-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
@@ -3944,7 +3946,7 @@ dialog.modal :focus-visible {
   .research-projects { min-height: auto; }
   .research-project-list { max-height: 180px; }
   .today-grid { grid-template-columns: 1fr; }
-  .cloud-files-layout { grid-template-columns: 1fr; }
+  .cloud-files-layout { grid-template-columns: 1fr; grid-template-rows: minmax(140px, auto) minmax(300px, auto); min-height: 460px; }
   .cloud-files-follow-ups { grid-template-columns: 1fr; }
 }
 
