@@ -773,9 +773,14 @@ summary:focus-visible {
 
 .content {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  --view-wide-max: 1540px;
+  --view-standard-max: 1360px;
+  --view-reading-max: 980px;
+  --view-gutter: clamp(20px, 2.2cqi, 32px);
 }
 
 .view-loading {
@@ -2506,7 +2511,10 @@ dialog.modal::backdrop {
 
 .finance-view {
   height: 100%;
-  padding: 24px 28px 40px;
+  width: 100%;
+  max-width: var(--view-wide-max);
+  margin-inline: auto;
+  padding: 24px var(--view-gutter) 40px;
   overflow-y: auto;
 }
 
@@ -2739,7 +2747,7 @@ dialog.modal::backdrop {
 
 .workflow-view {
   height: 100%;
-  padding: 24px 28px 40px;
+  padding: 24px var(--view-gutter) 40px;
   overflow-y: auto;
 }
 
@@ -2854,7 +2862,10 @@ dialog.modal::backdrop {
 
 .scheduled-view {
   height: 100%;
-  padding: 24px 28px 40px;
+  width: 100%;
+  max-width: var(--view-wide-max);
+  margin-inline: auto;
+  padding: 24px var(--view-gutter) 40px;
   overflow-y: auto;
 }
 
@@ -3221,7 +3232,10 @@ dialog.modal::backdrop {
 
 .skills-view {
   height: 100%;
-  padding: 26px 30px 42px;
+  width: 100%;
+  max-width: var(--view-standard-max);
+  margin-inline: auto;
+  padding: 26px var(--view-gutter) 42px;
   overflow-y: auto;
 }
 
@@ -3441,7 +3455,7 @@ dialog.modal::backdrop {
 .today-view,
 .teaching-view {
   height: 100%;
-  padding: 24px 28px 40px;
+  padding: 24px var(--view-gutter) 40px;
   overflow-y: auto;
 }
 
@@ -3450,7 +3464,6 @@ dialog.modal::backdrop {
   display: grid;
   grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr);
   gap: 18px;
-  max-width: 1120px;
   min-height: 100%;
   margin: 0 auto;
 }
@@ -3604,7 +3617,6 @@ dialog.modal::backdrop {
 .research-load-error { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
 .research-load-error p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 
-.vault-view { max-width: 1180px; margin: 0 auto; }
 .vault-toolbar { margin: 0 auto 16px; }
 .vault-toolbar .primary-button { flex: 0 0 auto; }
 .vault-results { display: flex; flex-direction: column; gap: 7px; }
@@ -3624,19 +3636,19 @@ dialog.modal::backdrop {
 .vault-body { flex: 1; min-height: 350px; font-size: 12px !important; line-height: 1.65 !important; }
 .vault-editor-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-.today-view { width: 100%; max-width: 1500px; margin: 0 auto; }
+.today-view { width: 100%; max-width: var(--view-wide-max); margin-inline: auto; }
 .today-header { margin-bottom: 17px; }
 .reminder-help { margin-top: 5px !important; color: var(--faint) !important; font-size: 10px !important; }
 .today-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 14px; }
 .today-google-tasks { margin-top: 14px; }
 .today-email-panel { margin-top: 14px; }
-.email-search-view { display: flex; flex-direction: column; gap: 14px; max-width: 1240px; margin: 0 auto; }
+.email-search-view { display: flex; width: 100%; max-width: var(--view-standard-max); min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; gap: 14px; margin-inline: auto; padding: 24px var(--view-gutter) 40px; overflow-y: auto; }
 .email-search-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 2px 1px; }
 .email-search-header h2 { margin: 4px 0 6px; font-size: 22px; letter-spacing: -0.035em; }
 .email-search-header p { max-width: 670px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .email-search-boundary { display: flex; max-width: 290px; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid rgba(var(--accent-rgb), .2); border-radius: 9px; background: var(--accent-dim); color: var(--muted); font-size: 10px; line-height: 1.45; }
 .email-search-boundary strong { color: var(--accent); font-size: 10px; }
-.cloud-files-view { display: flex; flex-direction: column; gap: 14px; max-width: 1240px; margin: 0 auto; }
+.cloud-files-view { display: flex; width: 100%; max-width: var(--view-standard-max); min-width: 0; min-height: 0; flex: 1 1 0%; flex-direction: column; gap: 14px; margin-inline: auto; padding: 24px var(--view-gutter) 40px; overflow-y: auto; }
 .cloud-files-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 2px 1px; }
 .cloud-files-header h2 { margin: 4px 0 6px; font-size: 22px; letter-spacing: -0.035em; }
 .cloud-files-header p { max-width: 720px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -3798,7 +3810,7 @@ dialog.modal::backdrop {
 .today-error-state { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--red-dim); border-radius: 9px; background: var(--red-dim); color: var(--red); font-size: 11px; line-height: 1.45; }
 .today-error-state p { flex: 1 1 100%; margin: 0; overflow-wrap: anywhere; }
 
-.teaching-view { max-width: 1120px; margin: 0 auto; }
+.teaching-view { width: 100%; max-width: var(--view-wide-max); margin-inline: auto; }
 .teaching-header { margin-bottom: 17px; }
 .teaching-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .teaching-card { display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
@@ -3811,7 +3823,7 @@ dialog.modal::backdrop {
 .teaching-card ol { display: flex; flex-direction: column; gap: 6px; min-height: 90px; margin: 0 0 15px; padding-left: 18px; color: var(--text); font-size: 10.5px; line-height: 1.45; }
 .teaching-card .primary-button { align-self: flex-start; margin-top: auto; }
 
-.coach-view { height: 100%; max-width: 1160px; margin: 0 auto; padding: 24px 28px 40px; overflow-y: auto; }
+.coach-view { height: 100%; padding: 24px var(--view-gutter) 40px; overflow-y: auto; }
 .coach-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .coach-header h2 { margin: 4px 0 5px; font-size: 22px; letter-spacing: -0.035em; }
 .coach-header p { max-width: 700px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -3906,7 +3918,7 @@ dialog.modal::backdrop {
 
 /* ---------- Integration transparency hub ---------- */
 
-.integrations-view { height: 100%; max-width: 1120px; margin: 0 auto; padding: 24px 28px 40px; overflow-y: auto; }
+.integrations-view { height: 100%; width: 100%; max-width: var(--view-wide-max); margin-inline: auto; padding: 24px var(--view-gutter) 40px; overflow-y: auto; }
 .integrations-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .integrations-header h2 { margin: 4px 0 5px; font-size: 22px; letter-spacing: -0.035em; }
 .integrations-header p { max-width: 720px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
@@ -4915,8 +4927,16 @@ dialog.modal::backdrop {
 
 .activity {
   display: flex;
+  width: 100%;
+  max-width: var(--view-wide-max);
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 0%;
   flex-direction: column;
   gap: 14px;
+  margin-inline: auto;
+  padding: 22px var(--view-gutter) 34px;
+  overflow-y: auto;
 }
 
 .activity-toolbar {
@@ -4991,10 +5011,10 @@ dialog.modal::backdrop {
 .work-view {
   flex: 1;
   min-height: 0;
-  max-width: 1280px;
+  max-width: var(--view-wide-max);
   width: 100%;
   margin: 0 auto;
-  padding: 24px 28px 32px;
+  padding: 24px var(--view-gutter) 32px;
   overflow: auto;
 }
 
@@ -5966,7 +5986,6 @@ dialog.modal::backdrop {
 .vault-view {
   box-sizing: border-box;
   width: 100%;
-  max-width: 1540px;
   min-width: 0;
   min-height: 0;
   flex: 1 1 0%;
@@ -5974,9 +5993,19 @@ dialog.modal::backdrop {
   margin-inline: auto;
 }
 
+.memory,
+.workflow-view {
+  max-width: var(--view-wide-max);
+}
+
+.research-view,
+.vault-view {
+  max-width: var(--view-standard-max);
+}
+
 .memory {
   gap: 16px;
-  padding: 22px clamp(16px, 2.1vw, 34px) 32px;
+  padding: 22px var(--view-gutter) 32px;
   overflow-y: auto;
 }
 
@@ -6085,7 +6114,7 @@ dialog.modal::backdrop {
 }
 
 .workflow-view {
-  padding: 22px clamp(16px, 2.1vw, 34px) 34px;
+  padding: 22px var(--view-gutter) 34px;
   overflow-y: auto;
 }
 
@@ -6233,7 +6262,7 @@ dialog.modal::backdrop {
 
 .research-view,
 .vault-view {
-  padding: 20px clamp(16px, 2.1vw, 34px) 28px;
+  padding: 20px var(--view-gutter) 28px;
   overflow-y: auto;
 }
 
@@ -6242,7 +6271,7 @@ dialog.modal::backdrop {
   grid-template-columns: minmax(260px, 350px) minmax(0, 1fr);
   gap: 16px;
   width: 100%;
-  max-width: 1460px;
+  max-width: var(--view-standard-max);
   min-height: 100%;
   margin-inline: auto;
 }
@@ -6369,13 +6398,9 @@ dialog.modal::backdrop {
   line-height: 1.45;
 }
 
-.vault-view {
-  max-width: 1540px;
-}
-
 .vault-toolbar {
   width: 100%;
-  max-width: 1460px;
+  max-width: var(--view-standard-max);
   margin: 0 auto 16px;
 }
 
@@ -6852,7 +6877,7 @@ dialog.modal::backdrop {
 /* Coach: put the reflection first, keep setup secondary */
 .coach-view {
   width: 100%;
-  max-width: 1680px;
+  max-width: var(--view-standard-max);
   margin: 0 auto;
 }
 
