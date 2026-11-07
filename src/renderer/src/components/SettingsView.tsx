@@ -1039,7 +1039,7 @@ export function SettingsView({
   }
 
   return (
-    <div className="settings">
+    <div className={`settings settings-${section}`}>
       <div className="settings-section-tabs" role="group" aria-label="Settings sections">
         <button type="button" className={section === 'general' ? 'selected' : ''} aria-pressed={section === 'general'} onClick={() => onSectionChange('general')}>General</button>
         <button type="button" className={section === 'memory' ? 'selected' : ''} aria-pressed={section === 'memory'} onClick={() => onSectionChange('memory')}>Memory</button>

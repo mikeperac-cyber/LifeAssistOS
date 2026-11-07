@@ -4438,9 +4438,28 @@ dialog.modal::backdrop {
 }
 
 .settings {
+  box-sizing: border-box;
   height: 100%;
-  padding: 24px 28px 40px;
+  width: 100%;
+  max-width: var(--view-standard-max);
+  min-width: 0;
+  min-height: 0;
+  margin-inline: auto;
+  padding: 24px var(--view-gutter) 40px;
   overflow-y: auto;
+}
+
+.settings-memory {
+  display: flex;
+  max-width: var(--view-wide-max);
+  flex-direction: column;
+}
+
+.settings-general {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 16px;
 }
 
 .settings-section-tabs {
@@ -4452,6 +4471,12 @@ dialog.modal::backdrop {
   border: 1px solid var(--line-soft);
   border-radius: 999px;
   background: var(--panel);
+}
+
+.settings-general .settings-section-tabs {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin: 0;
 }
 
 .settings-section-tabs button {
@@ -4469,7 +4494,25 @@ dialog.modal::backdrop {
   color: var(--text);
 }
 
-.settings > .memory { margin: 0 auto; }
+.settings-general .settings-section {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+}
+
+.settings-general .appearance-section { grid-column: 1 / -1; }
+
+.settings-memory > .memory {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
 
 .settings-section {
   max-width: 980px;
@@ -4478,6 +4521,12 @@ dialog.modal::backdrop {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   background: var(--panel);
+}
+
+@container (max-width: 1100px) {
+  .settings-general {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .appearance-section .section-head p { margin-bottom: 14px; }
