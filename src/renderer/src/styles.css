@@ -3264,6 +3264,8 @@ dialog.modal :focus-visible {
 }
 
 .skills-header {
+  width: 100%;
+  min-width: 0;
   max-width: var(--view-standard-max);
   margin: 0 auto 14px;
   display: flex;
@@ -3289,6 +3291,8 @@ dialog.modal :focus-visible {
 }
 
 .skill-privacy-note {
+  width: 100%;
+  min-width: 0;
   max-width: var(--view-standard-max);
   margin: 0 auto 18px;
   padding: 10px 13px;
@@ -3301,6 +3305,8 @@ dialog.modal :focus-visible {
 }
 
 .skills-layout {
+  width: 100%;
+  min-width: 0;
   max-width: var(--view-standard-max);
   min-height: 0;
   flex: 1 1 auto;
@@ -3708,6 +3714,7 @@ dialog.modal :focus-visible {
 .cloud-files-search-row button { flex: 0 0 auto; padding: 8px 11px; font-size: 10px; }
 .cloud-files-layout { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); align-items: stretch; flex: 1 1 auto; min-height: 0; gap: 13px; }
 .cloud-files-results, .cloud-files-reader { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.cloud-files-reader { overflow-y: auto; }
 .cloud-files-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .cloud-files-section-head h3 { margin: 1px 0 4px; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
 .cloud-files-section-head span { color: var(--faint); font-size: 9px; overflow-wrap: anywhere; }
@@ -3720,7 +3727,7 @@ dialog.modal :focus-visible {
 .cloud-files-result strong { color: var(--text); font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
 .cloud-files-result span, .cloud-files-result small { color: var(--faint); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
 .cloud-files-result .cloud-files-path { color: var(--muted); }
-.cloud-files-text { min-height: 0; flex: 1 1 auto; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-files-text { min-height: 180px; flex: 1 0 180px; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cloud-files-speech { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 9px 0 12px; }
 .cloud-files-speech > div { display: flex; flex-wrap: wrap; gap: 7px; }
 .cloud-files-speech .ghost-button { padding: 7px 9px; font-size: 9px; }
@@ -6623,6 +6630,7 @@ dialog.modal :focus-visible {
 .composer-model-control { width: auto; min-width: 150px; flex: 1 1 185px; }
 .composer-effort-control { width: 105px; }
 .composer-control-message { flex: 1 0 100%; }
+.composer-settings-controls:has(.composer-control-message) { flex-wrap: wrap; }
 
 @container (max-width: 1100px) {
   .research-layout,
