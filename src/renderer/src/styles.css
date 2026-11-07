@@ -2073,7 +2073,7 @@ dialog.modal :focus-visible {
 
 /* ---------- Responsive ---------- */
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .app {
     flex-direction: column;
   }
@@ -2743,6 +2743,10 @@ dialog.modal :focus-visible {
 }
 
 .finance-empty {
+  display: grid;
+  min-height: clamp(240px, 42vh, 420px);
+  place-items: center;
+  text-align: center;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
@@ -5354,7 +5358,7 @@ dialog.modal :focus-visible {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .sidebar-shortcut-actions {
     display: flex;
     flex-direction: row;
