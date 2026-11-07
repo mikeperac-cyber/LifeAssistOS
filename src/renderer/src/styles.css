@@ -3670,22 +3670,21 @@ dialog.modal::backdrop {
 .cloud-files-search-row { display: flex; align-items: center; gap: 8px; }
 .cloud-files-search-row input { min-width: 0; flex: 1; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 11px; }
 .cloud-files-search-row button { flex: 0 0 auto; padding: 8px 11px; font-size: 10px; }
-.cloud-files-layout { display: grid; grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr); align-items: start; gap: 13px; }
-.cloud-files-results, .cloud-files-reader { min-width: 0; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.cloud-files-layout { display: grid; grid-template-columns: minmax(280px, .85fr) minmax(0, 1.15fr); align-items: stretch; flex: 1 1 auto; min-height: 0; gap: 13px; }
+.cloud-files-results, .cloud-files-reader { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 13px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
 .cloud-files-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .cloud-files-section-head h3 { margin: 1px 0 4px; color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
 .cloud-files-section-head span { color: var(--faint); font-size: 9px; overflow-wrap: anywhere; }
 .cloud-files-section-head .ghost-button { flex: 0 0 auto; padding: 6px 8px; font-size: 9px; }
 .cloud-files-note { margin: 0 0 9px; color: var(--faint); font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
-.cloud-files-result-list { display: flex; max-height: 560px; flex-direction: column; gap: 6px; overflow: auto; }
+.cloud-files-result-list { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; gap: 6px; overflow: auto; }
 .cloud-files-result { display: flex; width: 100%; flex-direction: column; align-items: flex-start; gap: 4px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--muted); font: inherit; text-align: left; cursor: pointer; }
 .cloud-files-result:hover:not(:disabled) { border-color: var(--line); }
 .cloud-files-result.active { border-color: rgba(var(--accent-rgb), .38); background: var(--accent-dim); }
 .cloud-files-result strong { color: var(--text); font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
 .cloud-files-result span, .cloud-files-result small { color: var(--faint); font-size: 9px; line-height: 1.4; overflow-wrap: anywhere; }
 .cloud-files-result .cloud-files-path { color: var(--muted); }
-.cloud-files-reader { min-height: 250px; }
-.cloud-files-text { max-height: 560px; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cloud-files-text { min-height: 0; flex: 1 1 auto; margin: 0 0 10px; padding: 12px; overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cloud-files-speech { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 9px 0 12px; }
 .cloud-files-speech > div { display: flex; flex-wrap: wrap; gap: 7px; }
 .cloud-files-speech .ghost-button { padding: 7px 9px; font-size: 9px; }
@@ -3818,7 +3817,7 @@ dialog.modal::backdrop {
 
 .teaching-view { width: 100%; max-width: var(--view-wide-max); margin-inline: auto; }
 .teaching-header { margin-bottom: 17px; }
-.teaching-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.teaching-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; }
 .teaching-card { display: flex; flex-direction: column; padding: 16px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); }
 .teaching-card-top { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 10px; }
 .teaching-skill { color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -6272,6 +6271,11 @@ dialog.modal::backdrop {
   overflow-y: auto;
 }
 
+.vault-view {
+  display: flex;
+  flex-direction: column;
+}
+
 .research-layout,
 .vault-layout {
   grid-template-columns: minmax(260px, 350px) minmax(0, 1fr);
@@ -6420,6 +6424,7 @@ dialog.modal::backdrop {
 }
 
 .vault-layout {
+  flex: 1 1 auto;
   min-height: 0;
   align-items: stretch;
 }
