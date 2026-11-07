@@ -30,19 +30,22 @@ const providerSchema = z.object({
 })
 
 interface SettingsFile {
-  version: 1
+  version: 1 | 2
   provider: Omit<ProviderSettings, 'apiKey'>
   onboardingComplete?: boolean
-  /** Base64 ciphertext from safeStorage, when available. */
+  /** Legacy single-key ciphertext, migrated to providerApiKeysEnc on load. */
   apiKeyEnc?: string
+  /** Base64 ciphertexts indexed by provider preset and endpoint origin. */
+  providerApiKeysEnc?: Record<string, string>
 }
 
 interface SettingsStoreState {
   provider: Omit<ProviderSettings, 'apiKey'>
   apiKey: string
-  apiKeyStored: boolean
   onboardingComplete: boolean
-  storedApiKeyEnc?: string
+  providerApiKeysEnc: Record<string, string>
+  /** Unencrypted keys are session-only when OS encryption is unavailable. */
+  sessionApiKeys: Record<string, string>
 }
 
 export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
@@ -57,9 +60,15 @@ export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
 function isSettingsFile(value: unknown): value is SettingsFile {
   if (!value || typeof value !== 'object') return false
   const file = value as Partial<SettingsFile>
-  return file.version === 1 && Boolean(file.provider && typeof file.provider === 'object' && !Array.isArray(file.provider)) &&
+  const encryptedKeys = file.providerApiKeysEnc
+  const validEncryptedKeys = encryptedKeys === undefined || (
+    typeof encryptedKeys === 'object' && encryptedKeys !== null && !Array.isArray(encryptedKeys) &&
+    Object.values(encryptedKeys).every((entry) => typeof entry === 'string')
+  )
+  return (file.version === 1 || file.version === 2) && Boolean(file.provider && typeof file.provider === 'object' && !Array.isArray(file.provider)) &&
     (file.onboardingComplete === undefined || typeof file.onboardingComplete === 'boolean') &&
-    (file.apiKeyEnc === undefined || typeof file.apiKeyEnc === 'string')
+    (file.apiKeyEnc === undefined || typeof file.apiKeyEnc === 'string') &&
+    validEncryptedKeys
 }
 
 /**
@@ -70,9 +79,9 @@ function isSettingsFile(value: unknown): value is SettingsFile {
 export class SettingsStore {
   private provider: Omit<ProviderSettings, 'apiKey'> = { ...DEFAULT_PROVIDER_SETTINGS }
   private apiKey = ''
-  private apiKeyStored = false
   private onboardingComplete = false
-  private storedApiKeyEnc?: string
+  private providerApiKeysEnc: Record<string, string> = {}
+  private sessionApiKeys: Record<string, string> = {}
   private mutationQueue: Promise<void> = Promise.resolve()
 
   constructor(
@@ -88,8 +97,11 @@ export class SettingsStore {
       const next: SettingsStoreState = {
         provider: { ...DEFAULT_PROVIDER_SETTINGS },
         apiKey: '',
-        apiKeyStored: false,
-        onboardingComplete: loaded?.onboardingComplete === true
+        onboardingComplete: loaded?.onboardingComplete === true,
+        providerApiKeysEnc: Object.fromEntries(
+          Object.entries(loaded?.providerApiKeysEnc ?? {}).filter(([, encrypted]) => encrypted.length > 0)
+        ),
+        sessionApiKeys: {}
       }
       if (loaded?.provider) {
         const parsed = providerSchema.safeParse(loaded.provider)
@@ -105,12 +117,16 @@ export class SettingsStore {
         }
       }
 
-      if (loaded?.apiKeyEnc) {
-        next.storedApiKeyEnc = loaded.apiKeyEnc
-        next.apiKeyStored = true
+      const activeKeyId = providerCredentialId(next.provider)
+      if (loaded?.apiKeyEnc && !next.providerApiKeysEnc[activeKeyId]) {
+        next.providerApiKeysEnc[activeKeyId] = loaded.apiKeyEnc
+      }
+
+      const activeKeyEnc = next.providerApiKeysEnc[activeKeyId]
+      if (activeKeyEnc) {
         if (this.codec?.available) {
           try {
-            const decrypted = await this.codec.decrypt(loaded.apiKeyEnc)
+            const decrypted = await this.codec.decrypt(activeKeyEnc)
             next.apiKey = decrypted.value
           } catch (error) {
             console.warn('[settings] could not decrypt the stored API key; preserving its ciphertext', error)
@@ -145,8 +161,8 @@ export class SettingsStore {
       provider: {
         ...this.provider,
         baseUrl: safeProviderEndpointForDisplay(this.provider.baseUrl),
-        hasApiKey: this.apiKey.length > 0 || Boolean(this.storedApiKeyEnc),
-        apiKeyStored: this.apiKeyStored
+        hasApiKey: this.hasProviderKey(this.provider),
+        apiKeyStored: Boolean(this.providerApiKeysEnc[providerCredentialId(this.provider)])
       },
       onboardingComplete: this.onboardingComplete
     }
@@ -180,26 +196,41 @@ export class SettingsStore {
         throw new Error(`Invalid settings — baseUrl: ${error instanceof Error ? error.message : String(error)}`)
       }
 
-      const next: SettingsStoreState = { ...current, provider: parsed.data }
+      const currentKeyId = providerCredentialId(current.provider)
+      const nextKeyId = providerCredentialId(parsed.data)
+      const next: SettingsStoreState = {
+        ...current,
+        provider: parsed.data,
+        providerApiKeysEnc: { ...current.providerApiKeysEnc },
+        sessionApiKeys: { ...current.sessionApiKeys }
+      }
+
+      if (currentKeyId !== nextKeyId && current.apiKey && !current.providerApiKeysEnc[currentKeyId]) {
+        next.sessionApiKeys[currentKeyId] = current.apiKey
+      }
+
       if (apiKey !== undefined) {
         if (apiKey === null || apiKey.trim() === '') {
           next.apiKey = ''
-          next.apiKeyStored = false
-          next.storedApiKeyEnc = undefined
+          delete next.providerApiKeysEnc[nextKeyId]
+          delete next.sessionApiKeys[nextKeyId]
         } else {
           next.apiKey = apiKey.trim()
-          next.apiKeyStored = Boolean(this.codec?.available)
-          next.storedApiKeyEnc = undefined
+          if (this.codec?.available) delete next.sessionApiKeys[nextKeyId]
+          else next.sessionApiKeys[nextKeyId] = next.apiKey
         }
-      } else if (
-        parsed.data.preset !== current.provider.preset ||
-        providerOrigin(parsed.data.baseUrl) !== providerOrigin(current.provider.baseUrl)
-      ) {
-        // A single stored key belongs to the active provider endpoint. Never
-        // send it to a different provider after a preset or host change.
-        next.apiKey = ''
-        next.apiKeyStored = false
-        next.storedApiKeyEnc = undefined
+      } else if (currentKeyId !== nextKeyId) {
+        const sessionKey = next.sessionApiKeys[nextKeyId]
+        const encryptedKey = next.providerApiKeysEnc[nextKeyId]
+        next.apiKey = sessionKey ?? ''
+
+        if (!sessionKey && encryptedKey && this.codec?.available) {
+          try {
+            next.apiKey = (await this.codec.decrypt(encryptedKey)).value
+          } catch (error) {
+            console.warn('[settings] could not decrypt the selected provider API key; preserving its ciphertext', error)
+          }
+        }
       }
 
       this.apply(await this.persist(next))
@@ -211,18 +242,25 @@ export class SettingsStore {
     return {
       provider: this.provider,
       apiKey: this.apiKey,
-      apiKeyStored: this.apiKeyStored,
       onboardingComplete: this.onboardingComplete,
-      storedApiKeyEnc: this.storedApiKeyEnc
+      providerApiKeysEnc: { ...this.providerApiKeysEnc },
+      sessionApiKeys: { ...this.sessionApiKeys }
     }
   }
 
   private apply(state: SettingsStoreState): void {
     this.provider = state.provider
     this.apiKey = state.apiKey
-    this.apiKeyStored = state.apiKeyStored
     this.onboardingComplete = state.onboardingComplete
-    this.storedApiKeyEnc = state.storedApiKeyEnc
+    this.providerApiKeysEnc = state.providerApiKeysEnc
+    this.sessionApiKeys = state.sessionApiKeys
+  }
+
+  private hasProviderKey(provider: Pick<ProviderSettings, 'preset' | 'baseUrl'>): boolean {
+    const keyId = providerCredentialId(provider)
+    return Boolean(this.apiKey && keyId === providerCredentialId(this.provider)) ||
+      Boolean(this.providerApiKeysEnc[keyId]) ||
+      Boolean(this.sessionApiKeys[keyId])
   }
 
   private mutate<T>(operation: () => Promise<T>): Promise<T> {
@@ -232,17 +270,19 @@ export class SettingsStore {
   }
 
   private async persist(state: SettingsStoreState): Promise<SettingsStoreState> {
-    const payload: SettingsFile = {
-      version: 1,
-      provider: state.provider,
-      onboardingComplete: state.onboardingComplete
+    const providerApiKeysEnc = { ...state.providerApiKeysEnc }
+    const sessionApiKeys = { ...state.sessionApiKeys }
+    if (state.apiKey && this.codec?.available) {
+      const activeKeyId = providerCredentialId(state.provider)
+      providerApiKeysEnc[activeKeyId] = await this.codec.encrypt(state.apiKey)
+      delete sessionApiKeys[activeKeyId]
     }
 
-    const storedApiKeyEnc = state.apiKey && state.apiKeyStored && this.codec?.available
-      ? await this.codec.encrypt(state.apiKey)
-      : state.storedApiKeyEnc
-    if (storedApiKeyEnc) {
-      payload.apiKeyEnc = storedApiKeyEnc
+    const payload: SettingsFile = {
+      version: 2,
+      provider: state.provider,
+      onboardingComplete: state.onboardingComplete,
+      ...(Object.keys(providerApiKeysEnc).length > 0 ? { providerApiKeysEnc } : {})
     }
 
     const temporary = `${this.file}.${randomUUID()}.tmp`
@@ -253,7 +293,7 @@ export class SettingsStore {
       await rm(temporary, { force: true }).catch(() => undefined)
       throw error
     }
-    return { ...state, storedApiKeyEnc }
+    return { ...state, providerApiKeysEnc, sessionApiKeys }
   }
 }
 
@@ -273,6 +313,10 @@ function providerOrigin(input: string): string {
   } catch {
     return ''
   }
+}
+
+function providerCredentialId(provider: Pick<ProviderSettings, 'preset' | 'baseUrl'>): string {
+  return JSON.stringify([provider.preset, providerOrigin(provider.baseUrl)])
 }
 
 const RETIRED_ANTHROPIC_MODEL_REPLACEMENTS: Record<string, string> = {

@@ -39,6 +39,7 @@ import { MicrosoftMailService, MicrosoftMailSettingsStore } from '../core/micros
 import { MicrosoftOneDriveService, MicrosoftOneDriveSettingsStore } from '../core/microsoft-onedrive'
 import { WebSearchSettingsStore } from '../core/web-search-settings'
 import { NotionService, NotionSettingsStore } from '../core/notion'
+import { GitHubService, GitHubSettingsStore } from '../core/github'
 import { SpeechSettingsStore, transcribeLocalAudio } from '../core/speech'
 import { WorkflowStore, interpolateWorkflowSteps } from '../core/workflows'
 import { createScheduledTaskTools } from '../tools/scheduled-tasks'
@@ -56,6 +57,7 @@ import type {
   ApprovalChoice,
   AssistEvent,
   ChatMessage,
+  ChatEffort,
   ChatMode,
   ProviderSettings,
   ProviderStatus,
@@ -80,6 +82,7 @@ import { projectOverviewTool } from '../tools/project'
 import { createWebFetchTool } from '../tools/web'
 import { createWebSearchTool } from '../tools/web-search'
 import { createNotionTools } from '../tools/notion'
+import { createGitHubTools } from '../tools/github'
 import { createGoogleCalendarTools } from '../tools/google-calendar'
 import { createGoogleGmailTools } from '../tools/google-gmail'
 import { createGoogleDriveTools } from '../tools/google-drive'
@@ -123,6 +126,8 @@ let settings: SettingsStore | null = null
 let webSearchSettings: WebSearchSettingsStore | null = null
 let notionSettings: NotionSettingsStore | null = null
 let notion: NotionService | null = null
+let githubSettings: GitHubSettingsStore | null = null
+let github: GitHubService | null = null
 let googleCalendarSettings: GoogleCalendarSettingsStore | null = null
 let googleCalendar: GoogleCalendarService | null = null
 let googleGmailSettings: GoogleGmailSettingsStore | null = null
@@ -251,6 +256,7 @@ function gatewayForSession(sessionId: () => string, requestSource?: 'local_api')
       (domainAllowlist?.allows(host) ?? false) ||
       (host.toLowerCase() === 'api.tavily.com' && Boolean(webSearchSettings?.getApiKey())) ||
       (host.toLowerCase() === 'api.notion.com' && Boolean(notion?.isReady())) ||
+      (host.toLowerCase() === 'api.github.com' && Boolean(github?.isReady())) ||
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleCalendar?.isReady())) ||
       (host.toLowerCase() === 'www.googleapis.com' && Boolean(googleDrive?.isReady())) ||
       (host.toLowerCase() === 'gmail.googleapis.com' && Boolean(googleGmail?.isReady())) ||
@@ -500,6 +506,9 @@ async function initialize(): Promise<void> {
   notionSettings = new NotionSettingsStore(path.join(userData, 'notion.json'), codec)
   await notionSettings.init()
   notion = new NotionService(notionSettings)
+  githubSettings = new GitHubSettingsStore(path.join(userData, 'github.json'), codec)
+  await githubSettings.init()
+  github = new GitHubService(githubSettings)
   googleCalendarSettings = new GoogleCalendarSettingsStore(path.join(userData, 'google-calendar.json'), codec)
   await googleCalendarSettings.init()
   googleCalendar = new GoogleCalendarService(googleCalendarSettings, {
@@ -596,6 +605,7 @@ async function initialize(): Promise<void> {
   }
   registry.register(createWebSearchTool(() => webSearchSettings?.getApiKey()))
   for (const tool of createNotionTools(notion!)) registry.register(tool)
+  for (const tool of createGitHubTools(github!)) registry.register(tool)
   for (const tool of createGoogleCalendarTools(googleCalendar)) {
     registry.register(tool)
   }
@@ -778,7 +788,7 @@ async function initialize(): Promise<void> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('assist:send', (_event, text: unknown, mode: unknown, attachments: unknown) => {
+  ipcMain.handle('assist:send', (_event, text: unknown, mode: unknown, attachments: unknown, effort: unknown) => {
     if (typeof text !== 'string') {
       return { ok: false, error: 'Invalid message.' }
     }
@@ -796,11 +806,12 @@ function registerIpc(): void {
       return { ok: false, error: 'Enter a message or attach an image.' }
     }
 
-    const chatMode: ChatMode = mode === 'brainstorm' || mode === 'software' || mode === 'review' || mode === 'coach_personal' || mode === 'coach_business'
+    const chatMode: ChatMode = mode === 'brainstorm' || mode === 'software' || mode === 'review' || mode === 'plan' || mode === 'build' || mode === 'goal' || mode === 'coach_personal' || mode === 'coach_business'
       ? mode
       : 'assistant'
+    const chatEffort: ChatEffort = effort === 'low' || effort === 'high' ? effort : 'medium'
     activeChatMode = chatMode
-    void agent.handleUserMessage(text, chatMode, imageAttachments)
+    void agent.handleUserMessage(text, chatMode, imageAttachments, chatEffort)
     return { ok: true }
   })
 
@@ -1410,6 +1421,7 @@ function registerIpc(): void {
           await settings?.init()
           await webSearchSettings?.init()
           await notionSettings?.init()
+          await githubSettings?.init()
           await googleCalendarSettings?.init()
           googleCalendar?.clearCachedAccessToken()
           await googleGmailSettings?.init()
@@ -1594,6 +1606,9 @@ function registerIpc(): void {
       mode === 'brainstorm' ||
       mode === 'software' ||
       mode === 'review' ||
+      mode === 'plan' ||
+      mode === 'build' ||
+      mode === 'goal' ||
       mode === 'coach_personal' ||
       mode === 'coach_business'
         ? mode
@@ -1796,6 +1811,26 @@ function registerIpc(): void {
       await appendAuditAfterMutation({
         type: 'notion.settings_changed',
         data: { configured: updated.hasApiKey, encryptedAtRest: updated.apiKeyStored }
+      })
+      return { ok: true, settings: updated }
+    } catch (error) {
+      return { ok: false, error: errorMessage(error) }
+    }
+  })
+
+  ipcMain.handle('assist:github-settings', () =>
+    githubSettings?.public() ?? { hasToken: false, tokenStored: false, ready: false }
+  )
+
+  ipcMain.handle('assist:github-settings-update', async (_event, input: unknown) => {
+    if (!githubSettings) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (input !== null && typeof input !== 'string') return { ok: false, error: 'Invalid GitHub token.' }
+
+    try {
+      const updated = await githubSettings.updateToken(input as string | null)
+      await appendAuditAfterMutation({
+        type: 'github.settings_changed',
+        data: { configured: updated.hasToken, encryptedAtRest: updated.tokenStored }
       })
       return { ok: true, settings: updated }
     } catch (error) {

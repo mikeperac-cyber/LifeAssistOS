@@ -64,9 +64,13 @@ const MODE_LABELS: Record<ChatMode, string> = {
   brainstorm: 'Brainstorm',
   software: 'Software',
   review: 'Review',
+  plan: 'Plan',
+  build: 'Build',
+  goal: 'Goal',
   coach_personal: 'Personal coach',
   coach_business: 'Business coach'
 }
+const SCHEDULED_MODES: ChatMode[] = ['assistant', 'brainstorm', 'software', 'review', 'coach_personal', 'coach_business']
 
 function scheduleLabel(schedule: ScheduledTaskSchedule): string {
   if (schedule.kind === 'once') {
@@ -258,7 +262,7 @@ export function ScheduledTasksView({
           <label>
             Assistant mode
             <select value={mode} onChange={(event) => setMode(event.target.value as ChatMode)} disabled={busy || disabled}>
-              {Object.entries(MODE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {SCHEDULED_MODES.map((value) => <option key={value} value={value}>{MODE_LABELS[value]}</option>)}
             </select>
           </label>
           <label>

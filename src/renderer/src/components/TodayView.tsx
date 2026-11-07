@@ -267,12 +267,15 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
     <div className="today-view">
       <div className="today-header">
         <div>
-          <span className="eyebrow">Command center</span>
-          <h2>Today</h2>
+          <h2>Your day at a glance</h2>
           <p>Keep the next useful action visible without turning your day into a rigid schedule.</p>
-          <p className="reminder-help">Set an optional Windows notification. It appears while Mike Assist is running; overdue reminders appear once the next time it opens.</p>
+          <p className="reminder-help">Reminders appear while Mike Assist is running. Overdue reminders show once after you reopen it.</p>
         </div>
-        <span className="today-date">{loading ? 'Loading…' : snapshot.date}</span>
+        {loading ? (
+          <span className="today-date" role="status">Loading…</span>
+        ) : (
+          <time className="today-date" dateTime={snapshot.date} title={snapshot.date}>{formatTodayDate(snapshot.date)}</time>
+        )}
       </div>
 
       {loading ? (
@@ -301,15 +304,26 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
               </button>
             </div>
           </div>
-          <p className="today-calendar-export-help">Save open tasks with due dates as all-day calendar events. Task notes are included; choose where to save, then import the file into your calendar app.</p>
+          {visibleTasks.some((item) => item.status === 'open' && item.dueDate) && (
+            <p className="today-calendar-export-help">Dated open tasks export as all-day events in an .ics file.</p>
+          )}
           {calendarExportMessage && <p className={`today-calendar-export-message ${calendarExportError ? 'status-error' : 'status-success'}`} role={calendarExportError ? 'alert' : 'status'}>{calendarExportMessage}</p>}
           <div className="task-add">
             <input value={task} onChange={(event) => setTask(event.target.value)} placeholder="Add a task…" aria-label="Task title" onKeyDown={(event) => { if (event.key === 'Enter') void addTask() }} />
-            <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="Task due date" />
-            <input type="datetime-local" value={reminderDraft} onChange={(event) => setReminderDraft(event.target.value)} aria-label="Optional reminder date and time" />
-            <select value={priority} onChange={(event) => setPriority(event.target.value as typeof priority)} aria-label="Task priority">
-              <option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option>
-            </select>
+            <label className="today-task-field today-task-due-field">
+              <span>Due date</span>
+              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} aria-label="Task due date" />
+            </label>
+            <label className="today-task-field today-task-reminder-field">
+              <span>Reminder</span>
+              <input type="datetime-local" value={reminderDraft} onChange={(event) => setReminderDraft(event.target.value)} aria-label="Optional reminder date and time" />
+            </label>
+            <label className="today-task-field today-task-priority-field">
+              <span>Priority</span>
+              <select value={priority} onChange={(event) => setPriority(event.target.value as typeof priority)} aria-label="Task priority">
+                <option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option>
+              </select>
+            </label>
             <button className="primary-button" type="button" disabled={!task.trim()} onClick={() => void addTask()}>Add</button>
           </div>
           <div className="today-task-list">
@@ -380,7 +394,7 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
                 <div><button className="ghost-button" type="button" onClick={() => void convert(item.id)}>Make task</button><button className="danger-button" type="button" onClick={() => void dismiss(item.id)}>Dismiss</button></div>
               </div>
             )})}
-            {visibleInbox.length === 0 && <p className="muted">The inbox is clear.</p>}
+            {visibleInbox.length === 0 && <p className="muted today-inbox-empty">The inbox is clear.</p>}
           </div>
         </section>
       </div>
@@ -389,7 +403,11 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
           <h3 id="google-tasks-title">Google Tasks</h3>
           {googleTasksSettings?.connected && googleTasks.length > 0 && <span>{googleTasks.length} open</span>}
         </div>
-        <p className="today-google-tasks-note">Load a list to copy an open task into local Today or send a local task here. Copying is one-time; later provider edits do not sync. Each provider read, send, and linked-task update asks for separate approval. Updates check the saved remote version before writing; Google Tasks does not store local priority. Chat may send approved task details to your configured model provider.</p>
+        <p className="today-google-tasks-note">Copy tasks between Google Tasks and Today. Reads and writes require approval.</p>
+        <details className="today-connection-details">
+          <summary>Sync and data details</summary>
+          <p>Copies are one-time, so later provider edits do not sync. Updates check the saved remote version before writing. Priority stays local. Approved task details you send in Chat may go to your configured model provider.</p>
+        </details>
         {googleTasksSettings === null ? (
           <p className="muted" role="status">Checking Google Tasks connection…</p>
         ) : !googleTasksSettings.connected ? (
@@ -521,6 +539,13 @@ export function TodayView({ googleCalendarSettings, googleGmailSettings, googleT
 
 function errorText(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : typeof error === 'string' && error ? error : fallback
+}
+
+function formatTodayDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return value
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(date)
 }
 
 function localDateTimeToIso(value: string): string | null {

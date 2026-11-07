@@ -134,7 +134,9 @@ describe('SettingsStore', () => {
     await store.update({ apiKey: 'sk-encrypted' })
 
     const raw = await readFile(file, 'utf8')
-    expect(raw).toContain('apiKeyEnc')
+    const persisted = JSON.parse(raw) as { version: number; providerApiKeysEnc?: Record<string, string> }
+    expect(persisted.version).toBe(2)
+    expect(Object.values(persisted.providerApiKeysEnc ?? {})).toHaveLength(1)
     expect(raw).not.toContain('sk-encrypted')
 
     const reloaded = new SettingsStore(file, codec)
@@ -274,7 +276,7 @@ describe('SettingsStore', () => {
       expect(backupName).toBeDefined()
       expect(await readFile(path.join(dir, backupName as string), 'utf8')).toBe(raw)
       expect(store.get().provider).toMatchObject(DEFAULT_PROVIDER_SETTINGS)
-      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ version: 1 })
+      expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ version: 2 })
     } finally {
       warn.mockRestore()
     }

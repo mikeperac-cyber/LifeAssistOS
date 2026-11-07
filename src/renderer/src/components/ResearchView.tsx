@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ResearchProject } from '../../../shared/types'
 
 export function ResearchView(): React.JSX.Element {
@@ -12,6 +12,7 @@ export function ResearchView(): React.JSX.Element {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadFailed, setLoadFailed] = useState(false)
+  const projectTitleRef = useRef<HTMLInputElement>(null)
 
   const load = async (): Promise<void> => {
     setLoading(true)
@@ -103,8 +104,14 @@ export function ResearchView(): React.JSX.Element {
     <div className="research-view">
       <div className="research-layout">
         <aside className="research-projects">
-          <div className="research-heading"><div><span className="eyebrow">Desk</span><h2>Research</h2></div><span className="count-badge">{loading ? '…' : loadFailed ? '—' : projects.length}</span></div>
-          <div className="research-project-list">
+          <div className="research-heading"><h2>Projects</h2><span className="count-badge">{loading ? '…' : loadFailed ? '—' : projects.length}</span></div>
+          {!loading && !loadFailed && <div className="research-new-form">
+            <h3>New project</h3>
+            <input ref={projectTitleRef} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" aria-label="Research project title" />
+            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What are you trying to understand?" rows={3} aria-label="Research question" />
+            <button className="primary-button" type="button" disabled={busy || !title.trim() || !question.trim()} onClick={() => void create()}>{busy ? 'Creating…' : 'Create project'}</button>
+          </div>}
+          <div className="research-project-list" aria-label="Saved research projects">
             {!loading && !loadFailed && projects.map((project) => (
               <button key={project.id} type="button" aria-pressed={selected?.id === project.id} className={`research-project ${selected?.id === project.id ? 'active' : ''}`} onClick={() => setSelectedId(project.id)}>
                 <strong>{project.title}</strong><span>{project.sources.length} source{project.sources.length === 1 ? '' : 's'}</span>
@@ -114,17 +121,12 @@ export function ResearchView(): React.JSX.Element {
             {loadFailed && <div className="research-load-error"><p role="alert">{error}</p><button className="ghost-button" type="button" onClick={() => void load()}>Retry</button></div>}
             {!loading && !loadFailed && projects.length === 0 && <p className="muted">Start a focused question, then gather sources without losing the thread.</p>}
           </div>
-          {!loading && !loadFailed && <div className="research-new-form">
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" aria-label="Research project title" />
-            <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="What are you trying to understand?" rows={3} aria-label="Research question" />
-            <button className="primary-button" type="button" disabled={busy || !title.trim() || !question.trim()} onClick={() => void create()}>New project</button>
-          </div>}
         </aside>
 
         <section className="research-main">
-          {loading ? <p className="muted" role="status">Loading project details…</p> : loadFailed ? null : !selected ? <div className="research-empty"><div className="research-empty-mark">◎</div><h2>Your research desk</h2><p>Create a project to collect allowlisted web sources, compare evidence, and save useful material into the vault.</p></div> : (
+          {loading ? <p className="muted" role="status">Loading project details…</p> : loadFailed ? null : !selected ? <div className="research-empty"><h2>Start with one focused question</h2><p>Research keeps approved sources together, then lets you save useful notes into the Knowledge Vault.</p><ol className="research-empty-steps"><li><strong>Frame the question</strong><span>Give the project a clear title and a question you can investigate.</span></li><li><strong>Gather sources</strong><span>Add HTTPS pages from domains you have allowlisted in Settings.</span></li><li><strong>Keep what matters</strong><span>Save reliable material into the Knowledge Vault for later lessons and projects.</span></li></ol><button className="primary-button" type="button" onClick={() => projectTitleRef.current?.focus()}>Create your first project</button></div> : (
             <>
-              <div className="research-header"><div><span className="eyebrow">Active question</span><h2>{selected.title}</h2><p>{selected.question}</p></div><button className="danger-button" type="button" onClick={() => void removeProject()}>Remove</button></div>
+              <div className="research-header"><div><h2>{selected.title}</h2><p>{selected.question}</p></div><button className="danger-button" type="button" onClick={() => void removeProject()}>Remove</button></div>
               <div className="research-source-add"><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://…" aria-label="Research source URL" /><button className="primary-button" type="button" disabled={busy || !url.trim()} onClick={() => void addSource()}>{busy ? 'Working…' : 'Fetch source'}</button></div>
               <div className="research-sources">
                 {selected.sources.map((source) => <article className="research-source-card" key={source.id}><div className="research-source-top"><div><h3>{source.title}</h3><a href={source.url} target="_blank" rel="noreferrer">{source.url}</a></div><span className="source-size">{source.contentChars.toLocaleString()} chars</span></div><details><summary>Read captured text</summary><pre>{source.content}</pre></details><div className="research-source-actions"><button className="ghost-button" type="button" onClick={() => void saveToVault(source)}>Save to Vault</button><button className="danger-button" type="button" onClick={() => void removeSource(source.id)}>Remove</button></div></article>)}

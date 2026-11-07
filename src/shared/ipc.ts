@@ -4,6 +4,7 @@ import type {
   AuditIntegrity,
   AuditEvent,
   ChatMessage,
+  ChatEffort,
   ChatImageAttachmentInput,
   ChatMode,
   ChatSession,
@@ -62,6 +63,12 @@ export interface PublicWebSearchSettings {
 export interface PublicNotionSettings {
   hasApiKey: boolean
   apiKeyStored: boolean
+  ready: boolean
+}
+
+export interface PublicGitHubSettings {
+  hasToken: boolean
+  tokenStored: boolean
   ready: boolean
 }
 
@@ -224,6 +231,12 @@ export interface NotionSettingsResult {
   ok: boolean
   error?: string
   settings?: PublicNotionSettings
+}
+
+export interface GitHubSettingsResult {
+  ok: boolean
+  error?: string
+  settings?: PublicGitHubSettings
 }
 
 export interface GoogleCalendarSettingsResult {
@@ -621,7 +634,7 @@ export interface CoachingMutationResult {
 
 /** The entire surface exposed to the sandboxed renderer. */
 export interface AssistApi {
-  sendMessage(text: string, mode?: ChatMode, attachments?: ChatImageAttachmentInput[]): Promise<SendResult>
+  sendMessage(text: string, mode?: ChatMode, attachments?: ChatImageAttachmentInput[], effort?: ChatEffort): Promise<SendResult>
   cancel(): Promise<void>
   respondPermission(requestId: string, choice: ApprovalChoice): Promise<void>
   getAudit(): Promise<AuditEvent[]>
@@ -726,6 +739,8 @@ export interface AssistApi {
   updateWebSearchApiKey(apiKey: string | null): Promise<WebSearchSettingsResult>
   getNotionSettings(): Promise<PublicNotionSettings>
   updateNotionApiKey(apiKey: string | null): Promise<NotionSettingsResult>
+  getGitHubSettings(): Promise<PublicGitHubSettings>
+  updateGitHubToken(token: string | null): Promise<GitHubSettingsResult>
   getGoogleCalendarSettings(): Promise<PublicGoogleCalendarSettings>
   updateGoogleCalendarClientId(clientId: string): Promise<GoogleCalendarSettingsResult>
   connectGoogleCalendar(): Promise<GoogleCalendarSettingsResult>

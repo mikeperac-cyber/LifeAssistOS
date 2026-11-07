@@ -196,68 +196,71 @@ export function MemoryView({
 
   return (
     <div className="memory">
-      <section className="memory-add">
-        <h2 className="section-title">Save a fact yourself</h2>
-        <p className="muted">Saves open the same approval card as chat saves. Facts stay on this device.</p>
-        <div className="memory-add-row">
-          <input
-            type="text"
-            value={draftText}
-            placeholder="e.g. Mike teaches IELTS in Denizli"
-            maxLength={400}
-            disabled={disabled || draftBusy}
-            aria-label="New memory fact"
-            onChange={(event) => setDraftText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) void addFact()
-            }}
-          />
-          <select
-            value={draftScope}
-            disabled={disabled || draftBusy}
-            aria-label="Memory scope"
-            onChange={(event) => setDraftScope(event.target.value as MemoryScope)}
-          >
-            {SCOPES.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
-          </select>
-          <button
-            className="btn btn-primary"
-            type="button"
-            disabled={disabled || draftBusy || draftText.trim().length < 3}
-            onClick={() => void addFact()}
-          >
-            {draftBusy ? 'Waiting…' : 'Save fact'}
-          </button>
-        </div>
-        {draftNotice && <p className={draftNotice.ok ? 'memory-notice' : 'memory-error'} role={draftNotice.ok ? 'status' : 'alert'}>{draftNotice.text}</p>}
-      </section>
-
-      <section className="memory-search">
-        <h2 className="section-title">Search memory</h2>
-        <div className="memory-add-row">
-          <input
-            type="text"
-            value={search}
-            placeholder="Keywords, e.g. Denizli IELTS"
-            maxLength={200}
-            disabled={searchBusy}
-            aria-label="Memory search"
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) void runSearch()
-            }}
-          />
-          <button className="btn" type="button" disabled={searchBusy || !search.trim()} onClick={() => void runSearch()}>
-            Search
-          </button>
-          {matches && (
-            <button className="btn btn-ghost" type="button" onClick={() => { setMatches(null); setSearch('') }}>
-              Clear
+      <div className="memory-tools-grid">
+        <section className="memory-add">
+          <h2 className="section-title">Save a fact</h2>
+          <p className="muted">Facts stay on this device. Saving opens the same approval card as chat.</p>
+          <div className="memory-add-row">
+            <input
+              type="text"
+              value={draftText}
+              placeholder="e.g. I teach IELTS in Denizli"
+              maxLength={400}
+              disabled={disabled || draftBusy}
+              aria-label="New memory fact"
+              onChange={(event) => setDraftText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) void addFact()
+              }}
+            />
+            <select
+              value={draftScope}
+              disabled={disabled || draftBusy}
+              aria-label="Memory scope"
+              onChange={(event) => setDraftScope(event.target.value as MemoryScope)}
+            >
+              {SCOPES.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
+            </select>
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={disabled || draftBusy || draftText.trim().length < 3}
+              onClick={() => void addFact()}
+            >
+              {draftBusy ? 'Waiting…' : 'Save fact'}
             </button>
-          )}
-        </div>
-        {searchError && <p className="memory-error" role="alert">{searchError}</p>}
-      </section>
+          </div>
+          {draftNotice && <p className={draftNotice.ok ? 'memory-notice' : 'memory-error'} role={draftNotice.ok ? 'status' : 'alert'}>{draftNotice.text}</p>}
+        </section>
+
+        <section className="memory-search">
+          <h2 className="section-title">Find a fact</h2>
+          <p className="muted">Search saved facts by topic or wording.</p>
+          <div className="memory-add-row">
+            <input
+              type="text"
+              value={search}
+              placeholder="Try “Denizli IELTS”"
+              maxLength={200}
+              disabled={searchBusy}
+              aria-label="Memory search"
+              onChange={(event) => setSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) void runSearch()
+              }}
+            />
+            <button className="btn" type="button" disabled={searchBusy || !search.trim()} onClick={() => void runSearch()}>
+              {searchBusy ? 'Searching…' : 'Search'}
+            </button>
+            {matches && (
+              <button className="btn btn-ghost" type="button" onClick={() => { setMatches(null); setSearch('') }}>
+                Clear
+              </button>
+            )}
+          </div>
+          {searchError && <p className="memory-error" role="alert">{searchError}</p>}
+        </section>
+      </div>
 
       {loadError && <div className="memory-error" role="alert">{loadError}</div>}
       {loading && <p className="muted" role="status">Loading memory…</p>}
@@ -351,7 +354,6 @@ export function MemoryView({
 
         {!loading && !loadError && viewList.length === 0 && (
           <div className="memory-empty">
-            <div className="memory-empty-mark">◈</div>
             <p>{matches ? 'No facts matched that search.' : 'No facts yet. Try /remember in chat, or save one above.'}</p>
           </div>
         )}

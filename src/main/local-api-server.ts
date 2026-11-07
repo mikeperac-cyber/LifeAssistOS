@@ -369,8 +369,9 @@ function messageText(value: unknown, index: number, images: ChatImageAttachmentI
 function parseMode(value: unknown): ChatMode {
   if (value === undefined) return 'assistant'
   if (value === 'assistant' || value === 'brainstorm' || value === 'software' || value === 'review' ||
+    value === 'plan' || value === 'build' || value === 'goal' ||
     value === 'coach_personal' || value === 'coach_business') return value
-  throw new HttpError(400, 'Mode must be assistant, brainstorm, software, review, coach_personal, or coach_business.')
+  throw new HttpError(400, 'Mode must be assistant, brainstorm, software, review, plan, build, goal, coach_personal, or coach_business.')
 }
 
 function transcriptPrompt(messages: ClientMessage[]): string {

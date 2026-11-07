@@ -4,6 +4,11 @@ import {
   filterNavigationGroups,
   NAV_GROUPS,
   normalizeSidebarShortcuts,
+  resolveIntegrationTargetView,
+  normalizeSidebarVisibility,
+  readSidebarVisibility,
+  SIDEBAR_VISIBILITY_STORAGE_KEY,
+  resolveSettingsSection,
   shouldHandleNavigationShortcut,
   shouldHandleQuickCaptureShortcut,
   VIEW_META
@@ -20,6 +25,23 @@ const shortcut = {
 }
 
 describe('navigation', () => {
+  it('normalizes saved sidebar visibility and defaults invalid values to open', () => {
+    expect(normalizeSidebarVisibility('closed')).toBe('closed')
+    expect(normalizeSidebarVisibility('open')).toBe('open')
+    expect(normalizeSidebarVisibility(null)).toBe('open')
+    expect(normalizeSidebarVisibility('pinned')).toBe('open')
+  })
+
+  it('defaults to open when local storage cannot be read', () => {
+    expect(readSidebarVisibility(() => { throw new Error('storage unavailable') })).toBe('open')
+  })
+
+  it('reads the saved value using the sidebar storage key', () => {
+    let requestedKey = ''
+    expect(readSidebarVisibility((key) => { requestedKey = key; return 'closed' })).toBe('closed')
+    expect(requestedKey).toBe(SIDEBAR_VISIBILITY_STORAGE_KEY)
+  })
+
   it('places every view in the navigation exactly once', () => {
     const items = NAV_GROUPS.flatMap((group) => group.items)
     expect([...items].sort()).toEqual(Object.keys(VIEW_META).sort())
@@ -32,6 +54,24 @@ describe('navigation', () => {
       'email', 'today', 'vault', 'settings'
     ])
     expect(normalizeSidebarShortcuts(null)).toEqual(DEFAULT_SIDEBAR_SHORTCUTS)
+  })
+
+  it('routes Memory integration targets to Settings', () => {
+    expect(resolveIntegrationTargetView('memory')).toBe('settings')
+  })
+
+  it('opens Memory destinations as a Settings section', () => {
+    expect(resolveSettingsSection('memory')).toBe('memory')
+    expect(resolveSettingsSection('settings')).toBe('general')
+  })
+
+  it('does not expose Memory as a standalone navigation view', () => {
+    expect(Object.hasOwn(VIEW_META, 'memory')).toBe(false)
+    expect(NAV_GROUPS.flatMap((group) => group.items)).not.toContain('memory')
+  })
+
+  it('drops a saved standalone Memory shortcut after the navigation move', () => {
+    expect(normalizeSidebarShortcuts(['memory', 'email'])).toEqual(['email'])
   })
 
   it('finds the Work hub in global navigation search', () => {

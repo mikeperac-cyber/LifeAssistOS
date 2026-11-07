@@ -13,7 +13,6 @@ const VIEW_KEYWORDS: Record<View, string> = {
   vault: 'knowledge notes documents ideas files',
   teaching: 'english lessons ielts education',
   integrations: 'connections accounts google microsoft gmail outlook drive calendar tasks',
-  memory: 'facts recall remember personal business',
   activity: 'audit log history events',
   finances: 'finance money budget expenses income ledger',
   workflows: 'workflow automation sequence repeat',

@@ -134,7 +134,7 @@ export function CalendarEventsPanel<TSettings extends { connected: boolean }>({
         <h3 id={headingId}>{providerName}</h3>
         {settings?.connected && events.length > 0 && <span>{events.length} events</span>}
       </div>
-      <p className="today-google-tasks-note">Each event page and local prep task needs approval. Prepare meeting opens a Chat draft for review; sending shares the event title, time, and location with your model. Drive searches and reads need approval; approved extracts may be sent to the model and saved in that chat.</p>
+      <p className="today-google-tasks-note">Calendar reads and prep tasks require approval. A meeting draft shares its title, time, and location with your model only if you send it.</p>
       {settings === null ? (
         <p className="muted" role="status">Checking {providerName} connection…</p>
       ) : !settings.connected ? (

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { VaultDocument, VaultSearchResult } from '../../../shared/types'
 
-export function VaultView({ initialDocument, onInitialDocumentConsumed }: { initialDocument?: VaultDocument | null; onInitialDocumentConsumed?: () => void }): React.JSX.Element {
+export function VaultView({ initialDocument, onInitialDocumentConsumed, onOpenResearch }: { initialDocument?: VaultDocument | null; onInitialDocumentConsumed?: () => void; onOpenResearch?: () => void }): React.JSX.Element {
   const [results, setResults] = useState<VaultSearchResult[]>([])
   const [query, setQuery] = useState('')
   const [searchedQuery, setSearchedQuery] = useState('')
@@ -102,14 +102,6 @@ export function VaultView({ initialDocument, onInitialDocumentConsumed }: { init
 
   return (
     <div className="vault-view">
-      <div className="vault-toolbar">
-        <div>
-          <span className="eyebrow">Local knowledge</span>
-          <h2>Knowledge Vault</h2>
-          <p>Search your captured research, teaching notes, and reusable ideas with SQLite FTS5.</p>
-        </div>
-        <button className="primary-button" type="button" disabled={busy} onClick={reset}>New document</button>
-      </div>
       <div className="vault-layout">
         <section className="vault-results" aria-label="Knowledge Vault search results">
           <div className="vault-search">
@@ -145,12 +137,20 @@ export function VaultView({ initialDocument, onInitialDocumentConsumed }: { init
               <p>{result.snippet}</p>
             </button>
           ))}
-          {!loading && !loadError && results.length === 0 && <p className="muted vault-empty">{emptyMessage}</p>}
+          {!loading && !loadError && results.length === 0 && (
+            <div className="vault-empty-state">
+              <p className="muted vault-empty">{emptyMessage}</p>
+              {!searchedQuery && onOpenResearch && <button className="ghost-button" type="button" onClick={onOpenResearch}>Open Research desk</button>}
+            </div>
+          )}
         </section>
         <section className="vault-editor" aria-label={selected ? 'Edit Knowledge Vault document' : 'New Knowledge Vault document'}>
           <div className="vault-editor-head">
-            <span className="eyebrow">{selected ? 'Edit document' : 'New document'}</span>
-            {selected && <button className="danger-button" type="button" disabled={busy} onClick={() => void remove()}>Delete</button>}
+            <strong>{selected ? 'Edit document' : 'New document'}</strong>
+            {selected && <div className="vault-editor-head-actions">
+              <button className="ghost-button" type="button" disabled={busy} onClick={reset}>New document</button>
+              <button className="danger-button" type="button" disabled={busy} onClick={() => void remove()}>Delete</button>
+            </div>}
           </div>
           <input className="vault-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Document title" aria-label="Vault document title" disabled={busy} />
           <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="Tags, comma separated" aria-label="Vault document tags" disabled={busy} />

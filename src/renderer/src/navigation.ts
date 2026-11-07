@@ -43,10 +43,6 @@ export const VIEW_META = {
     label: 'Integrations',
     description: 'A transparent map of local data and connected capabilities.'
   },
-  memory: {
-    label: 'Memory',
-    description: 'Facts you approved. Editable, deletable, and cited whenever recalled.'
-  },
   activity: {
     label: 'Activity',
     description: 'Everything Mike Assist does, as an append-only record. No message contents are stored.'
@@ -65,16 +61,21 @@ export const VIEW_META = {
   },
   settings: {
     label: 'Settings',
-    description: 'Choose the model and the folders Mike Assist may touch.'
+    description: 'Manage AI provider credentials and the folders Mike Assist may touch.'
   }
 } as const
 
 export type View = keyof typeof VIEW_META
+export type SettingsSection = 'general' | 'memory'
+
+export function resolveSettingsSection(destination: string): SettingsSection {
+  return destination === 'memory' ? 'memory' : 'general'
+}
 
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
   { label: 'Workspace', items: ['chat', 'today', 'work', 'coach'] },
   { label: 'Communication', items: ['email'] },
-  { label: 'Knowledge', items: ['memory', 'research', 'vault', 'cloud_files', 'teaching'] },
+  { label: 'Knowledge', items: ['research', 'vault', 'cloud_files', 'teaching'] },
   { label: 'Tools', items: ['scheduled', 'workflows', 'skills', 'integrations', 'finances'] },
   { label: 'System', items: ['activity', 'settings'] }
 ]
@@ -82,6 +83,20 @@ export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }
 export const SIDEBAR_SHORTCUT_STORAGE_KEY = 'mike-assist-sidebar-shortcuts'
 export const DEFAULT_SIDEBAR_SHORTCUTS: View[] = ['today', 'work', 'workflows']
 export const SIDEBAR_SHORTCUT_OPTIONS = Object.keys(VIEW_META) as View[]
+export type SidebarVisibility = 'open' | 'closed'
+export const SIDEBAR_VISIBILITY_STORAGE_KEY = 'mike-assist-sidebar-open'
+
+export function normalizeSidebarVisibility(value: unknown): SidebarVisibility {
+  return value === 'closed' ? 'closed' : 'open'
+}
+
+export function readSidebarVisibility(readStorageValue: (key: string) => string | null): SidebarVisibility {
+  try {
+    return normalizeSidebarVisibility(readStorageValue(SIDEBAR_VISIBILITY_STORAGE_KEY))
+  } catch {
+    return 'open'
+  }
+}
 
 export function normalizeSidebarShortcuts(value: unknown): View[] {
   if (!Array.isArray(value)) return [...DEFAULT_SIDEBAR_SHORTCUTS]
@@ -129,6 +144,7 @@ export function shouldHandleQuickCaptureShortcut(
 export function resolveIntegrationTargetView(id: string): View {
   if (id === 'helper') return 'chat'
   if (id === 'finance' || id === 'finances') return 'finances'
+  if (id === 'memory') return 'settings'
   if (
     id === 'today' ||
     id === 'email' ||
@@ -136,7 +152,6 @@ export function resolveIntegrationTargetView(id: string): View {
     id === 'research' ||
     id === 'vault' ||
     id === 'teaching' ||
-    id === 'memory' ||
     id === 'skills'
   ) {
     return id

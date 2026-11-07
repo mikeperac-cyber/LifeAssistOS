@@ -1371,7 +1371,7 @@ describe('Agent', () => {
       const { agent, provider } = await harness([
         textReply('The image shows a whiteboard.'),
         textReply('The second note is a project deadline.')
-      ], { conversations })
+      ], { conversations, contextLength: 16_384 })
 
       await agent.handleUserMessage('', 'assistant', attachments)
       await agent.handleUserMessage('What was written in the second note?')

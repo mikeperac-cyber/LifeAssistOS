@@ -99,6 +99,20 @@ describe('tool discovery', () => {
     expect(optionalToolDomain('notion_search_pages')).toBe('notion')
   })
 
+  it('finds GitHub search tools only for repository, issue, and pull-request requests', async () => {
+    const registry = new ToolRegistry()
+      .register(catalogTool('github_search', 'Search connected GitHub repositories, issues, or pull requests after approval.'))
+      .register(catalogTool('read_file', 'Read a file from an approved local folder.'))
+    const discovery = createToolDiscoveryTool(registry)
+    const result = await discovery.run(
+      { query: 'find GitHub pull requests', limit: 4 },
+      { kind: 'none', signal: new AbortController().signal }
+    ) as { tools: Array<{ name: string }> }
+
+    expect(result.tools.map((tool) => tool.name)).toContain('github_search')
+    expect(optionalToolDomain('github_search')).toBe('github')
+  })
+
   it('finds the approval-gated email follow-up task for email task requests', async () => {
     const registry = new ToolRegistry()
       .register(catalogTool('create_email_followup_task', 'Create a local Today task from a selected Gmail or Outlook email after approval.'))

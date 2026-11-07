@@ -5,7 +5,7 @@ import type { ApprovalChoice, AssistantSkillInput, MemoryFactPatch, McpServerInp
 import type { AssistEvent } from '../shared/types'
 
 const api: AssistApi = {
-  sendMessage: (text, mode, attachments) => ipcRenderer.invoke('assist:send', text, mode, attachments),
+  sendMessage: (text, mode, attachments, effort) => ipcRenderer.invoke('assist:send', text, mode, attachments, effort),
   cancel: () => ipcRenderer.invoke('assist:cancel'),
   respondPermission: (requestId: string, choice: ApprovalChoice) =>
     ipcRenderer.invoke('assist:permission-response', { requestId, choice }),
@@ -113,6 +113,8 @@ const api: AssistApi = {
   updateWebSearchApiKey: (apiKey: string | null) => ipcRenderer.invoke('assist:web-search-settings-update', apiKey),
   getNotionSettings: () => ipcRenderer.invoke('assist:notion-settings'),
   updateNotionApiKey: (apiKey: string | null) => ipcRenderer.invoke('assist:notion-settings-update', apiKey),
+  getGitHubSettings: () => ipcRenderer.invoke('assist:github-settings'),
+  updateGitHubToken: (token: string | null) => ipcRenderer.invoke('assist:github-settings-update', token),
   getGoogleCalendarSettings: () => ipcRenderer.invoke('assist:google-calendar-settings'),
   updateGoogleCalendarClientId: (clientId: string) => ipcRenderer.invoke('assist:google-calendar-client-id-update', clientId),
   connectGoogleCalendar: () => ipcRenderer.invoke('assist:google-calendar-connect'),

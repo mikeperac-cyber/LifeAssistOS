@@ -6,6 +6,7 @@ import type {
   ApprovalChoice,
   ChatMessage,
   ChatImageAttachmentInput,
+  ChatEffort,
   ChatMode,
   FinanceReport,
   FinanceTransactionInput,
@@ -40,6 +41,7 @@ import type {
   LocalApiStatus,
   PublicWebSearchSettings,
   PublicNotionSettings,
+  PublicGitHubSettings,
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
@@ -52,6 +54,7 @@ import type {
   SettingsResult,
   WebSearchSettingsResult,
   NotionSettingsResult,
+  GitHubSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
@@ -72,7 +75,7 @@ import { AccessibleDialog } from './components/AccessibleDialog'
 import { ApprovalModal } from './components/ApprovalModal'
 import { ChatView } from './components/ChatView'
 import { Sidebar } from './components/Sidebar'
-import { resolveIntegrationTargetView, shouldHandleNavigationShortcut, shouldHandleQuickCaptureShortcut, VIEW_META, type View } from './navigation'
+import { readSidebarVisibility, resolveIntegrationTargetView, resolveSettingsSection, shouldHandleNavigationShortcut, shouldHandleQuickCaptureShortcut, SIDEBAR_VISIBILITY_STORAGE_KEY, VIEW_META, type SettingsSection, type SidebarVisibility, type View } from './navigation'
 import type { GlobalSearchSelection, TodaySearchTarget } from './global-search'
 import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
 import { statusFor, type TimelineItem } from './types'
@@ -80,7 +83,6 @@ import { statusFor, type TimelineItem } from './types'
 const ActivityView = lazy(() => import('./components/ActivityView').then((module) => ({ default: module.ActivityView })))
 const FinanceView = lazy(() => import('./components/FinanceView').then((module) => ({ default: module.FinanceView })))
 const WorkView = lazy(() => import('./components/WorkView').then((module) => ({ default: module.WorkView })))
-const MemoryView = lazy(() => import('./components/MemoryView').then((module) => ({ default: module.MemoryView })))
 const WorkflowsView = lazy(() => import('./components/WorkflowsView').then((module) => ({ default: module.WorkflowsView })))
 const ScheduledTasksView = lazy(() => import('./components/ScheduledTasksView').then((module) => ({ default: module.ScheduledTasksView })))
 const SkillsView = lazy(() => import('./components/SkillsView').then((module) => ({ default: module.SkillsView })))
@@ -106,6 +108,7 @@ type StartupLoadKey =
   | 'localApi'
   | 'webSearch'
   | 'notion'
+  | 'github'
   | 'calendar'
   | 'gmail'
   | 'drive'
@@ -131,6 +134,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
   localApi: 'Local API status',
   webSearch: 'Web search settings',
   notion: 'Notion settings',
+  github: 'GitHub settings',
   calendar: 'Google Calendar settings',
   gmail: 'Gmail settings',
   drive: 'Google Drive settings',
@@ -146,7 +150,7 @@ const STARTUP_LOAD_LABELS: Record<StartupLoadKey, string> = {
 }
 
 const SETTINGS_STARTUP_KEYS: StartupLoadKey[] = [
-  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'notion', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'speech'
+  'settings', 'grants', 'domains', 'localApi', 'webSearch', 'notion', 'github', 'calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'speech'
 ]
 
 const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
@@ -154,7 +158,7 @@ const CHAT_STARTUP_KEYS: StartupLoadKey[] = [
 ]
 
 const ACTIVITY_STARTUP_KEYS: StartupLoadKey[] = ['audit', 'auditIntegrity']
-const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'notion']
+const INTEGRATION_STARTUP_KEYS: StartupLoadKey[] = ['calendar', 'gmail', 'drive', 'tasks', 'microsoftTodo', 'microsoftCalendar', 'microsoftMail', 'microsoftOneDrive', 'notion', 'github']
 const EMAIL_STARTUP_KEYS: StartupLoadKey[] = ['gmail', 'microsoftMail']
 
 let localSequence = 0
@@ -235,6 +239,21 @@ function workflowDraftFor(items: TimelineItem[]): { prompt: string; steps: Workf
 
 export default function App(): React.JSX.Element {
   const [view, setView] = useState<View>('chat')
+  const [sidebarVisibility, setSidebarVisibility] = useState<SidebarVisibility>(() =>
+    readSidebarVisibility((key) => window.localStorage.getItem(key))
+  )
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('general')
+  const navigateToView = useCallback((nextView: View): void => {
+    if (nextView === 'settings') setSettingsSection('general')
+    setView(nextView)
+  }, [])
+  const openMemorySettings = useCallback((): void => {
+    setSettingsSection(resolveSettingsSection('memory'))
+    setView('settings')
+  }, [])
+  const toggleSidebar = useCallback((): void => {
+    setSidebarVisibility((current) => current === 'open' ? 'closed' : 'open')
+  }, [])
   const [appTheme, setAppTheme] = useState<AppTheme>(getSavedAppTheme)
   const [timeline, setTimeline] = useState<TimelineItem[]>([])
   const [audit, setAudit] = useState<AuditEvent[]>([])
@@ -263,6 +282,7 @@ export default function App(): React.JSX.Element {
   const [localApiActivity, setLocalApiActivity] = useState<{ summary?: string } | null>(null)
   const [webSearchSettings, setWebSearchSettings] = useState<PublicWebSearchSettings | null>(null)
   const [notionSettings, setNotionSettings] = useState<PublicNotionSettings | null>(null)
+  const [githubSettings, setGitHubSettings] = useState<PublicGitHubSettings | null>(null)
   const [googleCalendarSettings, setGoogleCalendarSettings] = useState<PublicGoogleCalendarSettings | null>(null)
   const [googleGmailSettings, setGoogleGmailSettings] = useState<PublicGoogleGmailSettings | null>(null)
   const [googleDriveSettings, setGoogleDriveSettings] = useState<PublicGoogleDriveSettings | null>(null)
@@ -290,11 +310,19 @@ export default function App(): React.JSX.Element {
   const [chatMode, setChatMode] = useState<ChatMode>(() => {
     try {
       const saved = localStorage.getItem('mike-assist-chat-mode')
-      return saved === 'brainstorm' || saved === 'software' || saved === 'review' || saved === 'coach_personal' || saved === 'coach_business'
+      return saved === 'brainstorm' || saved === 'software' || saved === 'review' || saved === 'plan' || saved === 'build' || saved === 'goal' || saved === 'coach_personal' || saved === 'coach_business'
         ? saved
         : 'assistant'
     } catch {
       return 'assistant'
+    }
+  })
+  const [chatEffort, setChatEffort] = useState<ChatEffort>(() => {
+    try {
+      const saved = localStorage.getItem('mike-assist-chat-effort')
+      return saved === 'low' || saved === 'high' ? saved : 'medium'
+    } catch {
+      return 'medium'
     }
   })
   const [financePeriod, setFinancePeriod] = useState<'week' | 'month'>('month')
@@ -324,6 +352,7 @@ export default function App(): React.JSX.Element {
   const previousViewRef = useRef(view)
   const voiceChatRef = useRef(voiceChatEnabled)
   const chatModeRef = useRef<ChatMode>(chatMode)
+  const chatEffortRef = useRef<ChatEffort>(chatEffort)
 
   useEffect(() => {
     if (previousViewRef.current === 'vault' && view !== 'vault') {
@@ -355,6 +384,14 @@ export default function App(): React.JSX.Element {
   }, [appTheme])
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE_KEY, sidebarVisibility)
+    } catch {
+      // Keep the chosen layout for this renderer session.
+    }
+  }, [sidebarVisibility])
+
+  useEffect(() => {
     const handleQuickCaptureShortcut = (event: KeyboardEvent): void => {
       const target = event.target instanceof Element ? event.target : null
       const focusIsProtected = target !== null && target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], dialog') !== null
@@ -384,6 +421,15 @@ export default function App(): React.JSX.Element {
       // Mode selection remains available for this renderer session.
     }
   }, [chatMode])
+
+  useEffect(() => {
+    chatEffortRef.current = chatEffort
+    try {
+      localStorage.setItem('mike-assist-chat-effort', chatEffort)
+    } catch {
+      // Response effort remains available for this renderer session.
+    }
+  }, [chatEffort])
 
   useEffect(() => {
     let alive = true
@@ -437,6 +483,7 @@ export default function App(): React.JSX.Element {
     loadInitial('localApi', () => window.assist.getLocalApiStatus(), setLocalApiStatus)
     loadInitial('webSearch', () => window.assist.getWebSearchSettings(), setWebSearchSettings)
     loadInitial('notion', () => window.assist.getNotionSettings(), setNotionSettings)
+    loadInitial('github', () => window.assist.getGitHubSettings(), setGitHubSettings)
     loadInitial('calendar', () => window.assist.getGoogleCalendarSettings(), setGoogleCalendarSettings)
     loadInitial('gmail', () => window.assist.getGoogleGmailSettings(), setGoogleGmailSettings)
     loadInitial('drive', () => window.assist.getGoogleDriveSettings(), setGoogleDriveSettings)
@@ -628,7 +675,8 @@ export default function App(): React.JSX.Element {
     async (
       text?: string,
       modeOverride?: ChatMode,
-      attachments?: ChatImageAttachmentInput[]
+      attachments?: ChatImageAttachmentInput[],
+      effortOverride?: ChatEffort
     ): Promise<boolean> => {
       const value = (text ?? input).trim()
       if ((!value && !attachments?.length) || busy || queueRunning || directWorkflowRunningRef.current) return false
@@ -638,7 +686,7 @@ export default function App(): React.JSX.Element {
       setInput('')
 
       try {
-        const result = await window.assist.sendMessage(value, modeOverride ?? chatMode, attachments)
+        const result = await window.assist.sendMessage(value, modeOverride ?? chatMode, attachments, effortOverride ?? chatEffort)
         if (!result.ok) {
           busyRef.current = false
           setBusy(false)
@@ -664,7 +712,7 @@ export default function App(): React.JSX.Element {
         return false
       }
     },
-    [busy, input, queueRunning, chatMode]
+    [busy, input, queueRunning, chatMode, chatEffort]
   )
 
   const runCommand = useCallback(
@@ -747,6 +795,17 @@ export default function App(): React.JSX.Element {
     setView('chat')
   }, [])
 
+  const prepareGuidedChat = useCallback((prompt: string, mode: ChatMode): boolean => {
+    if (busyRef.current || queueRunningRef.current || directWorkflowRunningRef.current) return false
+    const currentDraft = input.trimEnd()
+    const separator = currentDraft ? '\n\n' : ''
+    if (currentDraft.length + separator.length + prompt.length > MAX_CHAT_MESSAGE_CHARS) return false
+    setChatMode(mode)
+    setInput(currentDraft ? `${currentDraft}${separator}${prompt}` : prompt)
+    setView('chat')
+    return true
+  }, [input])
+
   const prepareCloudFileChat = useCallback((prompt: string): boolean => {
     if (busyRef.current || queueRunningRef.current || directWorkflowRunningRef.current) return false
     const currentDraft = input.trimEnd()
@@ -787,7 +846,7 @@ export default function App(): React.JSX.Element {
   }, [sendAgentMessage])
 
   const send = useCallback(
-    async (text?: string, attachments?: ChatImageAttachmentInput[]): Promise<boolean> => {
+    async (text?: string, attachments?: ChatImageAttachmentInput[], effort?: ChatEffort): Promise<boolean> => {
       const value = (text ?? input).trim()
       if (!value && !attachments?.length) return false
 
@@ -797,7 +856,7 @@ export default function App(): React.JSX.Element {
         setInput('')
         return true
       }
-      return sendAgentMessage(value, undefined, attachments)
+      return sendAgentMessage(value, undefined, attachments, effort)
     },
     [input, runCommand, sendAgentMessage]
   )
@@ -835,7 +894,7 @@ export default function App(): React.JSX.Element {
         })
 
         try {
-          const result = await window.assist.sendMessage(task, chatModeRef.current)
+          const result = await window.assist.sendMessage(task, chatModeRef.current, undefined, chatEffortRef.current)
           if (!result.ok) {
             queueCompletionRef.current = null
             busyRef.current = false
@@ -923,19 +982,19 @@ export default function App(): React.JSX.Element {
       return
     }
     if (selection.kind === 'view') {
-      setView(selection.view)
+      navigateToView(selection.view)
     } else if (selection.kind === 'action') {
       if (selection.action === 'new-chat') {
-        setView('chat')
+        navigateToView('chat')
         void changeChat()
       } else {
         setQuickCaptureOpen(true)
       }
     } else if (selection.kind === 'chat') {
-      setView('chat')
+      navigateToView('chat')
       void changeChat(selection.sessionId, selection.mode)
     } else if (selection.kind === 'vault') {
-      setView('vault')
+      navigateToView('vault')
       setPendingVaultDocument(null)
       try {
         const result = await window.assist.getVaultDocument(selection.document.id)
@@ -948,21 +1007,21 @@ export default function App(): React.JSX.Element {
       }
     } else if (selection.kind === 'today-task' || selection.kind === 'today-inbox') {
       setTodaySearchTarget(selection)
-      setView('today')
+      navigateToView('today')
     } else if (selection.kind === 'memory') {
       setSelectedMemoryResult({ fact: selection.fact, query: selection.query })
-      setView('memory')
+      openMemorySettings()
     } else if (selection.kind === 'workflow') {
       setWorkflowSearchTarget(selection.id)
-      setView('workflows')
+      navigateToView('workflows')
     } else if (selection.kind === 'scheduled') {
       setScheduledSearchTarget(selection.id)
-      setView('scheduled')
+      navigateToView('scheduled')
     } else if (selection.kind === 'skill') {
       setSkillSearchTarget(selection.id)
-      setView('skills')
+      navigateToView('skills')
     }
-  }, [busy, changeChat, queueRunning, workflowRunningId])
+  }, [busy, changeChat, navigateToView, openMemorySettings, queueRunning, workflowRunningId])
 
   const clearTodaySearchTarget = useCallback((): void => setTodaySearchTarget(null), [])
   const clearPendingVaultDocument = useCallback((): void => setPendingVaultDocument(null), [])
@@ -1093,6 +1152,12 @@ export default function App(): React.JSX.Element {
   const updateNotionApiKey = useCallback(async (apiKey: string | null): Promise<NotionSettingsResult> => {
     const result = await window.assist.updateNotionApiKey(apiKey)
     if (result.ok && result.settings) setNotionSettings(result.settings)
+    return result
+  }, [])
+
+  const updateGitHubToken = useCallback(async (token: string | null): Promise<GitHubSettingsResult> => {
+    const result = await window.assist.updateGitHubToken(token)
+    if (result.ok && result.settings) setGitHubSettings(result.settings)
     return result
   }, [])
 
@@ -1315,6 +1380,7 @@ export default function App(): React.JSX.Element {
         window.assist.getSettings().then(setSettings),
         window.assist.getWebSearchSettings().then(setWebSearchSettings),
         window.assist.getNotionSettings().then(setNotionSettings),
+        window.assist.getGitHubSettings().then(setGitHubSettings),
         window.assist.getGoogleCalendarSettings().then(setGoogleCalendarSettings),
         window.assist.getGoogleGmailSettings().then(setGoogleGmailSettings),
         window.assist.getGoogleDriveSettings().then(setGoogleDriveSettings),
@@ -1513,18 +1579,34 @@ export default function App(): React.JSX.Element {
   }
 
   const preset = settings ? presetFor(settings.provider.preset) : null
+  const conversationStarted = timeline.some(
+    (item) => item.kind === 'message' && item.message.role !== 'system'
+  )
+  const sidebarChatSessions = (sessionSearch.trim() ? filteredSessions ?? [] : sessions)
+    .filter((session) => conversationStarted || session.id !== activeSessionId)
 
   return (
-    <div className="app">
+    <div className={`app ${sidebarVisibility === 'closed' ? 'sidebar-closed' : ''}`}>
       <Sidebar
+        sidebarVisibility={sidebarVisibility}
+        onToggleSidebar={toggleSidebar}
         view={view}
-        onChange={setView}
+        onChange={navigateToView}
         onGlobalSearch={() => setGlobalSearchOpen(true)}
         onQuickCapture={() => setQuickCaptureOpen(true)}
         auditCount={audit.length}
         grants={grants}
         model={settings?.provider.model ?? ''}
         preset={preset?.label ?? ''}
+        chatSessions={sidebarChatSessions}
+        activeChatId={activeSessionId}
+        chatSearch={sessionSearch}
+        onChatSearchChange={setSessionSearch}
+        onSelectChat={(sessionId) => {
+          navigateToView('chat')
+          void changeChat(sessionId)
+        }}
+        chatSwitchDisabled={busy || queueRunning || Boolean(workflowRunningId)}
       />
       {quickCaptureOpen && (
         <Suspense fallback={<div className="quick-capture-loading" role="status">Opening quick capture…</div>}>
@@ -1546,8 +1628,22 @@ export default function App(): React.JSX.Element {
 
       <main className="main">
         <header className="topbar">
+          {sidebarVisibility === 'closed' && (
+            <button
+              type="button"
+              className="sidebar-toggle-button sidebar-open-button"
+              aria-controls="app-sidebar"
+              aria-expanded="false"
+              onClick={toggleSidebar}
+            >
+              <span aria-hidden="true">☰</span>
+              Open sidebar
+            </button>
+          )}
           <div className="topbar-titles">
-            <h1>{VIEW_META[view].label}</h1>
+            <div className="topbar-title-line">
+              <h1>{VIEW_META[view].label}</h1>
+            </div>
             <p>{VIEW_META[view].description}</p>
           </div>
           <div className="topbar-meta">
@@ -1563,15 +1659,7 @@ export default function App(): React.JSX.Element {
             {workflowRunningId && <button className="stop-button" type="button" onClick={cancel}>Stop workflow</button>}
             {view === 'chat' && (
               <div className="session-controls">
-                <input
-                  type="search"
-                  className="session-search-input"
-                  value={sessionSearch}
-                  onChange={(event) => setSessionSearch(event.target.value)}
-                  placeholder="Search chats…"
-                  aria-label="Search conversations"
-                />
-                {renamingSession ? (
+                {conversationStarted && (renamingSession ? (
                   <div className="session-rename-inline">
                     <input
                       value={renameDraft}
@@ -1587,59 +1675,39 @@ export default function App(): React.JSX.Element {
                     </button>
                   </div>
                 ) : (
-                  <select
-                    value={activeSessionId}
-                    disabled={busy || queueRunning || Boolean(workflowRunningId) || sessions.length === 0}
-                    aria-label="Conversation history"
-                    onChange={(event) => void changeChat(event.target.value)}
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    disabled={busy || queueRunning || Boolean(workflowRunningId)}
+                    onClick={() => {
+                      const current = sessions.find((s) => s.id === activeSessionId)
+                      setRenameDraft(current?.title ?? '')
+                      setRenamingSession(true)
+                    }}
                   >
-                    {(filteredSessions ?? sessions).map((session) => (
-                      <option key={session.id} value={session.id}>{session.title}</option>
-                    ))}
-                  </select>
+                    Rename
+                  </button>
+                ))}
+                {conversationStarted && (
+                  <>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={!activeSessionId}
+                      onClick={() => void exportActiveChat()}
+                    >
+                      Export
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={busy || queueRunning || Boolean(workflowRunningId)}
+                      onClick={() => void deleteActiveChat()}
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
-                <select
-                  className="chat-mode-select"
-                  value={chatMode}
-                  disabled={busy || queueRunning || Boolean(workflowRunningId)}
-                  aria-label="Assistant mode"
-                  onChange={(event) => setChatMode(event.target.value as ChatMode)}
-                >
-                  <option value="assistant">Assistant</option>
-                  <option value="brainstorm">Brainstorm</option>
-                  <option value="software">Software</option>
-                  <option value="review">Project review</option>
-                  {chatMode === 'coach_personal' && <option value="coach_personal">Personal coach</option>}
-                  {chatMode === 'coach_business' && <option value="coach_business">Business coach</option>}
-                </select>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={busy || queueRunning || Boolean(workflowRunningId) || !activeSessionId}
-                  onClick={() => {
-                    const current = sessions.find((s) => s.id === activeSessionId)
-                    setRenameDraft(current?.title ?? '')
-                    setRenamingSession(true)
-                  }}
-                >
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={!activeSessionId}
-                  onClick={() => void exportActiveChat()}
-                >
-                  Export
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  disabled={busy || queueRunning || Boolean(workflowRunningId) || !activeSessionId}
-                  onClick={() => void deleteActiveChat()}
-                >
-                  Delete
-                </button>
                 <button type="button" className="new-chat-button" disabled={busy || queueRunning || Boolean(workflowRunningId)} onClick={() => void changeChat()}>
                   New chat
                 </button>
@@ -1650,10 +1718,6 @@ export default function App(): React.JSX.Element {
                 Step {step.index} of {step.max}
               </span>
             )}
-            <span className="model-badge">
-              <span className="pulse" />
-              {settings ? settings.provider.model : 'Loading…'}
-            </span>
           </div>
         </header>
 
@@ -1664,26 +1728,22 @@ export default function App(): React.JSX.Element {
           </div>
         )}
 
-        {view === 'chat' && preset?.needsKey && !settings?.provider.hasApiKey && (
-          <div className="provider-setup-banner" role="status">
-            <div>
-              <strong>Connect {preset.label} to start chatting</strong>
-              <span>Add its API key in Settings. Ollama and LM Studio remain available as local options.</span>
-            </div>
-            <button className="primary-button" type="button" onClick={() => setView('settings')}>Add API key</button>
-          </div>
-        )}
-
         <div className="content">
           <Suspense fallback={<div className="view-loading" role="status">Loading section…</div>}>
           {view === 'chat' && gateStartupView(CHAT_STARTUP_KEYS, 'chat data', (
             <ChatView
               items={timeline}
               chatMode={chatMode}
+              onChatModeChange={setChatMode}
+              chatEffort={chatEffort}
+              onChatEffortChange={setChatEffort}
               busy={busy || queueRunning || Boolean(workflowRunningId)}
               input={input}
               onInputChange={setInput}
               onSend={send}
+              providerSettings={settings?.provider ?? null}
+              onUpdateProvider={saveSettings}
+              onRefreshModels={testProvider}
               onCancel={cancel}
               speechEndpoint={speechEndpoint}
               onTranscribe={transcribeAudio}
@@ -1697,9 +1757,11 @@ export default function App(): React.JSX.Element {
               workflowCandidate={workflowDraftFor(timeline)}
               onSaveWorkflow={saveWorkflow}
               providerEndpoint={settings?.provider.baseUrl ?? ''}
+              providerSetupRequired={!settings || Boolean(preset?.needsKey && !settings.provider.hasApiKey)}
+              onOpenSettings={() => navigateToView('settings')}
               endRef={endRef}
               onDeleteMessage={(messageId) => void deleteMessageFromActiveChat(messageId)}
-              onCitationClick={() => setView('memory')}
+              onCitationClick={openMemorySettings}
             />
           ))}
 
@@ -1713,7 +1775,7 @@ export default function App(): React.JSX.Element {
             microsoftCalendarSettings={microsoftCalendarSettings}
             microsoftMailSettings={microsoftMailSettings}
             disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
-            onOpenSettings={() => setView('settings')}
+            onOpenSettings={() => navigateToView('settings')}
             onPrepareMeeting={prepareMeeting}
             onGoogleCalendarSettingsRefresh={setGoogleCalendarSettings}
             onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
@@ -1727,7 +1789,7 @@ export default function App(): React.JSX.Element {
               googleGmailSettings={googleGmailSettings}
               microsoftMailSettings={microsoftMailSettings}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
-              onOpenSettings={() => setView('settings')}
+              onOpenSettings={() => navigateToView('settings')}
               onGoogleGmailSettingsRefresh={setGoogleGmailSettings}
               onMicrosoftMailSettingsRefresh={setMicrosoftMailSettings}
             />
@@ -1737,7 +1799,7 @@ export default function App(): React.JSX.Element {
               googleDriveSettings={googleDriveSettings}
               microsoftOneDriveSettings={microsoftOneDriveSettings}
               disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
-              onOpenSettings={() => setView('settings')}
+              onOpenSettings={() => navigateToView('settings')}
               chatDraftLength={input.trimEnd().length}
               onPrepareChat={prepareCloudFileChat}
             />
@@ -1757,10 +1819,10 @@ export default function App(): React.JSX.Element {
           {view === 'coach' && <CoachView onStart={startCoachingChat} />}
           {view === 'work' && <WorkView onNavigate={setView} />}
           {view === 'integrations' && gateStartupView(INTEGRATION_STARTUP_KEYS, 'connected service settings', (
-            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} notionSettings={notionSettings} onOpen={(id) => setView(resolveIntegrationTargetView(id))} />
+            <IntegrationsView googleCalendarSettings={googleCalendarSettings} googleGmailSettings={googleGmailSettings} googleDriveSettings={googleDriveSettings} googleTasksSettings={googleTasksSettings} microsoftTodoSettings={microsoftTodoSettings} microsoftCalendarSettings={microsoftCalendarSettings} microsoftMailSettings={microsoftMailSettings} microsoftOneDriveSettings={microsoftOneDriveSettings} notionSettings={notionSettings} githubSettings={githubSettings} onOpen={(id) => id === 'memory' ? openMemorySettings() : navigateToView(resolveIntegrationTargetView(id))} />
           ))}
           {view === 'research' && <ResearchView />}
-          {view === 'vault' && <VaultView initialDocument={pendingVaultDocument} onInitialDocumentConsumed={clearPendingVaultDocument} />}
+          {view === 'vault' && <VaultView initialDocument={pendingVaultDocument} onInitialDocumentConsumed={clearPendingVaultDocument} onOpenResearch={() => setView('research')} />}
           {view === 'teaching' && <TeachingView onStart={startTeachingPack} />}
 
           {view === 'finances' && (
@@ -1792,7 +1854,7 @@ export default function App(): React.JSX.Element {
               disabled={busy || queueRunning || financeEntryBusy}
               onRun={runWorkflow}
               onRemove={removeWorkflow}
-              onCancel={cancel}
+              onLaunchPrompt={prepareGuidedChat}
             />
           ))}
 
@@ -1808,28 +1870,26 @@ export default function App(): React.JSX.Element {
             />
           ))}
 
-          {view === 'memory' && (
-            <MemoryView
-              disabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
-              version={memoryVersion}
-              selectedFact={selectedMemoryResult?.fact}
-              selectedQuery={selectedMemoryResult?.query}
-              onSelectedFactConsumed={clearSelectedMemoryFact}
-              onChanged={() => setMemoryVersion((version) => version + 1)}
-            />
-          )}
-
           {view === 'activity' && gateStartupView(ACTIVITY_STARTUP_KEYS, 'the activity log', (
             <ActivityView events={audit} integrity={auditIntegrity} onExport={exportAudit} />
           ))}
 
           {view === 'settings' && gateStartupView(SETTINGS_STARTUP_KEYS, 'saved settings', (
             <SettingsView
+              section={settingsSection}
+              onSectionChange={setSettingsSection}
+              memoryDisabled={busy || queueRunning || Boolean(workflowRunningId) || financeEntryBusy}
+              memoryVersion={memoryVersion}
+              selectedMemoryFact={selectedMemoryResult?.fact ?? null}
+              selectedMemoryQuery={selectedMemoryResult?.query}
+              onClearSelectedMemoryFact={clearSelectedMemoryFact}
+              onMemoryChanged={() => setMemoryVersion((version) => version + 1)}
               settings={settings!}
               theme={appTheme}
               onThemeChange={setAppTheme}
               webSearchSettings={webSearchSettings}
               notionSettings={notionSettings}
+              githubSettings={githubSettings}
               googleCalendarSettings={googleCalendarSettings}
               googleGmailSettings={googleGmailSettings}
               googleDriveSettings={googleDriveSettings}
@@ -1842,6 +1902,7 @@ export default function App(): React.JSX.Element {
               onSave={saveSettings}
               onUpdateWebSearchApiKey={updateWebSearchApiKey}
               onUpdateNotionApiKey={updateNotionApiKey}
+              onUpdateGitHubToken={updateGitHubToken}
               onUpdateGoogleCalendarClientId={updateGoogleCalendarClientId}
               onConnectGoogleCalendar={connectGoogleCalendar}
               onDisconnectGoogleCalendar={disconnectGoogleCalendar}
@@ -1914,7 +1975,7 @@ export default function App(): React.JSX.Element {
               className="btn btn-ghost"
               type="button"
               onClick={() => {
-                setView('settings')
+                navigateToView('settings')
                 void completeOnboarding()
               }}
             >

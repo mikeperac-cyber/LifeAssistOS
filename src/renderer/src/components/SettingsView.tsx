@@ -7,6 +7,7 @@ import type {
   PublicSettings,
   PublicWebSearchSettings,
   PublicNotionSettings,
+  PublicGitHubSettings,
   PublicGoogleCalendarSettings,
   PublicGoogleGmailSettings,
   PublicGoogleDriveSettings,
@@ -21,6 +22,7 @@ import type {
   SettingsResult,
   WebSearchSettingsResult,
   NotionSettingsResult,
+  GitHubSettingsResult,
   GoogleCalendarSettingsResult,
   GoogleGmailSettingsResult,
   GoogleDriveSettingsResult,
@@ -41,6 +43,9 @@ import { APP_THEMES, type AppTheme } from '../theme'
 import { MicrosoftMailSettingsCard } from './MicrosoftMailSettingsCard'
 import { MicrosoftOneDriveSettingsCard } from './MicrosoftOneDriveSettingsCard'
 import { AccessibleDialog } from './AccessibleDialog'
+import { MemoryView } from './MemoryView'
+import type { MemoryFact } from '../../../shared/types'
+import type { SettingsSection } from '../navigation'
 
 type Access = 'read' | 'read-write'
 
@@ -58,11 +63,20 @@ interface FormState {
 }
 
 export interface SettingsViewProps {
+  section: SettingsSection
+  onSectionChange: (section: SettingsSection) => void
+  memoryDisabled: boolean
+  memoryVersion: number
+  selectedMemoryFact: MemoryFact | null
+  selectedMemoryQuery: string | undefined
+  onClearSelectedMemoryFact: () => void
+  onMemoryChanged: () => void
   settings: PublicSettings
   theme: AppTheme
   onThemeChange: (theme: AppTheme) => void
   webSearchSettings: PublicWebSearchSettings | null
   notionSettings: PublicNotionSettings | null
+  githubSettings: PublicGitHubSettings | null
   googleCalendarSettings: PublicGoogleCalendarSettings | null
   googleGmailSettings: PublicGoogleGmailSettings | null
   googleDriveSettings: PublicGoogleDriveSettings | null
@@ -75,6 +89,7 @@ export interface SettingsViewProps {
   onSave: (patch: SettingsPatch) => Promise<SettingsResult>
   onUpdateWebSearchApiKey: (apiKey: string | null) => Promise<WebSearchSettingsResult>
   onUpdateNotionApiKey: (apiKey: string | null) => Promise<NotionSettingsResult>
+  onUpdateGitHubToken: (token: string | null) => Promise<GitHubSettingsResult>
   onUpdateGoogleCalendarClientId: (clientId: string) => Promise<GoogleCalendarSettingsResult>
   onConnectGoogleCalendar: () => Promise<GoogleCalendarSettingsResult>
   onDisconnectGoogleCalendar: () => Promise<GoogleCalendarSettingsResult>
@@ -123,11 +138,20 @@ export interface SettingsViewProps {
 }
 
 export function SettingsView({
+  section,
+  onSectionChange,
+  memoryDisabled,
+  memoryVersion,
+  selectedMemoryFact,
+  selectedMemoryQuery,
+  onClearSelectedMemoryFact,
+  onMemoryChanged,
   settings,
   theme,
   onThemeChange,
   webSearchSettings,
   notionSettings,
+  githubSettings,
   googleCalendarSettings,
   googleGmailSettings,
   googleDriveSettings,
@@ -140,6 +164,7 @@ export function SettingsView({
   onSave,
   onUpdateWebSearchApiKey,
   onUpdateNotionApiKey,
+  onUpdateGitHubToken,
   onUpdateGoogleCalendarClientId,
   onConnectGoogleCalendar,
   onDisconnectGoogleCalendar,
@@ -191,6 +216,7 @@ export function SettingsView({
   const [testing, setTesting] = useState(false)
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null)
   const [models, setModels] = useState<string[]>([])
+  const [modelsLoaded, setModelsLoaded] = useState(false)
   const [grantError, setGrantError] = useState('')
   const [grantBusy, setGrantBusy] = useState(false)
   const [newAccess, setNewAccess] = useState<Access>('read')
@@ -210,6 +236,9 @@ export function SettingsView({
   const [notionKey, setNotionKey] = useState('')
   const [notionBusy, setNotionBusy] = useState(false)
   const [notionMessage, setNotionMessage] = useState('')
+  const [githubToken, setGitHubToken] = useState('')
+  const [githubBusy, setGitHubBusy] = useState(false)
+  const [githubMessage, setGitHubMessage] = useState('')
   const [googleClientId, setGoogleClientId] = useState(googleCalendarSettings?.clientId ?? '')
   const [googleCalendarBusy, setGoogleCalendarBusy] = useState(false)
   const [googleCalendarMessage, setGoogleCalendarMessage] = useState('')
@@ -354,6 +383,7 @@ export function SettingsView({
   function choosePreset(id: FormState['preset']): void {
     const next = presetFor(id)
     setModels([])
+    setModelsLoaded(false)
     setStatus(null)
     setForm((current) => ({
       ...current,
@@ -389,7 +419,13 @@ export function SettingsView({
       if (!result.ok) {
         setStatus({ ok: false, text: result.error ?? 'Could not save these settings.' })
       } else {
-        setStatus({ ok: true, text: 'Settings saved.' })
+        const savedProvider = result.settings?.provider
+        const keyNotice = savedProvider?.hasApiKey
+          ? savedProvider.apiKeyStored
+            ? ' The API key is stored securely and will be reused for this provider.'
+            : ' The API key is available for this session only.'
+          : ''
+        setStatus({ ok: true, text: `Settings saved.${keyNotice}` })
         setForm((current) => ({ ...current, apiKey: '' }))
       }
     } catch (error) {
@@ -402,6 +438,8 @@ export function SettingsView({
   async function test(): Promise<void> {
     setTesting(true)
     setStatus(null)
+    setModels([])
+    setModelsLoaded(false)
 
     try {
       const saved = await onSave(patch())
@@ -413,7 +451,12 @@ export function SettingsView({
       setForm((current) => ({ ...current, apiKey: '' }))
       const result = await onTest()
       setStatus({ ok: result.ok, text: result.message })
-      if (result.models) setModels(result.models)
+      if (result.models) {
+        const availableModels = [...new Set(result.models.filter((model) => model.trim().length > 0))]
+          .sort((first, second) => first.localeCompare(second, undefined, { numeric: true, sensitivity: 'base' }))
+        setModels(availableModels)
+        setModelsLoaded(true)
+      }
     } catch (error) {
       setStatus({ ok: false, text: errorText(error) })
     } finally {
@@ -655,6 +698,45 @@ export function SettingsView({
       setNotionMessage(errorText(error))
     } finally {
       setNotionBusy(false)
+    }
+  }
+
+  async function saveGitHubToken(): Promise<void> {
+    const token = githubToken.trim()
+    if (!token) {
+      setGitHubMessage('Enter a GitHub token, or leave the field blank to keep the saved token.')
+      return
+    }
+    setGitHubBusy(true)
+    setGitHubMessage('')
+    try {
+      const result = await onUpdateGitHubToken(token)
+      if (!result.ok) setGitHubMessage(result.error ?? 'Could not save the GitHub token.')
+      else {
+        setGitHubToken('')
+        setGitHubMessage('GitHub is configured. Every repository, issue, and pull-request search still asks for approval.')
+      }
+    } catch (error) {
+      setGitHubMessage(errorText(error))
+    } finally {
+      setGitHubBusy(false)
+    }
+  }
+
+  async function clearGitHubToken(): Promise<void> {
+    setGitHubBusy(true)
+    setGitHubMessage('')
+    try {
+      const result = await onUpdateGitHubToken(null)
+      if (!result.ok) setGitHubMessage(result.error ?? 'Could not clear the GitHub token.')
+      else {
+        setGitHubToken('')
+        setGitHubMessage('GitHub token cleared.')
+      }
+    } catch (error) {
+      setGitHubMessage(errorText(error))
+    } finally {
+      setGitHubBusy(false)
     }
   }
 
@@ -958,6 +1040,12 @@ export function SettingsView({
 
   return (
     <div className="settings">
+      <div className="settings-section-tabs" role="group" aria-label="Settings sections">
+        <button type="button" className={section === 'general' ? 'selected' : ''} aria-pressed={section === 'general'} onClick={() => onSectionChange('general')}>General</button>
+        <button type="button" className={section === 'memory' ? 'selected' : ''} aria-pressed={section === 'memory'} onClick={() => onSectionChange('memory')}>Memory</button>
+      </div>
+      {section === 'general' ? (
+        <>
       <section className="settings-section appearance-section">
         <div className="section-head">
           <h2>Appearance</h2>
@@ -1044,6 +1132,56 @@ export function SettingsView({
 
       <section className="settings-section">
         <div className="section-head">
+          <h2>GitHub</h2>
+          <p>
+            Connect a fine-grained token limited to the repositories you want to search. Grant read-only access to repository metadata, issues, and pull requests. Create a token in{' '}
+            <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">GitHub settings</a>.
+            {' '}Every search asks for approval; when used in Chat, approved result text is sent to your configured model provider. The token is encrypted with OS storage when available and kept for this app session only otherwise.
+          </p>
+        </div>
+
+        {githubSettings ? (
+          <div className="web-search-settings">
+            <label className="field field-wide">
+              <span className="field-label">
+                GitHub fine-grained token
+                {githubSettings.hasToken && (
+                  <span className="field-tag">
+                    {!githubSettings.ready && githubSettings.tokenStored
+                      ? 'saved token unavailable'
+                      : githubSettings.tokenStored ? 'stored securely' : 'session only'}
+                  </span>
+                )}
+              </span>
+              <input
+                type="password"
+                value={githubToken}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => setGitHubToken(event.target.value)}
+                placeholder={githubSettings.hasToken ? 'Leave blank to keep the current token' : 'Paste your GitHub token'}
+              />
+              <span className="field-hint">Read-only search for repositories, issues, and pull requests. Mike Assist cannot modify GitHub content.</span>
+            </label>
+            <div className="settings-actions">
+              <button className="primary-button" type="button" onClick={() => void saveGitHubToken()} disabled={githubBusy || !githubToken.trim()}>
+                {githubBusy ? 'Saving…' : 'Save token'}
+              </button>
+              {githubSettings.hasToken && (
+                <button className="ghost-button" type="button" onClick={() => void clearGitHubToken()} disabled={githubBusy}>
+                  Clear token
+                </button>
+              )}
+              {githubMessage && <span className="settings-status" role="status">{githubMessage}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Loading GitHub settings…</p>
+        )}
+      </section>
+
+      <section className="settings-section">
+        <div className="section-head">
           <h2>AI providers</h2>
           <p>Connect a hosted API with its key or choose a local model. Hosted providers receive the message and context used for each request; charges may apply under their plans.</p>
         </div>
@@ -1077,7 +1215,11 @@ export function SettingsView({
             <input
               value={form.baseUrl}
               spellCheck={false}
-              onChange={(event) => update('baseUrl', event.target.value)}
+              onChange={(event) => {
+                setModels([])
+                setModelsLoaded(false)
+                update('baseUrl', event.target.value)
+              }}
               placeholder="http://127.0.0.1:11434/v1"
             />
             <span className="field-hint">{preset.hint}</span>
@@ -1085,18 +1227,32 @@ export function SettingsView({
 
           <label className="field field-wide">
             <span className="field-label">Model</span>
-            <input
+            <select
               value={form.model}
-              spellCheck={false}
-              list="model-options"
               onChange={(event) => update('model', event.target.value)}
-              placeholder="qwen2.5:3b"
-            />
+            >
+              {models.length === 0 && (
+                <option value={form.model}>{form.model || 'Test connection to load models'}</option>
+              )}
+              {models.length > 0 && form.model && !models.includes(form.model) && (
+                <option value={form.model}>{form.model} · current model</option>
+              )}
+              {models.map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
             <datalist id="model-options">
               {models.map((model) => (
                 <option key={model} value={model} />
               ))}
             </datalist>
+            <span className="field-hint">
+              {models.length > 0
+                ? `${models.length} models available. Test the connection to refresh the list.`
+                : modelsLoaded
+                  ? 'No models were returned. Check provider access and test the connection again.'
+                  : 'Test the connection to load models available to this account.'}
+            </span>
           </label>
 
           <label className="field">
@@ -1190,12 +1346,18 @@ export function SettingsView({
               onChange={(event) => update('apiKey', event.target.value)}
               placeholder={
                 existingProviderKeyMatchesForm && settings.provider.hasApiKey
-                  ? 'Leave blank to keep the current key'
-                  : preset.needsKey ? `Enter ${preset.label} API key` : 'Only needed for authenticated endpoints'
+                  ? 'Saved key will be reused; enter a new key to replace it'
+                  : preset.needsKey ? `Enter ${preset.label} API key only if needed` : 'Only needed for authenticated endpoints'
               }
             />
             <span className="field-hint">
-              {preset.needsKey ? `Required by ${preset.label}; usage may be billed by the provider.` : 'Optional for local or custom endpoints.'}
+              {existingProviderKeyMatchesForm && settings.provider.hasApiKey
+                ? settings.provider.apiKeyStored
+                  ? 'This key is stored securely and reused automatically. Enter a new key only to replace it.'
+                  : 'This key is available for this session only because secure storage is unavailable.'
+                : preset.needsKey
+                  ? `Keys are saved separately for each provider endpoint. Enter one once, and Mike Assist will reuse it; usage may be billed by ${preset.label}.`
+                  : 'Optional for local or custom endpoints.'}
             </span>
           </label>
         </div>
@@ -1205,7 +1367,7 @@ export function SettingsView({
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button className="ghost-button" type="button" onClick={test} disabled={saving || testing}>
-            {testing ? 'Testing…' : 'Test connection'}
+            {testing ? 'Loading models…' : modelsLoaded ? 'Test & refresh models' : 'Test & load models'}
           </button>
           {existingProviderKeyMatchesForm && settings.provider.hasApiKey && (
             <button className="ghost-button" type="button" onClick={clearKey} disabled={saving || testing}>
@@ -1928,6 +2090,17 @@ export function SettingsView({
             </button>
           </div>
         </AccessibleDialog>
+      )}
+        </>
+      ) : (
+        <MemoryView
+          disabled={memoryDisabled}
+          version={memoryVersion}
+          selectedFact={selectedMemoryFact}
+          selectedQuery={selectedMemoryQuery}
+          onSelectedFactConsumed={onClearSelectedMemoryFact}
+          onChanged={onMemoryChanged}
+        />
       )}
     </div>
   )

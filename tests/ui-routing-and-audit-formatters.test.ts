@@ -35,6 +35,7 @@ const ALL_AUDIT_TYPES: AuditType[] = [
   'local_api.disabled',
   'web_search.settings_changed',
   'notion.settings_changed',
+  'github.settings_changed',
   'google_calendar.settings_changed',
   'google_calendar.connected',
   'google_calendar.disconnected',
@@ -146,6 +147,7 @@ describe('IntegrationsView routing', () => {
     expect(resolveIntegrationTargetView('files')).toBe('settings')
     expect(resolveIntegrationTargetView('mcp')).toBe('settings')
     expect(resolveIntegrationTargetView('notion')).toBe('settings')
+    expect(resolveIntegrationTargetView('github')).toBe('settings')
   })
 })
 

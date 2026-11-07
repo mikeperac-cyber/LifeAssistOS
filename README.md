@@ -50,6 +50,7 @@ Mike Assist is a local-first desktop AI assistant. The model proposes actions; a
 - Optional Outlook Calendar connection for read-only event lookup in Today and Chat, with approval for every event page and local prep-task conversion.
 - Optional Outlook Mail connection for read-only mailbox search and selected-message reading in Chat, plus an approval-gated Today follow-up task action from selected search results. Every search page, read, and task creation needs approval.
 - Optional Microsoft OneDrive connection for approval-gated search and bounded reading of PDF, DOCX, XLSX, and supported plain-text files. It uses delegated `Files.Read` access and cannot change files.
+- Optional read-only GitHub search for repositories, issues, and pull requests, using a fine-grained token and approval for every query.
 - MCP tools are namespaced, capped at 24 tools per server, validated against declared JSON Schema, and treated as external/untrusted with approval required on every call.
 - Research Desk for focused projects and allowlisted source capture, with one-click saving into the local Knowledge Vault.
 - SQLite FTS5 Knowledge Vault for searchable research, teaching notes, and durable personal knowledge.
@@ -91,6 +92,8 @@ Use **Settings** to configure LM Studio, OpenAI, or another compatible server. R
 To connect another OpenAI-compatible client, start **Settings → Local OpenAI-compatible API**. Copy its base URL, the configured model name, and the bearer token into the client. The server is disabled by default, binds only to `127.0.0.1`, and stops when Mike Assist closes. Each request supplies its own message history; system and developer messages are treated as client-provided context, and the API transcript is not saved. Tool calls use the normal gateway: local reads can use your approved folders, while writes and external actions wait for approval in Mike Assist. Only one assistant task can run at a time. The API supports `/v1/models` and `/v1/chat/completions` with text messages, inline PNG/JPEG/WebP image data, and optional SSE streaming; remote image URLs and multiple completions are not supported. The requested model must match the configured one; an optional `mode` can select `assistant`, `brainstorm`, `software`, `review`, `coach_personal`, or `coach_business`.
 
 Web search is optional. Add a Tavily API key in **Settings → Web search**; searches send the query and key to Tavily only after you approve the per-query permission card. Search results are untrusted, may use credits on your Tavily plan, and their domains must be allowlisted separately before `web_fetch` can open them.
+
+GitHub search is optional. Add a fine-grained personal access token in **Settings → GitHub**, scoped to only the repositories you want to search and with read-only repository metadata, issues, and pull requests permissions. Repository, issue, and pull-request searches each ask for approval. The token is encrypted with OS storage when available; otherwise it remains available only until Mike Assist closes.
 
 Google Calendar is optional. Enable the Google Calendar API in a Google Cloud project, create a **Desktop app** OAuth client, add your OAuth Client ID in **Settings → Google Calendar**, and connect through the system browser. Google requires Calendar scope verification for public apps, and projects in testing may require your account to be added as a test user. Mike Assist uses PKCE and requests `calendar.events.owned`; event reads, creates, and edits each need approval. In Today, load today’s event pages with per-page approval and create a local prep task from a selected event with separate approval. Chat can also read events and create local prep tasks. Tasks store the event ID to prevent duplicate conversions and never change the calendar. The app does not expose delete actions, add attendees, or send guest notifications. Refresh tokens are stored with OS encryption when available; if it is unavailable, the connection lasts for the current session only. Disconnecting clears the token locally. Remove Mike Assist in your Google Account to revoke the project grant; doing so can also disconnect Gmail, Drive, and Tasks connected through that project.
 
@@ -179,6 +182,7 @@ Tool paths are relative to a grant. The `root` argument may be a grant label; om
 | Outlook Calendar settings | `%APPDATA%\Mike Assist\microsoft-calendar.json` (refresh token encrypted by Windows when available) |
 | Outlook Mail settings | `%APPDATA%\Mike Assist\microsoft-mail.json` (refresh token encrypted by Windows when available) |
 | Microsoft OneDrive settings | `%APPDATA%\Mike Assist\microsoft-onedrive.json` (refresh token encrypted by Windows when available) |
+| GitHub settings | `%APPDATA%\Mike Assist\github.json` (token encrypted by Windows when available) |
 | Conversation memory | `%APPDATA%\Mike Assist\conversations.sqlite` |
 | Finance ledger | `%APPDATA%\Mike Assist\finance.sqlite` |
 | Personal memory | `%APPDATA%\Mike Assist\memory.sqlite` |
@@ -211,7 +215,7 @@ src/
   renderer/          React chat, command center views, approval modal, settings, audit UI
   core/              Agent, gateway, scheduler, stores, providers, audit
   core/mcp/          MCP connection store, naming, transport manager, tool registration
-  tools/             Filesystem, project review, code runner, finance, memory, drafts, constrained web, Gmail, Google Calendar, Google Drive, OneDrive and Tasks
+  tools/             Filesystem, project review, code runner, finance, memory, drafts, constrained web, GitHub, Gmail, Google Calendar, Google Drive, OneDrive and Tasks
   shared/            Types, IPC contracts, and provider presets
 tests/               Agent, provider, image attachment, gateway, grant, settings, and path tests
 ```
@@ -255,5 +259,6 @@ The NSIS installer is unsigned because no code-signing certificate is configured
 - **Outlook Calendar connection — complete:** optional device-code OAuth with a separate `Calendars.ReadBasic` token, bounded read-only Graph calendarView paging, per-page approval, an explicitly separate event panel in Today and Chat, approval-gated local prep tasks, and reviewable meeting-prep drafts from selected events.
 - **Outlook Mail connection — complete:** optional device-code OAuth with a separate `Mail.Read` token, bounded read-only Graph message search and selected-message reading, per-search/message approval in Chat, and separate approval for local follow-up tasks from Today.
 - **Microsoft OneDrive connection — complete:** optional device-code OAuth with a separate `Files.Read` token, fixed-route Graph search and bounded PDF/DOCX/XLSX/plain-text reads, per-search/file approval, and no file mutations.
+- **GitHub connection — complete:** optional encrypted fine-grained token, fixed-host read-only repository/issue/pull-request search, per-query approval, and on-demand tool discovery.
 - **Cloud Files workflow — complete:** a standalone, approval-gated Google Drive and OneDrive search/read view with local read-aloud, Knowledge Vault capture, Today follow-ups, and an optional reviewable Chat draft; speech stays local, opening the draft does not send the extract, and large drafts are bounded to the chat message limit.
 - **Integration transparency — complete:** a capability hub for local features and configured MCP servers, with visible data/approval boundaries.

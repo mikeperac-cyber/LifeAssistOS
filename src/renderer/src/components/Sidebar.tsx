@@ -7,27 +7,44 @@ import {
   SIDEBAR_SHORTCUT_OPTIONS,
   SIDEBAR_SHORTCUT_STORAGE_KEY,
   VIEW_META,
+  type SidebarVisibility,
   type View
 } from '../navigation'
 
 export type { View } from '../navigation'
 
 export function Sidebar({
+  sidebarVisibility,
+  onToggleSidebar,
   view,
   onChange,
   auditCount,
   grants,
   model,
   preset,
+  chatSessions,
+  activeChatId,
+  chatSearch,
+  onChatSearchChange,
+  onSelectChat,
+  chatSwitchDisabled,
   onGlobalSearch,
   onQuickCapture
 }: {
+  sidebarVisibility: SidebarVisibility
+  onToggleSidebar: () => void
   view: View
   onChange: (view: View) => void
   auditCount: number
   grants: FolderGrant[]
   model: string
   preset: string
+  chatSessions: Array<{ id: string; title: string; updatedAt: string }>
+  activeChatId: string
+  chatSearch: string
+  onChatSearchChange: (value: string) => void
+  onSelectChat: (sessionId: string) => void
+  chatSwitchDisabled: boolean
   onGlobalSearch: () => void
   onQuickCapture: () => void
 }): React.JSX.Element {
@@ -43,17 +60,36 @@ export function Sidebar({
     }
   }, [shortcuts])
 
-  const visibleGroups = filterNavigationGroups(navQuery)
-  const firstVisibleView = visibleGroups[0]?.items[0]
+  const matchingGroups = filterNavigationGroups(navQuery)
+  const visibleGroups = matchingGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !shortcuts.includes(item))
+    }))
+    .filter((group) => group.items.length > 0)
+  const firstVisibleView = visibleGroups[0]?.items[0] ?? matchingGroups[0]?.items[0]
 
   return (
-    <aside className="sidebar">
+    <aside id="app-sidebar" className="sidebar">
       <div className="brand">
         <div className="brand-mark">M</div>
         <div className="brand-text">
           <span className="brand-name">Mike Assist</span>
-          <span className="brand-sub">Your models · approval-gated</span>
+          <span className="brand-sub">Local tools · approval-gated</span>
         </div>
+        {sidebarVisibility === 'open' && (
+          <button
+            type="button"
+            className="sidebar-toggle-button sidebar-collapse-button"
+            aria-label="Collapse sidebar"
+            aria-controls="app-sidebar"
+            aria-expanded="true"
+            title="Collapse sidebar"
+            onClick={onToggleSidebar}
+          >
+            <span aria-hidden="true">‹</span>
+          </button>
+        )}
       </div>
 
       <div className="nav-search-wrap" role="search">
@@ -61,8 +97,8 @@ export function Sidebar({
         <input
           type="search"
           value={navQuery}
-          placeholder="Find a section"
-          aria-label="Find a section"
+          placeholder="Search sections"
+          aria-label="Search sections"
           onChange={(event) => setNavQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Escape' && navQuery) {
@@ -77,7 +113,7 @@ export function Sidebar({
             }
           }}
         />
-        <button className="nav-shortcut-button" type="button" onClick={onGlobalSearch} aria-label="Search Mike Assist, Ctrl K" title="Search everything">
+        <button className="nav-shortcut-button" type="button" onClick={onGlobalSearch} aria-label="Search or jump to anything in Mike Assist, Ctrl K" title="Search or jump to anything in Mike Assist">
           <kbd className="nav-shortcut">Ctrl K</kbd>
         </button>
       </div>
@@ -114,6 +150,7 @@ export function Sidebar({
               type="button"
               className={`sidebar-shortcut-button ${view === item ? 'active' : ''}`}
               aria-current={view === item ? 'page' : undefined}
+              title={`Open ${item === 'today' ? 'Tasks' : VIEW_META[item].label}`}
               onClick={() => onChange(item)}
             >
               {iconForView(item)}
@@ -150,14 +187,18 @@ export function Sidebar({
       </section>
 
       <nav className="nav" aria-label="Main navigation">
-        {visibleGroups.length === 0 && <p className="nav-empty" role="status">No matching sections.</p>}
+        {visibleGroups.length === 0 && (
+          <p className="nav-empty" role="status">
+            {matchingGroups.length > 0 ? 'See matching shortcuts above.' : 'No matching sections.'}
+          </p>
+        )}
         {visibleGroups.map((group) => (
           <div className="nav-group" key={group.label}>
             <span className="nav-group-label">{group.label}</span>
             {group.items.map((item) => (
+              <div className="nav-item-with-history" key={item}>
               <button
                 type="button"
-                key={item}
                 className={`nav-button ${view === item ? 'active' : ''}`}
                 aria-current={view === item ? 'page' : undefined}
                 title={VIEW_META[item].label}
@@ -172,6 +213,54 @@ export function Sidebar({
                   <span className="nav-count">{auditCount > 999 ? '999+' : auditCount}</span>
                 )}
               </button>
+              {item === 'chat' && (
+                <details className="sidebar-chat-history">
+                  <summary className="sidebar-chat-history-summary">
+                    <ChatIcon />
+                    <span>Recent chats</span>
+                    <span className="sidebar-chat-history-count">{chatSessions.length}</span>
+                    <span className="sidebar-chat-history-chevron" aria-hidden="true" />
+                  </summary>
+                  <div className="sidebar-chat-history-body">
+                    <div className="sidebar-chat-search" role="search">
+                      <SearchIcon />
+                      <input
+                        type="search"
+                        value={chatSearch}
+                        placeholder="Search chats"
+                        aria-label="Search chat history"
+                        onChange={(event) => onChatSearchChange(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape' && chatSearch) {
+                            event.preventDefault()
+                            onChatSearchChange('')
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="sidebar-chat-history-list" aria-label="Conversation history">
+                      {chatSessions.length === 0 ? (
+                        <p className="sidebar-chat-history-empty">
+                          {chatSearch.trim() ? 'No chats match this search.' : 'No past chats yet.'}
+                        </p>
+                      ) : chatSessions.slice(0, 8).map((session) => (
+                        <button
+                          key={session.id}
+                          type="button"
+                          className={`sidebar-chat-history-item ${activeChatId === session.id ? 'active' : ''}`}
+                          aria-current={activeChatId === session.id ? 'page' : undefined}
+                          title={session.title}
+                          disabled={chatSwitchDisabled}
+                          onClick={() => onSelectChat(session.id)}
+                        >
+                          <span>{session.title || 'Untitled chat'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              )}
+              </div>
             ))}
           </div>
         ))}
@@ -179,7 +268,7 @@ export function Sidebar({
 
       <div className="sidebar-spacer" />
 
-      <div className="side-card">
+      <div className="side-card side-card-compact">
         <div className="side-label">
           <FolderIcon />
           Approved folders
@@ -200,11 +289,13 @@ export function Sidebar({
         </ul>
       </div>
 
-      <div className="side-card">
-        <div className="side-label">
+      <details className="side-card side-card-disclosure">
+        <summary className="side-label side-disclosure-summary">
           <ShieldIcon />
-          Gateway rules
-        </div>
+          <span>Gateway rules</span>
+          <span className="gateway-summary-count">2 allow · 2 ask · 1 block</span>
+          <span className="disclosure-chevron" aria-hidden="true" />
+        </summary>
         <ul className="rules">
           <li>
             <span className="dot dot-green" />
@@ -232,9 +323,9 @@ export function Sidebar({
             <span className="rule-value">block</span>
           </li>
         </ul>
-      </div>
+      </details>
 
-      <div className="sidebar-foot" title={model}>
+      <div className="sidebar-foot" title="API keys stay in Settings. Switch providers and models in the chat composer.">
         {preset || 'No provider'} · {model || 'not configured'}
       </div>
     </aside>
@@ -243,13 +334,12 @@ export function Sidebar({
 
 function iconForView(view: View): React.JSX.Element {
   if (view === 'chat') return <ChatIcon />
-  if (view === 'memory') return <MemoryIcon />
   if (view === 'finances') return <FinanceIcon />
   if (view === 'workflows') return <WorkflowIcon />
   if (view === 'settings') return <SettingsIcon />
   if (view === 'activity') return <AuditIcon />
 
-  const glyphs: Record<Exclude<View, 'chat' | 'memory' | 'finances' | 'workflows' | 'settings' | 'activity'>, string> = {
+  const glyphs: Record<Exclude<View, 'chat' | 'finances' | 'workflows' | 'settings' | 'activity'>, string> = {
     coach: '✧',
     today: '◷',
     work: '▧',
@@ -294,17 +384,6 @@ function WorkflowIcon(): React.JSX.Element {
       <path d="M8 6h5a3 3 0 0 1 3 3v6" />
       <path d="M10 12H6v4" />
       <path d="m14 13 2 2 2-2" />
-    </svg>
-  )
-}
-
-function MemoryIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3a6 6 0 0 1 6 6v2h-2a2 2 0 0 0 0 4h2" />
-      <path d="M5 9a3 3 0 0 1 3-3" />
-      <circle cx="6" cy="13" r="4" />
-      <path d="M10 13v8" />
     </svg>
   )
 }

@@ -13,9 +13,9 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
   const [goalWhy, setGoalWhy] = useState('')
   const [goalDate, setGoalDate] = useState('')
   const [goalMilestones, setGoalMilestones] = useState('')
+  const [goalFormOpen, setGoalFormOpen] = useState(false)
   const [reflection, setReflection] = useState('')
   const [reviewKind, setReviewKind] = useState<'daily' | 'weekly'>('daily')
-  const [saveReflection, setSaveReflection] = useState(false)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -57,7 +57,7 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
       const milestones = goalMilestones.split('\n').map((item) => item.trim()).filter(Boolean)
       const result = await window.assist.createCoachingGoal({ area, title: goalTitle, why: goalWhy, targetDate: goalDate || null, milestones })
       if (result.ok && result.context) {
-        setContext(result.context); setGoalTitle(''); setGoalWhy(''); setGoalDate(''); setGoalMilestones(''); setNotice('Goal added after approval.')
+        setContext(result.context); setGoalTitle(''); setGoalWhy(''); setGoalDate(''); setGoalMilestones(''); setGoalFormOpen(false); setNotice('Goal added after approval.')
       } else setError(result.error ?? 'The goal was not saved.')
     } catch (cause) {
       setError(errorText(cause, 'The goal was not saved.'))
@@ -108,11 +108,11 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
     }
   }
 
-  const submitReflection = async (): Promise<void> => {
+  const submitReflection = async (savePrivately: boolean): Promise<void> => {
     const body = reflection.trim()
     if (!body || busy) return
     setError('')
-    if (!saveReflection) {
+    if (!savePrivately) {
       const contextLabel = AREA_LABELS[area]
       const prompt = `Respond to my ${reviewKind === 'daily' ? 'daily check-in' : 'weekly review'} in ${contextLabel} coach mode. Reflect the main point briefly, help me identify one realistic next step, and ask at most one focused question. Do not save this reflection.\n\nMy reflection:\n${body}`
       setReflection('')
@@ -153,7 +153,7 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
     return (
       <div className="coach-view">
         <div className="coach-header">
-          <div><span className="eyebrow">Smart life coaching</span><h2>Coach</h2></div>
+          <div><h2>Your coaching space</h2></div>
         </div>
         {loading ? (
           <p className="muted" role="status">Loading saved coaching preferences and goals…</p>
@@ -171,12 +171,11 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
     <div className="coach-view">
       <div className="coach-header">
         <div>
-          <span className="eyebrow">Smart life coaching</span>
-          <h2>Coach</h2>
-          <p>Personal life and Business / LB English have separate goals, saved reflections, and coach chats.</p>
+          <h2>Your coaching space</h2>
+          <p>Check in, work toward goals, and choose what belongs in your journal.</p>
         </div>
         <div className="coach-header-actions">
-          <button className="ghost-button" type="button" onClick={() => onStart(area, reviewPrompt)}>Review with AI</button>
+          <button className="ghost-button" type="button" onClick={() => onStart(area, reviewPrompt)}>Review progress</button>
           <button className="primary-button" type="button" onClick={() => onStart(area, startPrompt)}>Start coaching chat</button>
         </div>
       </div>
@@ -188,37 +187,63 @@ export function CoachView({ onStart }: { onStart: (area: CoachArea, prompt: stri
 
       {loadError && <div className="coach-load-error"><p role="alert">{loadError}</p><button className="ghost-button" type="button" onClick={() => void load()}>Retry</button></div>}
       <div className="coach-grid" id="coach-area-panel" role="tabpanel" aria-labelledby={`coach-area-tab-${area}`} tabIndex={0}>
-        <section className="coach-card coach-profile">
-          <div className="coach-card-head"><div><span className="eyebrow">Control room</span><h3>Coaching preferences</h3></div><span className="privacy-chip">Private by default</span></div>
-          <label>Style<select value={style} onChange={(event) => setStyle(event.target.value as typeof style)}><option value="supportive">Supportive</option><option value="direct">Direct and concise</option><option value="socratic">Socratic questions</option></select></label>
-          <label>Reflection retention<select value={retention} onChange={(event) => setRetention(event.target.value as typeof retention)}><option value="ephemeral">Ephemeral unless I save it</option><option value="journal">Offer private journal continuity</option></select></label>
-          <label>Boundaries<textarea value={boundaries} onChange={(event) => setBoundaries(event.target.value)} rows={3} /></label>
-          <button className="ghost-button" type="button" disabled={busy} onClick={() => void saveProfile()}>Save preferences</button>
-        </section>
-
-        <section className="coach-card coach-goals">
-          <div className="coach-card-head"><div><span className="eyebrow">{AREA_LABELS[area]}</span><h3>Goals</h3></div><span className="count-badge">{areaGoals.length}</span></div>
-          <div className="coach-goal-list">
-            {areaGoals.map((goal) => <div className="coach-goal" key={goal.id}><div><strong>{goal.title}</strong><span>{goal.status === 'paused' ? 'Paused' : 'Active'}</span>{goal.why && <p>{goal.why}</p>}{goal.targetDate && <span>Target {goal.targetDate}</span>}{goal.milestones.length > 0 && <div className="coach-milestones">{goal.milestones.map((milestone) => <label key={milestone.id} className={milestone.done ? 'done' : ''}><input type="checkbox" checked={milestone.done} onChange={() => void toggleMilestone(goal, milestone.id)} />{milestone.title}<button type="button" className="milestone-plan" onClick={() => void addMilestoneToToday(goal, milestone.title)}>Today</button></label>)}</div>}</div><div className="coach-goal-actions"><button className="ghost-button" type="button" onClick={() => void toggleGoalPause(goal)}>{goal.status === 'paused' ? 'Resume' : 'Pause'}</button><button className="ghost-button" type="button" onClick={() => void completeGoal(goal)}>Complete</button></div></div>)}
-            {areaGoals.length === 0 && <p className="muted">No goals in this area yet.</p>}
-          </div>
-          <div className="coach-goal-form"><input value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder={`New ${AREA_LABELS[area].toLowerCase()} goal`} aria-label="Coaching goal" /><input value={goalWhy} onChange={(event) => setGoalWhy(event.target.value)} placeholder="Why does this matter?" aria-label="Goal motivation" /><input type="date" value={goalDate} onChange={(event) => setGoalDate(event.target.value)} aria-label="Goal target date" /><button className="primary-button" type="button" disabled={busy || !goalTitle.trim()} onClick={() => void createGoal()}>Add goal</button><textarea value={goalMilestones} onChange={(event) => setGoalMilestones(event.target.value)} placeholder="Milestones, one per line (optional)" aria-label="Goal milestones" rows={2} /></div>
-        </section>
-
+        <div className="coach-column coach-primary-column">
         <section className="coach-card coach-checkin">
-          <div className="coach-card-head"><div><span className="eyebrow">No pressure</span><h3>{reviewKind === 'daily' ? 'Daily check-in' : 'Weekly review'}</h3></div><select value={reviewKind} onChange={(event) => setReviewKind(event.target.value as typeof reviewKind)}><option value="daily">Daily check-in</option><option value="weekly">Weekly review</option></select></div>
+          <div className="coach-card-head">
+            <h3>{reviewKind === 'daily' ? 'Daily check-in' : 'Weekly review'}</h3>
+            <div className="coach-review-switch" role="group" aria-label="Reflection period">
+              <button type="button" aria-pressed={reviewKind === 'daily'} onClick={() => setReviewKind('daily')}>Daily</button>
+              <button type="button" aria-pressed={reviewKind === 'weekly'} onClick={() => setReviewKind('weekly')}>Weekly</button>
+            </div>
+          </div>
           <p className="coach-prompt">{reviewKind === 'daily' ? 'What matters most today, and what might get in the way?' : 'What worked, what created friction, and what will you adjust next week?'}</p>
-          <textarea value={reflection} onChange={(event) => setReflection(event.target.value)} rows={6} placeholder="Write only what feels useful…" aria-label="Coaching reflection" />
-          <label className="coach-save-toggle"><input type="checkbox" checked={saveReflection} onChange={(event) => setSaveReflection(event.target.checked)} /> Save this reflection to the private journal (requires approval)</label>
-          <button className="primary-button" type="button" disabled={busy || !reflection.trim()} onClick={() => void submitReflection()}>{busy ? 'Saving…' : saveReflection ? 'Save reflection' : 'Discuss with AI coach'}</button>
-          <p className="muted">{saveReflection ? 'Saving stores this in the private journal after approval. Saved entries can be included in later coach chats.' : 'Discussing sends this text to your configured model and keeps it in local chat history. Leave it here to keep it out of both.'}</p>
+          <label className="coach-reflection-field"><span>Your reflection</span><textarea value={reflection} onChange={(event) => setReflection(event.target.value)} rows={4} placeholder="Write only what feels useful…" aria-label="Coaching reflection" /></label>
+          <div className="coach-reflection-actions">
+            <button className="primary-button" type="button" disabled={busy || !reflection.trim()} onClick={() => void submitReflection(false)}>Discuss with coach</button>
+            <button className="ghost-button" type="button" disabled={busy || !reflection.trim()} onClick={() => void submitReflection(true)}>{busy ? 'Saving…' : 'Save privately'}</button>
+          </div>
+          <p className="coach-disclosure">Discussing sends this text to your configured model and saves it in local chat history. Private journal saves require approval and can be included in later coach chats.</p>
         </section>
 
         <section className="coach-card coach-journal">
-          <div className="coach-card-head"><div><span className="eyebrow">Continuity you chose</span><h3>Saved journal</h3></div><span className="privacy-chip">{savedJournal.length} entries</span></div>
+          <div className="coach-card-head"><h3>Saved journal</h3><span className="privacy-chip">{savedJournal.length} entries</span></div>
           {savedJournal.slice(0, 4).map((entry) => <article className="coach-journal-entry" key={entry.id}><span>{entry.kind} · {new Date(entry.createdAt).toLocaleDateString()}</span><p>{entry.body}</p></article>)}
-          {savedJournal.length === 0 && <p className="muted">Saved reflections will appear here. Unsaved check-ins never enter the journal.</p>}
+          {savedJournal.length === 0 && <p className="muted coach-journal-empty">No saved reflections in {AREA_LABELS[area]}. Unsaved check-ins stay out of this journal.</p>}
         </section>
+
+        </div>
+        <div className="coach-column coach-secondary-column">
+        <section className="coach-card coach-goals">
+          <div className="coach-card-head">
+            <div><h3>Goals</h3><span className="coach-goal-area">{AREA_LABELS[area]}</span></div>
+            <div className="coach-goal-heading-actions"><span className="coach-goal-count">{areaGoals.length}</span><button className="ghost-button" type="button" aria-expanded={goalFormOpen} onClick={() => setGoalFormOpen((open) => !open)}>{goalFormOpen ? 'Close form' : 'Add a goal'}</button></div>
+          </div>
+          <div className="coach-goal-list">
+            {areaGoals.map((goal) => <div className="coach-goal" key={goal.id}><div><strong>{goal.title}</strong><span>{goal.status === 'paused' ? 'Paused' : 'Active'}</span>{goal.why && <p>{goal.why}</p>}{goal.targetDate && <span>Target {goal.targetDate}</span>}{goal.milestones.length > 0 && <div className="coach-milestones">{goal.milestones.map((milestone) => <label key={milestone.id} className={milestone.done ? 'done' : ''}><input type="checkbox" checked={milestone.done} onChange={() => void toggleMilestone(goal, milestone.id)} />{milestone.title}<button type="button" className="milestone-plan" onClick={() => void addMilestoneToToday(goal, milestone.title)}>Today</button></label>)}</div>}</div><div className="coach-goal-actions"><button className="ghost-button" type="button" onClick={() => void toggleGoalPause(goal)}>{goal.status === 'paused' ? 'Resume' : 'Pause'}</button><button className="ghost-button" type="button" onClick={() => void completeGoal(goal)}>Complete</button></div></div>)}
+            {areaGoals.length === 0 && <p className="muted coach-goals-empty">No goals yet in {AREA_LABELS[area]}. Add one when you’re ready.</p>}
+          </div>
+          {goalFormOpen && <form className="coach-goal-form" id="coach-goal-form" onSubmit={(event) => { event.preventDefault(); void createGoal() }}>
+            <label>Goal title<input required value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="What would you like to work toward?" /></label>
+            <label>Why it matters<input value={goalWhy} onChange={(event) => setGoalWhy(event.target.value)} placeholder="Optional motivation" /></label>
+            <label>Target date<input type="date" value={goalDate} onChange={(event) => setGoalDate(event.target.value)} /></label>
+            <label className="coach-goal-milestones">Milestones (optional)<textarea value={goalMilestones} onChange={(event) => setGoalMilestones(event.target.value)} placeholder="One milestone per line" rows={2} /></label>
+            <p className="coach-form-note">Saving a goal requires approval.</p>
+            <div className="coach-goal-form-actions"><button className="primary-button" type="submit" disabled={busy || !goalTitle.trim()}>Add goal</button></div>
+          </form>}
+        </section>
+
+        <section className="coach-card coach-profile">
+          <details className="coach-preferences">
+            <summary><span className="coach-preferences-title"><strong>Coaching preferences</strong><span>Response style, reflection retention, and boundaries</span></span><span className="privacy-chip">Private by default</span></summary>
+            <div className="coach-preferences-fields">
+              <label>Response style<select value={style} onChange={(event) => setStyle(event.target.value as typeof style)}><option value="supportive">Supportive</option><option value="direct">Direct and concise</option><option value="socratic">Socratic questions</option></select></label>
+              <label>Reflection retention<select value={retention} onChange={(event) => setRetention(event.target.value as typeof retention)}><option value="ephemeral">Ephemeral unless I save it</option><option value="journal">Offer private journal continuity</option></select></label>
+              <label className="coach-boundaries">Boundaries<textarea value={boundaries} onChange={(event) => setBoundaries(event.target.value)} rows={3} /></label>
+              <button className="ghost-button" type="button" disabled={busy} onClick={() => void saveProfile()}>Save preferences</button>
+            </div>
+          </details>
+        </section>
+        </div>
       </div>
       {(error || notice) && <p className={`coach-status ${error ? 'status-error' : 'status-ok'}`} role={error ? 'alert' : 'status'}>{error || notice}</p>}
     </div>

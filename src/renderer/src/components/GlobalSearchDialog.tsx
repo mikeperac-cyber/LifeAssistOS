@@ -307,6 +307,9 @@ function buildStaticOptions(
 function chatModeLabel(mode: ChatMode): string {
   if (mode === 'coach_personal') return 'Personal coach'
   if (mode === 'coach_business') return 'Business coach'
+  if (mode === 'plan') return 'Plan'
+  if (mode === 'build') return 'Build'
+  if (mode === 'goal') return 'Goal'
   return mode === 'assistant' ? 'Assistant' : mode === 'review' ? 'Project review' : mode === 'software' ? 'Software' : 'Brainstorm'
 }
 

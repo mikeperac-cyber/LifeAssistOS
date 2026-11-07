@@ -180,6 +180,7 @@ export type AuditType =
   | 'local_api.disabled'
   | 'web_search.settings_changed'
   | 'notion.settings_changed'
+  | 'github.settings_changed'
   | 'google_calendar.settings_changed'
   | 'google_calendar.connected'
   | 'google_calendar.disconnected'
@@ -405,8 +406,13 @@ export type ChatMode =
   | 'brainstorm'
   | 'software'
   | 'review'
+  | 'plan'
+  | 'build'
+  | 'goal'
   | 'coach_personal'
   | 'coach_business'
+
+export type ChatEffort = 'low' | 'medium' | 'high'
 
 export interface ChatSession {
   id: string

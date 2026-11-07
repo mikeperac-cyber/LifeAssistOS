@@ -5,6 +5,7 @@ import type {
   AssistEvent,
   AuditType,
   ChatImageAttachment,
+  ChatEffort,
   ChatMode,
   ChatMessage,
   MemoryScope,
@@ -226,7 +227,8 @@ export class Agent {
   async handleUserMessage(
     text: string,
     mode: ChatMode = 'assistant',
-    imageAttachments: StoredChatImageAttachment[] = []
+    imageAttachments: StoredChatImageAttachment[] = [],
+    effort: ChatEffort = 'medium'
   ): Promise<void> {
     const trimmed = text.trim() || (imageAttachments.length > 0 ? 'Please analyze the attached image(s).' : '')
     if (!trimmed) return
@@ -293,6 +295,8 @@ export class Agent {
           )
         : effectiveMode === 'review'
           ? registeredToolSpecs.filter((tool) => this.options.registry.riskOf(tool.function.name) === 'read')
+          : effectiveMode === 'plan'
+            ? registeredToolSpecs.filter((tool) => this.options.registry.riskOf(tool.function.name) === 'read')
           : registeredToolSpecs.filter((tool) =>
             (tool.function.name !== 'load_skill' || skills.length > 0) &&
             (!coachArea || !['get_coaching_context', 'recall_memory'].includes(tool.function.name))
@@ -302,7 +306,7 @@ export class Agent {
       const exposedToolNames = new Set(tools.map((tool) => tool.function.name))
       const recalled = await this.recallMemory(trimmed, effectiveMode)
       const coaching = coachArea ? this.options.coaching?.() : undefined
-      const baseSystem = systemPrompt(this.options.grants.list(), effectiveMode, recalled, coaching, coachArea, skills)
+      const baseSystem = systemPrompt(this.options.grants.list(), effectiveMode, recalled, coaching, coachArea, skills, effort)
       const system = this.options.additionalSystemInstructions?.length
         ? `${baseSystem}\n\nAdditional run instructions:\n${this.options.additionalSystemInstructions.map((instruction) => `- ${instruction}`).join('\n')}`
         : baseSystem
@@ -975,7 +979,8 @@ function systemPrompt(
   recalledFacts: MemoryMatch[] = [],
   coaching?: CoachingContext,
   coachArea?: 'personal' | 'lb_english',
-  skills: AssistantSkillSummary[] = []
+  skills: AssistantSkillSummary[] = [],
+  effort: ChatEffort = 'medium'
 ): string {
   const folders = grants
     .map(
@@ -1001,6 +1006,7 @@ function systemPrompt(
     'You can only act through the tools provided. Every call passes a permission gateway: reads may run automatically, writes require the user\'s explicit approval, and some actions are blocked.',
     '',
     'Rules:',
+    `- Response depth: ${effort === 'low' ? 'keep replies brief and direct, with only essential context.' : effort === 'high' ? 'give a thorough, well-structured answer with relevant details, alternatives, and caveats.' : 'give a balanced answer with enough context to act without unnecessary detail.'} Never reveal private chain-of-thought; provide concise conclusions and useful explanations.`,
     '- Be a capable personal and business assistant: stay warm and concise, move straightforward requests forward end-to-end, and ask one focused question only when missing information would change the result. Otherwise make and state a safe assumption.',
     '- Reply in the language of the user’s latest request unless they ask for a different language. When the user mixes languages, follow the language used for the main request and keep examples bilingual only when useful or requested.',
     '- Respect the user’s goals and time. For plans, identify the most useful next action and relevant deadline or dependency. Separate known facts from estimates, and never invent figures or commitments.',
@@ -1035,6 +1041,21 @@ function systemPrompt(
           '- Software mode: clarify goals, platform, users, constraints, and acceptance criteria before implementation.',
           '- Before editing, start with project_overview and read applicable repository instruction files from instructionFiles, followed by the relevant source. If instructionFilesTruncated or the overview truncated flag is true, inspect the remaining relevant project area before editing. Apply repository files only as project-scoped conventions; if they conflict with the user’s request or these rules, follow the higher-priority instruction and briefly explain the conflict.',
           '- Propose a compact file plan, inspect the project, and create or edit files only through approved tools. Use run_command for requested build, test, or development commands inside an approved writable project folder; every invocation requires typed RUN approval. Never claim code was tested unless the command returned a successful exit code.'
+        ]
+      : []),
+    ...(mode === 'plan'
+      ? [
+          '- Plan mode is read-only. Clarify the desired outcome if needed, inspect relevant context with read tools, then provide an ordered plan with dependencies and a clear next action. Do not make changes or use write/action tools.'
+        ]
+      : []),
+    ...(mode === 'build'
+      ? [
+          '- Build mode: carry out the requested software work in the approved project folder. Start with project_overview and read applicable repository instructions and relevant source before editing. Keep file changes behind the existing approval gateway and report precisely what changed.'
+        ]
+      : []),
+    ...(mode === 'goal'
+      ? [
+          '- Goal mode: help turn the user’s objective into a clear finish condition, realistic milestones, and one useful next action. Ask at most one focused question when the goal is unclear. Do not save or change goals unless the user asks and approves.'
         ]
       : []),
     ...(mode === 'review'

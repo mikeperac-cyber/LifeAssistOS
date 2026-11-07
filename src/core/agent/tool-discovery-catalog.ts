@@ -5,17 +5,18 @@ import type { ProviderToolSpec } from '../providers/types'
 export function skillsForMode(skills: AssistantSkillSummary[], mode: ChatMode): AssistantSkillSummary[] {
   if (mode === 'coach_personal') return skills.filter((skill) => skill.scope === 'general' || skill.scope === 'personal')
   if (mode === 'coach_business') return skills.filter((skill) => skill.scope === 'general' || skill.scope === 'business' || skill.scope === 'education')
-  if (mode === 'software' || mode === 'review') return skills.filter((skill) => skill.scope === 'general' || skill.scope === 'coding')
+  if (mode === 'software' || mode === 'review' || mode === 'build') return skills.filter((skill) => skill.scope === 'general' || skill.scope === 'coding')
   return skills
 }
 
-export type OptionalToolDomain = 'email' | 'calendar' | 'drive' | 'notion' | 'finance' | 'memory' | 'coaching' | 'planning' | 'vault' | 'mcp'
+export type OptionalToolDomain = 'email' | 'calendar' | 'drive' | 'notion' | 'github' | 'finance' | 'memory' | 'coaching' | 'planning' | 'vault' | 'mcp'
 
 const DOMAIN_SIGNALS: Record<Exclude<OptionalToolDomain, 'mcp'>, RegExp> = {
   email: /\b(email|mail|gmail|outlook|inbox|draft|send|reply|recipient|message|eposta|posta|taslak|gonder|yanit|alici|mesaj|gelen\s+kutusu)\w*\b/i,
   calendar: /\b(calendar|event|meeting|appointment|invite|availability|schedule|takvim|etkinlik|toplanti|randevu|musaitlik|ajanda|program)\w*\b/i,
   drive: /\b(drive|google\s+(drive|docs|sheets|slides)|microsoft\s+onedrive|onedrive|one\s+drive|sharepoint|document|docs|spreadsheet|sheets|slides|file|folder|proposal|contract|report|dokuman|belge|dosya|klasor|teklif|sozlesme|sunum|tablo|rapor)\w*\b/i,
   notion: /\b(notion|notion\s+(page|workspace|note|document)s?|pages?\s+in\s+notion)\b/i,
+  github: /\b(github|git\s*hub|repo(?:sitory)?|repositories|pull\s+requests?|\bprs?\b|issues?|code\s+review|kod\s+depos|sorunlar?)\b/i,
   finance: /\b(finance|financial|money|expense|spend|income|budget|transaction|cost|profit|revenue|ledger|finans|para|harcama|masraf|gider|gelir|butce|maliyet|kazanc|ciro|fatura|odeme)\w*\b/i,
   memory: /\b(memory|remember|recall|forget|preference|saved\s+fact|bellek|hafiza|hatirla|unutma|tercih|kaydedilen|animsat)\w*\b/i,
   coaching: /\b(coach|goal|journal|reflection|habit|personal|business|lb\s+english|ielts|teaching|koc|kocluk|hedef|gunluk|yansima|aliskanlik|kisisel|yasam|motivasyon|isletme|is\s+plani|egitim|ogretim|ogretmen|ders)\w*\b/i,
@@ -33,6 +34,7 @@ export function selectToolSpecsForTurn(tools: ProviderToolSpec[], prompt: string
     if (!domain) return true
     if ((mode === 'coach_personal' || mode === 'coach_business') &&
       (domain === 'coaching' || domain === 'planning')) return true
+    if (mode === 'goal' && (domain === 'coaching' || domain === 'planning')) return true
     if (domain === 'mcp') {
       if (/\b(mcp|integration|connector|connected app|entegrasyon|baglanti|bagli uygulama)\b/i.test(normalizedPrompt)) return true
       const toolTokens = new Set(normalizeSearchText(`${name} ${tool.function.description}`).match(/[a-z0-9]+/g) ?? [])
@@ -48,6 +50,7 @@ export function optionalToolDomain(name: string): OptionalToolDomain | null {
   if (name.startsWith('google_calendar_') || name.startsWith('microsoft_calendar_') || name === 'create_calendar_event' || name === 'create_calendar_prep_task') return 'calendar'
   if (name.startsWith('google_drive_') || name.startsWith('microsoft_onedrive_')) return 'drive'
   if (name.startsWith('notion_')) return 'notion'
+  if (name.startsWith('github_')) return 'github'
   if (name.startsWith('google_tasks_') || name.startsWith('microsoft_todo_')) return 'planning'
   if (name.startsWith('finance_') || name === 'record_transaction') return 'finance'
   if (name.includes('memory') || name === 'recall_memory') return 'memory'

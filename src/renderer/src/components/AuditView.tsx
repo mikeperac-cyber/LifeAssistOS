@@ -229,6 +229,8 @@ export function summarizeEvent(event: AuditEvent): string {
       return data.configured ? 'API key configured' : 'web search settings updated'
     case 'notion.settings_changed':
       return data.configured ? 'Notion token configured' : 'Notion token cleared'
+    case 'github.settings_changed':
+      return data.configured ? 'GitHub token configured' : 'GitHub token cleared'
     case 'google_calendar.settings_changed':
       return 'Google Calendar settings updated'
     case 'google_calendar.connected':

@@ -317,7 +317,7 @@ export class ConversationStore {
       ? ['coach_personal']
       : mode === 'coach_business'
         ? ['coach_business']
-        : ['assistant', 'brainstorm', 'software', 'review']
+        : ['assistant', 'brainstorm', 'software', 'review', 'plan', 'build', 'goal']
     const placeholders = allowedModes.map(() => '?').join(', ')
     const requestedLimit = Number.isFinite(limit) ? Math.floor(limit) : 5
     const safeLimit = Math.min(8, Math.max(1, requestedLimit))
@@ -359,7 +359,7 @@ export class ConversationStore {
       ? ['coach_personal']
       : mode === 'coach_business'
         ? ['coach_business']
-        : ['assistant', 'brainstorm', 'software', 'review']
+        : ['assistant', 'brainstorm', 'software', 'review', 'plan', 'build', 'goal']
     const modePlaceholders = allowedModes.map(() => '?').join(', ')
     const titleSearchableIds = new Set((this.db.prepare(`
       SELECT s.id FROM chat_sessions s
@@ -552,5 +552,6 @@ function compactTitle(text: string): string {
 
 function isChatMode(value: string | null): value is ChatMode {
   return value === 'assistant' || value === 'brainstorm' || value === 'software' ||
-    value === 'review' || value === 'coach_personal' || value === 'coach_business'
+    value === 'review' || value === 'plan' || value === 'build' || value === 'goal' ||
+    value === 'coach_personal' || value === 'coach_business'
 }
