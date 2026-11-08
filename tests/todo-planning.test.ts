@@ -40,6 +40,7 @@ function createLegacyPlanningDatabase(file: string): void {
       id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL,
       converted_task_id TEXT, dismissed_at TEXT
     );
+    CREATE TABLE task_exports (id TEXT PRIMARY KEY, task_id TEXT, remote_task_id TEXT);
     INSERT INTO tasks (
       id, title, notes, due_date, remind_at, reminder_notified_at,
       priority, status, created_at, updated_at, completed_at,
@@ -53,6 +54,7 @@ function createLegacyPlanningDatabase(file: string): void {
     );
     INSERT INTO inbox (id, text, created_at, converted_task_id, dismissed_at)
       VALUES ('legacy-inbox', 'Keep this inbox item', '2026-11-01T00:00:00.000Z', NULL, NULL);
+    INSERT INTO task_exports (id, task_id, remote_task_id) VALUES ('legacy-export', 'legacy-task', 'remote-id');
   `)
   database.close()
 }
@@ -78,6 +80,38 @@ describe('todo planning store', () => {
       id: 'legacy-inbox',
       text: 'Keep this inbox item'
     }))
+    const upgraded = new DatabaseSync(file, { readOnly: true })
+    try {
+      const columns = (upgraded.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>).map((item) => item.name)
+      expect(columns).toEqual(expect.arrayContaining(['source_goal_id', 'source_email_message_id', 'source_calendar_event_id', 'source_task_id']))
+      expect(upgraded.prepare("SELECT remote_task_id FROM task_exports WHERE id = 'legacy-export'").get()).toEqual({ remote_task_id: 'remote-id' })
+    } finally { upgraded.close() }
+  })
+
+  it('test_reopen_preserves_existing_tasks_and_inbox', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'mike-assist-todo-reopen-'))
+    directories.push(directory)
+    const file = path.join(directory, 'planning.sqlite')
+    const first = new PlanningStore(file)
+    stores.push(first)
+    await first.init()
+    const open = first.addTask({ title: 'Open task' })
+    const done = first.addTask({ title: 'Completed task' })
+    first.updateTask(done.id, { status: 'done' })
+    first.capture('Unsorted Inbox item')
+    first.close()
+
+    const reopened = new PlanningStore(file)
+    stores.push(reopened)
+    await reopened.init()
+
+    expect(reopened.listTasks(true)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: open.id, title: 'Open task', status: 'open' }),
+      expect.objectContaining({ id: done.id, title: 'Completed task', status: 'done' })
+    ]))
+    expect(reopened.snapshot().inbox).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'Unsorted Inbox item', convertedTaskId: null, dismissedAt: null })
+    ]))
   })
 
   it('test_parent_task_validation_rejects_cycles_and_nested_children', async () => {

@@ -100,7 +100,7 @@ describe('SettingsStore', () => {
     })
   })
 
-  it('never exposes the API key in the public view', async () => {
+  it('test_public_settings_never_include_api_key', async () => {
     const store = new SettingsStore(file, codec)
     await store.init()
     await store.update({ apiKey: 'sk-secret' })
@@ -108,6 +108,7 @@ describe('SettingsStore', () => {
     const publicView = store.public()
     expect(publicView.provider.hasApiKey).toBe(true)
     expect(publicView.provider.apiKeyStored).toBe(true)
+    expect(publicView.provider).not.toHaveProperty('apiKey')
     expect(JSON.stringify(publicView)).not.toContain('sk-secret')
   })
 
@@ -128,10 +129,15 @@ describe('SettingsStore', () => {
     expect(reloaded.public().provider.hasApiKey).toBe(false)
   })
 
-  it('stores an encrypted key and decrypts it on load', async () => {
+  it('test_existing_encrypted_provider_key_survives_settings_reopen', async () => {
     const store = new SettingsStore(file, codec)
     await store.init()
-    await store.update({ apiKey: 'sk-encrypted' })
+    await store.update({
+      preset: 'anthropic',
+      baseUrl: 'https://api.anthropic.com/v1',
+      model: 'claude-sonnet-5',
+      apiKey: 'sk-encrypted'
+    })
 
     const raw = await readFile(file, 'utf8')
     const persisted = JSON.parse(raw) as { version: number; providerApiKeysEnc?: Record<string, string> }
@@ -141,7 +147,8 @@ describe('SettingsStore', () => {
 
     const reloaded = new SettingsStore(file, codec)
     await reloaded.init()
-    expect(reloaded.get().provider.apiKey).toBe('sk-encrypted')
+    expect(reloaded.get().provider).toMatchObject({ preset: 'anthropic', model: 'claude-sonnet-5', apiKey: 'sk-encrypted' })
+    expect(reloaded.public().provider).toMatchObject({ preset: 'anthropic', hasApiKey: true, apiKeyStored: true })
   })
 
   it('clears the previous provider key when the active preset changes', async () => {
