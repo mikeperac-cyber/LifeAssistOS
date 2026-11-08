@@ -713,11 +713,11 @@ export interface AssistApi {
   getToday(date?: string): Promise<TodaySnapshot>
   getPlanTasks(includeCompleted?: boolean): Promise<PlanTask[]>
   exportTodayTasksCalendar(): Promise<TodayCalendarExportResult>
-  addPlanTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; sourceGoalId?: string }): Promise<PlanMutationResult>
+  addPlanTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; parentTaskId?: string | null; sourceGoalId?: string }): Promise<PlanMutationResult>
   importPlanTask(input: { provider: RemoteTaskProvider; taskListId: string; taskId: string; title: string; notes?: string; dueDate?: string | null; priority?: PlanTaskPriority; status: string }): Promise<PlanMutationResult>
-  updatePlanTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; status?: string }): Promise<PlanMutationResult>
+  updatePlanTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; status?: 'open' | 'done' | 'cancelled'; parentTaskId?: string | null }): Promise<PlanMutationResult>
   captureInbox(text: string): Promise<PlanMutationResult>
-  convertInbox(id: string, input?: { title?: string; dueDate?: string | null; priority?: string }): Promise<PlanMutationResult>
+  convertInbox(id: string, input?: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority }): Promise<PlanMutationResult>
   dismissInbox(id: string): Promise<PlanMutationResult>
   getCoachingContext(): Promise<CoachingContext>
   updateCoachingProfile(patch: { style?: string; reflectionRetention?: string; boundaries?: string }): Promise<CoachingMutationResult>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export function QuickCaptureDialog({ open, onClose }: { open: boolean; onClose: () => void }): React.JSX.Element {
+export function QuickCaptureDialog({ open, onClose, onCaptured }: { open: boolean; onClose: () => void; onCaptured?: () => void }): React.JSX.Element {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const busyRef = useRef(false)
@@ -37,6 +37,7 @@ export function QuickCaptureDialog({ open, onClose }: { open: boolean; onClose: 
     try {
       const result = await window.assist.captureInbox(text)
       if (!result.ok || !result.snapshot) throw new Error(result.error ?? 'Could not save this capture.')
+      onCaptured?.()
       if (dialogRef.current?.open) {
         setDraft('')
         setSaved('Saved to your Today inbox.')

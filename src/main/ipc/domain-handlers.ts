@@ -251,10 +251,13 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
   ipcMain.handle('assist:plan-task-add', async (_event, input: unknown) => {
     const planning = ctx.getPlanning()
     if (!planning || !input || typeof input !== 'object') return { ok: false, error: 'Invalid task.' }
-    const value = input as { title?: unknown; notes?: unknown; dueDate?: unknown; remindAt?: unknown; priority?: unknown; sourceGoalId?: unknown }
+    const value = input as { title?: unknown; notes?: unknown; dueDate?: unknown; remindAt?: unknown; priority?: unknown; parentTaskId?: unknown; sourceGoalId?: unknown }
     if (typeof value.title !== 'string') return { ok: false, error: 'A task needs a title.' }
     if (value.remindAt !== undefined && value.remindAt !== null && typeof value.remindAt !== 'string') {
       return { ok: false, error: 'Choose a valid reminder date and time.' }
+    }
+    if (value.parentTaskId !== undefined && value.parentTaskId !== null && typeof value.parentTaskId !== 'string') {
+      return { ok: false, error: 'Choose a valid parent task.' }
     }
     try {
       const task = planning.addTask({
@@ -263,6 +266,7 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
         dueDate: typeof value.dueDate === 'string' ? value.dueDate : null,
         remindAt: typeof value.remindAt === 'string' ? value.remindAt : null,
         priority: value.priority as PlanTaskPriority | undefined,
+        parentTaskId: typeof value.parentTaskId === 'string' ? value.parentTaskId : null,
         sourceGoalId: typeof value.sourceGoalId === 'string' ? value.sourceGoalId : undefined
       })
       await ctx.appendAuditAfterMutation({ type: 'plan.task_created', data: {} })
@@ -309,14 +313,18 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
       return { ok: false, error: 'Invalid task update.' }
     }
     try {
-      const patch = value.patch as { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; status?: string }
+      const patch = value.patch as { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: string; status?: string; parentTaskId?: unknown }
       if (patch.remindAt !== undefined && patch.remindAt !== null && typeof patch.remindAt !== 'string') {
         return { ok: false, error: 'Choose a valid reminder date and time.' }
+      }
+      if (patch.parentTaskId !== undefined && patch.parentTaskId !== null && typeof patch.parentTaskId !== 'string') {
+        return { ok: false, error: 'Choose a valid parent task.' }
       }
       const task = planning.updateTask(value.id, {
         ...patch,
         priority: patch.priority as PlanTaskPriority | undefined,
-        status: patch.status as PlanTaskStatus | undefined
+        status: patch.status as PlanTaskStatus | undefined,
+        parentTaskId: patch.parentTaskId as string | null | undefined
       })
       await ctx.appendAuditAfterMutation({ type: task.status === 'done' ? 'plan.task_completed' : 'plan.task_updated', data: {} })
       return { ok: true, task, snapshot: planning.snapshot() }
@@ -340,12 +348,25 @@ export function registerDomainIpcHandlers(ctx: DomainIpcContext): void {
   ipcMain.handle('assist:inbox-convert', async (_event, payload: unknown) => {
     const planning = ctx.getPlanning()
     if (!planning || !payload || typeof payload !== 'object') return { ok: false, error: 'Invalid inbox item.' }
-    const value = payload as { id?: unknown; input?: { title?: string; dueDate?: string | null; priority?: string } }
+    const value = payload as { id?: unknown; input?: unknown }
     if (typeof value.id !== 'string') return { ok: false, error: 'Invalid inbox item.' }
+    if (value.input !== undefined && (!value.input || typeof value.input !== 'object' || Array.isArray(value.input))) {
+      return { ok: false, error: 'Invalid inbox task details.' }
+    }
+    const input = (value.input ?? {}) as { title?: unknown; notes?: unknown; dueDate?: unknown; remindAt?: unknown; priority?: unknown }
+    if ((input.title !== undefined && typeof input.title !== 'string') ||
+      (input.notes !== undefined && typeof input.notes !== 'string') ||
+      (input.dueDate !== undefined && input.dueDate !== null && typeof input.dueDate !== 'string') ||
+      (input.remindAt !== undefined && input.remindAt !== null && typeof input.remindAt !== 'string')) {
+      return { ok: false, error: 'Invalid inbox task details.' }
+    }
     try {
       const task = planning.convertInbox(value.id, {
-        ...value.input,
-        priority: value.input?.priority as PlanTaskPriority | undefined
+        title: input.title as string | undefined,
+        notes: input.notes as string | undefined,
+        dueDate: input.dueDate as string | null | undefined,
+        remindAt: input.remindAt as string | null | undefined,
+        priority: input.priority as PlanTaskPriority | undefined
       })
       await ctx.appendAuditAfterMutation({ type: 'plan.inbox_converted', data: {} })
       return { ok: true, task, snapshot: planning.snapshot() }

@@ -102,4 +102,27 @@ describe('todo planning store', () => {
     expect(store.getTask(parent.id).status).toBe('done')
     expect(store.getTask(child.id)).toMatchObject({ parentTaskId: parent.id, status: 'open' })
   })
+
+  it('converts an Inbox item with the edited task details', async () => {
+    const store = await createStore()
+    const inbox = store.capture('Original capture')
+    const remindAt = new Date(Date.now() + 60_000).toISOString()
+
+    const task = store.convertInbox(inbox.id, {
+      title: 'Edited title',
+      notes: 'Useful task notes',
+      dueDate: '2026-11-10',
+      remindAt,
+      priority: 'high'
+    })
+
+    expect(store.getTask(task.id)).toMatchObject({
+      title: 'Edited title',
+      notes: 'Useful task notes',
+      dueDate: '2026-11-10',
+      remindAt,
+      priority: 'high',
+      sourceInboxId: inbox.id
+    })
+  })
 })

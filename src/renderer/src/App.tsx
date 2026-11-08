@@ -3,6 +3,7 @@ import type { PublicSettings } from '../../shared/ipc'
 import { QuickCaptureDialog } from './components/QuickCaptureDialog'
 import { SettingsView } from './components/SettingsView'
 import { Sidebar } from './components/Sidebar'
+import { TodoView } from './components/TodoView'
 import { DEFAULT_VIEW, normalizeView, readSidebarVisibility, SIDEBAR_VISIBILITY_STORAGE_KEY, VIEW_META, shouldHandleQuickCaptureShortcut, type SidebarVisibility, type View } from './navigation'
 import { applyAppTheme, getSavedAppTheme, APP_THEME_STORAGE_KEY, type AppTheme } from './theme'
 
@@ -18,6 +19,7 @@ export default function App(): React.JSX.Element {
   const [settingsLoading, setSettingsLoading] = useState(true)
   const [settingsError, setSettingsError] = useState('')
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
+  const [taskRefreshVersion, setTaskRefreshVersion] = useState(0)
   const [appWarning, setAppWarning] = useState('')
 
   const loadSettings = useCallback(async (): Promise<void> => {
@@ -38,6 +40,7 @@ export default function App(): React.JSX.Element {
     const unsubscribe = window.assist.onEvent((event) => {
       if (event.type === 'quick_capture_requested') setQuickCaptureOpen(true)
       else if (event.type === 'warning') setAppWarning(event.message)
+      else if (event.type === 'today_changed') setTaskRefreshVersion((version) => version + 1)
     })
     return unsubscribe
   }, [])
@@ -100,12 +103,7 @@ export default function App(): React.JSX.Element {
 
         {appWarning && <p className="startup-load-notice has-error" role="alert">{appWarning}</p>}
         {view === 'tasks' && (
-          <section className="view-panel todo-start-panel">
-            <span className="eyebrow">Local task workspace</span>
-            <h2>Capture what needs doing</h2>
-            <p>Your task views will appear here. Add a thought to the Inbox now, then organize it when you are ready.</p>
-            <button className="primary-button" type="button" onClick={() => setQuickCaptureOpen(true)}>Quick capture</button>
-          </section>
+          <TodoView refreshVersion={taskRefreshVersion} onQuickCapture={() => setQuickCaptureOpen(true)} />
         )}
         {view === 'settings' && (
           <section className="settings-content">
@@ -127,7 +125,7 @@ export default function App(): React.JSX.Element {
           </section>
         )}
       </main>
-      <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} />
+      <QuickCaptureDialog open={quickCaptureOpen} onClose={() => setQuickCaptureOpen(false)} onCaptured={() => setTaskRefreshVersion((version) => version + 1)} />
     </div>
   )
 }

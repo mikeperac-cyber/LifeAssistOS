@@ -37,6 +37,7 @@
 - `src/renderer/src/components/TodoView.tsx` — task filters, Inbox, search, and task actions.
 - `src/renderer/src/components/TodoTaskRow.tsx` — task and subtask presentation.
 - `src/renderer/src/components/TaskEditorDialog.tsx` — add/edit task fields.
+- `src/main/ipc/domain-handlers.ts` and `src/shared/ipc.ts` — carry the validated parent relationship through task add/update IPC.
 - `src/renderer/src/components/ProviderSettingsPanel.tsx` — existing provider setup form and connection test.
 - `src/renderer/src/components/SettingsView.tsx` — provider settings, appearance, and local backup/restore.
 - `tests/todo-planning.test.ts`, `tests/todo-view-model.test.ts`, `tests/navigation.test.ts` — storage, filtering, and route behavior.
@@ -126,16 +127,22 @@ git commit -m "refactor: focus app shell on tasks"
 - Create: `src/renderer/src/components/TodoTaskRow.tsx`
 - Create: `src/renderer/src/components/TaskEditorDialog.tsx`
 - Create: `src/renderer/src/components/todo-view-model.ts`
+- Modify: `src/main/ipc/domain-handlers.ts`
+- Modify: `src/shared/ipc.ts`
+- Modify: `src/renderer/src/components/QuickCaptureDialog.tsx`
+- Modify: `src/renderer/src/App.tsx`
 - Create: `tests/todo-view-model.test.ts`
+- Create: `tests/todo-ipc.test.ts`
 - Modify: `src/renderer/src/styles.css`
 
 **Interfaces:**
 - Consumes: `window.assist.getToday()`, `getPlanTasks(includeCompleted?: boolean)`, `addPlanTask(input)`, `updatePlanTask(id, patch)`, `captureInbox(text)`, `convertInbox(id, input?)`, and `dismissInbox(id)`.
+- Produces: task add/update IPC accepting `parentTaskId?: string | null`; Inbox conversion accepting editable title, notes, due date, reminder, and priority; quick capture refreshes the visible Inbox after save.
 - Produces: `filterTasksForView(tasks: PlanTask[], view: 'today' | 'upcoming' | 'completed' | 'archived', localDate: string): PlanTask[]` and `filterTasksByQuery(tasks: PlanTask[], query: string): PlanTask[]`.
 
 - [ ] **Step 1: Write failing view-model tests**
 
-Add `test_task_view_filters_use_local_date_boundary`, `test_task_view_filters_exclude_done_and_archived_tasks`, and `test_task_search_handles_empty_and_punctuation_queries`. Assert Today includes overdue, today, and undated open tasks; Upcoming includes only future-dated open tasks; Completed includes only done tasks; Archived includes only cancelled tasks.
+Add `test_task_view_filters_use_local_date_boundary`, `test_task_view_filters_exclude_done_and_archived_tasks`, `test_task_search_handles_empty_and_punctuation_queries`, and `test_subtasks_remain_independently_visible_with_parent_context`. Assert Today includes overdue, today, and undated open tasks; Upcoming includes only future-dated open tasks; Completed includes only done tasks; Archived includes only cancelled tasks. Add `test_task_add_and_update_ipc_preserves_parent_task_id` so the renderer contract reaches the SQLite store.
 
 - [ ] **Step 2: Run the targeted view-model tests and verify they fail**
 
@@ -148,14 +155,13 @@ Create Today, Inbox, Upcoming, Completed, and Archived filters; title/notes sear
 
 - [ ] **Step 4: Run targeted tests**
 
-Run: `npm test -- --reporter=verbose tests/todo-view-model.test.ts tests/todo-planning.test.ts tests/navigation.test.ts`
-Expected: PASS for task filters, storage migration, and routing.
-Expected: PASS for task filters, storage migration, and routing. Run the typecheck and build gates after the retirement plan's Task 1 removes legacy views that still import the pre-rebuild route union; that task owns the consolidated compile and bundle checks.
+Run: `npm test -- --reporter=verbose tests/todo-view-model.test.ts tests/todo-planning.test.ts tests/todo-ipc.test.ts tests/navigation.test.ts`
+Expected: PASS for task filters, storage migration, IPC, and routing. Run the typecheck and build gates after the retirement plan's Task 1 removes legacy views that still import the pre-rebuild route union; that task owns the consolidated compile and bundle checks.
 
 - [ ] **Step 5: Commit the local task experience**
 
 ```bash
-git add src/renderer/src/components/TodoView.tsx src/renderer/src/components/TodoTaskRow.tsx src/renderer/src/components/TaskEditorDialog.tsx src/renderer/src/components/todo-view-model.ts src/renderer/src/styles.css tests/todo-view-model.test.ts
+git add src/renderer/src/components/TodoView.tsx src/renderer/src/components/TodoTaskRow.tsx src/renderer/src/components/TaskEditorDialog.tsx src/renderer/src/components/todo-view-model.ts src/renderer/src/components/QuickCaptureDialog.tsx src/renderer/src/App.tsx src/renderer/src/styles.css src/shared/ipc.ts src/main/ipc/domain-handlers.ts tests/todo-view-model.test.ts tests/todo-planning.test.ts tests/todo-ipc.test.ts
 git commit -m "feat: add local todo views"
 ```
 
