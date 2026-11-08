@@ -749,6 +749,7 @@ export interface PlanTask {
   createdAt: string
   updatedAt: string
   completedAt: string | null
+  parentTaskId: string | null
   sourceInboxId?: string
   sourceGoalId?: string
   emailSource?: EmailTaskSource

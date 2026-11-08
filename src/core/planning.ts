@@ -6,7 +6,7 @@ import path from 'node:path'
 import type { CalendarTaskProvider, CalendarTaskSource, EmailTaskProvider, EmailTaskSource, InboxItem, PlanTask, PlanTaskPriority, PlanTaskStatus, RemoteTaskProvider, RemoteTaskSource, TaskExportProvider, TaskExportRecord, TaskExportStatus, TaskExportSyncStatus, TodaySnapshot } from '../shared/types'
 import { assertDateOnly } from '../shared/date-only'
 
-interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null; source_task_provider: string | null; source_task_list_id: string | null; source_task_id: string | null }
+interface TaskRow { id: string; title: string; notes: string; due_date: string | null; remind_at: string | null; reminder_notified_at: string | null; priority: PlanTaskPriority; status: PlanTaskStatus; created_at: string; updated_at: string; completed_at: string | null; parent_task_id: string | null; source_inbox_id: string | null; source_goal_id: string | null; source_email_provider: string | null; source_email_message_id: string | null; source_calendar_provider: string | null; source_calendar_event_id: string | null; source_task_provider: string | null; source_task_list_id: string | null; source_task_id: string | null }
 interface InboxRow { id: string; text: string; created_at: string; converted_task_id: string | null; dismissed_at: string | null }
 interface TaskExportRow { task_id: string; provider: TaskExportProvider; task_list_id: string; status: TaskExportStatus; remote_task_id: string | null; updated_at: string; sync_status: TaskExportSyncStatus; synced_local_updated_at: string | null; synced_title: string | null; synced_notes: string | null; synced_due_date: string | null; synced_priority: PlanTaskPriority | null; remote_etag: string | null }
 
@@ -34,7 +34,7 @@ export class PlanningStore {
         remind_at TEXT, reminder_notified_at TEXT,
         priority TEXT NOT NULL CHECK (priority IN ('low', 'normal', 'high')),
         status TEXT NOT NULL CHECK (status IN ('open', 'done', 'cancelled')),
-        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, source_inbox_id TEXT, source_goal_id TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, parent_task_id TEXT, source_inbox_id TEXT, source_goal_id TEXT,
         source_email_provider TEXT CHECK (source_email_provider IS NULL OR source_email_provider IN ('gmail', 'outlook')),
         source_email_message_id TEXT,
         source_calendar_provider TEXT CHECK (source_calendar_provider IS NULL OR source_calendar_provider IN ('google_calendar', 'microsoft_calendar')),
@@ -61,6 +61,7 @@ export class PlanningStore {
       CREATE INDEX IF NOT EXISTS inbox_active ON inbox(dismissed_at, converted_task_id);
     `)
     const columns = this.db.prepare('PRAGMA table_info(tasks)').all() as Array<{ name: string }>
+    if (!columns.some((column) => column.name === 'parent_task_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN parent_task_id TEXT')
     if (!columns.some((column) => column.name === 'source_goal_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_goal_id TEXT')
     if (!columns.some((column) => column.name === 'source_email_provider')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_provider TEXT')
     if (!columns.some((column) => column.name === 'source_email_message_id')) this.db.exec('ALTER TABLE tasks ADD COLUMN source_email_message_id TEXT')
@@ -98,7 +99,7 @@ export class PlanningStore {
     return this.attachTaskExports(rows.map(taskFromRow))
   }
 
-  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource; calendarSource?: CalendarTaskSource; remoteTaskSource?: RemoteTaskSource }): PlanTask {
+  addTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; parentTaskId?: string | null; sourceInboxId?: string; sourceGoalId?: string; emailSource?: EmailTaskSource; calendarSource?: CalendarTaskSource; remoteTaskSource?: RemoteTaskSource }): PlanTask {
     const title = input.title.trim().slice(0, 240)
     if (!title) throw new Error('A task needs a title.')
     const priority = input.priority ?? 'normal'
@@ -107,8 +108,11 @@ export class PlanningStore {
     const emailSource = input.emailSource ? normalizeEmailTaskSource(input.emailSource) : undefined
     const calendarSource = input.calendarSource ? normalizeCalendarTaskSource(input.calendarSource) : undefined
     const remoteTaskSource = input.remoteTaskSource ? normalizeRemoteTaskSource(input.remoteTaskSource) : undefined
-    const task: PlanTask = { id: randomUUID(), title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource, calendarSource, remoteTaskSource }
-    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id, source_calendar_provider, source_calendar_event_id, source_task_provider, source_task_list_id, source_task_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null, task.calendarSource?.provider ?? null, task.calendarSource?.eventId ?? null, task.remoteTaskSource?.provider ?? null, task.remoteTaskSource?.taskListId ?? null, task.remoteTaskSource?.taskId ?? null)
+    const id = randomUUID()
+    const parentTaskId = input.parentTaskId ?? null
+    this.assertValidParentTask(id, parentTaskId)
+    const task: PlanTask = { id, title, notes: (input.notes ?? '').trim().slice(0, 2000), dueDate: normalizeDate(input.dueDate), remindAt: normalizeReminderAt(input.remindAt), priority, status: 'open', createdAt: now, updatedAt: now, completedAt: null, parentTaskId, sourceInboxId: input.sourceInboxId, sourceGoalId: input.sourceGoalId, emailSource, calendarSource, remoteTaskSource }
+    this.db.prepare('INSERT INTO tasks (id, title, notes, due_date, remind_at, reminder_notified_at, priority, status, created_at, updated_at, completed_at, parent_task_id, source_inbox_id, source_goal_id, source_email_provider, source_email_message_id, source_calendar_provider, source_calendar_event_id, source_task_provider, source_task_list_id, source_task_id) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(task.id, task.title, task.notes, task.dueDate, task.remindAt, task.priority, task.status, task.createdAt, task.updatedAt, null, task.parentTaskId, task.sourceInboxId ?? null, task.sourceGoalId ?? null, task.emailSource?.provider ?? null, task.emailSource?.messageId ?? null, task.calendarSource?.provider ?? null, task.calendarSource?.eventId ?? null, task.remoteTaskSource?.provider ?? null, task.remoteTaskSource?.taskListId ?? null, task.remoteTaskSource?.taskId ?? null)
     return task
   }
 
@@ -182,16 +186,18 @@ export class PlanningStore {
     }
   }
 
-  updateTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; status?: PlanTaskStatus }): PlanTask {
+  updateTask(id: string, patch: { title?: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; status?: PlanTaskStatus; parentTaskId?: string | null }): PlanTask {
     const current = this.getTask(id)
     const status = patch.status ?? current.status
     if (!['open', 'done', 'cancelled'].includes(status)) throw new Error('Choose a valid task status.')
-    const task: PlanTask = { ...current, title: patch.title === undefined ? current.title : patch.title.trim().slice(0, 240), notes: patch.notes === undefined ? current.notes : patch.notes.trim().slice(0, 2000), dueDate: patch.dueDate === undefined ? current.dueDate : normalizeDate(patch.dueDate), remindAt: patch.remindAt === undefined ? current.remindAt : normalizeReminderAt(patch.remindAt), priority: patch.priority ?? current.priority, status, updatedAt: new Date().toISOString(), completedAt: status === 'done' ? (current.completedAt ?? new Date().toISOString()) : null }
+    const parentTaskId = patch.parentTaskId === undefined ? current.parentTaskId : patch.parentTaskId
+    this.assertValidParentTask(id, parentTaskId)
+    const task: PlanTask = { ...current, title: patch.title === undefined ? current.title : patch.title.trim().slice(0, 240), notes: patch.notes === undefined ? current.notes : patch.notes.trim().slice(0, 2000), dueDate: patch.dueDate === undefined ? current.dueDate : normalizeDate(patch.dueDate), remindAt: patch.remindAt === undefined ? current.remindAt : normalizeReminderAt(patch.remindAt), priority: patch.priority ?? current.priority, status, parentTaskId, updatedAt: new Date().toISOString(), completedAt: status === 'done' ? (current.completedAt ?? new Date().toISOString()) : null }
     if (!task.title) throw new Error('A task needs a title.')
     const shouldResetReminder = task.remindAt !== current.remindAt || (status === 'open' && current.status !== 'open')
     const priorReminder = this.db.prepare('SELECT reminder_notified_at FROM tasks WHERE id = ?').get(id) as { reminder_notified_at: string | null }
     const reminderNotifiedAt = shouldResetReminder ? null : priorReminder.reminder_notified_at
-    this.db.prepare('UPDATE tasks SET title = ?, notes = ?, due_date = ?, remind_at = ?, reminder_notified_at = ?, priority = ?, status = ?, updated_at = ?, completed_at = ? WHERE id = ?').run(task.title, task.notes, task.dueDate, task.remindAt, reminderNotifiedAt, task.priority, task.status, task.updatedAt, task.completedAt, task.id)
+    this.db.prepare('UPDATE tasks SET title = ?, notes = ?, due_date = ?, remind_at = ?, reminder_notified_at = ?, priority = ?, status = ?, parent_task_id = ?, updated_at = ?, completed_at = ? WHERE id = ?').run(task.title, task.notes, task.dueDate, task.remindAt, reminderNotifiedAt, task.priority, task.status, task.parentTaskId, task.updatedAt, task.completedAt, task.id)
     return task
   }
 
@@ -340,9 +346,17 @@ export class PlanningStore {
     }
     return tasks.map((task) => ({ ...task, taskExports: byTask.get(task.id) ?? [] }))
   }
+
+  private assertValidParentTask(taskId: string, parentTaskId: string | null): void {
+    if (parentTaskId === null) return
+    if (parentTaskId === taskId) throw new Error('A task cannot be its own parent.')
+    const parent = this.db.prepare('SELECT id, parent_task_id FROM tasks WHERE id = ?').get(parentTaskId) as { id: string; parent_task_id: string | null } | undefined
+    if (!parent) throw new Error('Choose an existing parent task.')
+    if (parent.parent_task_id !== null) throw new Error('Subtasks cannot have their own subtasks.')
+  }
 }
 
-function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined, calendarSource: isCalendarTaskProvider(row.source_calendar_provider) && row.source_calendar_event_id ? { provider: row.source_calendar_provider, eventId: row.source_calendar_event_id } : undefined, remoteTaskSource: isRemoteTaskProvider(row.source_task_provider) && row.source_task_list_id && row.source_task_id ? { provider: row.source_task_provider, taskListId: row.source_task_list_id, taskId: row.source_task_id } : undefined } }
+function taskFromRow(row: TaskRow): PlanTask { return { id: row.id, title: row.title, notes: row.notes, dueDate: row.due_date, remindAt: row.remind_at, priority: row.priority, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at, completedAt: row.completed_at, parentTaskId: row.parent_task_id, sourceInboxId: row.source_inbox_id ?? undefined, sourceGoalId: row.source_goal_id ?? undefined, emailSource: isEmailTaskProvider(row.source_email_provider) && row.source_email_message_id ? { provider: row.source_email_provider, messageId: row.source_email_message_id } : undefined, calendarSource: isCalendarTaskProvider(row.source_calendar_provider) && row.source_calendar_event_id ? { provider: row.source_calendar_provider, eventId: row.source_calendar_event_id } : undefined, remoteTaskSource: isRemoteTaskProvider(row.source_task_provider) && row.source_task_list_id && row.source_task_id ? { provider: row.source_task_provider, taskListId: row.source_task_list_id, taskId: row.source_task_id } : undefined } }
 function inboxFromRow(row: InboxRow): InboxItem { return { id: row.id, text: row.text, createdAt: row.created_at, convertedTaskId: row.converted_task_id, dismissedAt: row.dismissed_at } }
 function normalizeEmailTaskSource(source: EmailTaskSource): EmailTaskSource {
   if (!isEmailTaskProvider(source.provider)) throw new Error('Choose Gmail or Outlook as the email source.')
