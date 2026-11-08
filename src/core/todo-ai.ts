@@ -93,7 +93,7 @@ export async function suggestSubtasks(
 
 export async function suggestTodayPlan(
   provider: Provider,
-  tasks: PlanTask[],
+  tasks: Array<Pick<PlanTask, 'id' | 'title' | 'dueDate' | 'priority'>>,
   context: TodoAiContext
 ): Promise<TodayPlanSuggestion> {
   if (tasks.length > 30) throw new Error('Daily planning supports up to 30 tasks at a time.')

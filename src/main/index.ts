@@ -107,6 +107,7 @@ import { ElectronBrowserAutomation } from './browser'
 import { LocalApiServer, type LocalApiRunnerInput } from './local-api-server'
 import { SystemTrayManager, shouldMinimizeToTrayOnClose } from './tray'
 import { registerDomainIpcHandlers } from './ipc/domain-handlers'
+import { registerTodoAiIpcHandlers } from './ipc/todo-ai-handlers'
 
 app.setName('Mike Assist')
 nativeTheme.themeSource = 'dark'
@@ -1195,6 +1196,12 @@ function registerIpc(): void {
       directToolBusy = busy
     },
     errorMessage
+  })
+
+  registerTodoAiIpcHandlers({
+    ipcMain,
+    getProviderSettings: () => settings?.get().provider ?? null,
+    createProvider: (config, role) => providerFrom(config, role)
   })
 
   ipcMain.handle('assist:workflow-run', async (_event, payload: unknown) => {

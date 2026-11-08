@@ -89,6 +89,9 @@ const api: AssistApi = {
 
   getToday: (date?: string) => ipcRenderer.invoke('assist:today', date),
   getPlanTasks: (includeCompleted?: boolean) => ipcRenderer.invoke('assist:plan-tasks', includeCompleted),
+  suggestTaskDraft: (text, context) => ipcRenderer.invoke('assist:todo-ai-draft', text, context),
+  suggestTaskSubtasks: (task) => ipcRenderer.invoke('assist:todo-ai-subtasks', task),
+  suggestTodayPlan: (tasks, context) => ipcRenderer.invoke('assist:todo-ai-plan', tasks, context),
   exportTodayTasksCalendar: () => ipcRenderer.invoke('assist:today-calendar-export'),
   addPlanTask: (input) => ipcRenderer.invoke('assist:plan-task-add', input),
   importPlanTask: (input) => ipcRenderer.invoke('assist:plan-task-import', input),
