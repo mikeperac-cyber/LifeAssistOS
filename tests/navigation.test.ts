@@ -3,17 +3,15 @@ import {
   DEFAULT_SIDEBAR_SHORTCUTS,
   filterNavigationGroups,
   NAV_GROUPS,
+  normalizeView,
   normalizeSidebarShortcuts,
-  resolveIntegrationTargetView,
   normalizeSidebarVisibility,
   readSidebarVisibility,
   SIDEBAR_VISIBILITY_STORAGE_KEY,
-  resolveSettingsSection,
   shouldHandleNavigationShortcut,
   shouldHandleQuickCaptureShortcut,
   VIEW_META
 } from '../src/renderer/src/navigation'
-import { searchNavigationViews } from '../src/renderer/src/global-search'
 
 const shortcut = {
   key: 'k',
@@ -25,6 +23,19 @@ const shortcut = {
 }
 
 describe('navigation', () => {
+  it('test_navigation_exposes_only_tasks_and_settings', () => {
+    expect(Object.keys(VIEW_META)).toEqual(['tasks', 'settings'])
+    expect(NAV_GROUPS.flatMap((group) => group.items)).toEqual(['tasks', 'settings'])
+    expect(normalizeView(undefined)).toBe('tasks')
+  })
+
+  it('test_legacy_view_ids_fall_back_to_tasks', () => {
+    for (const route of ['chat', 'today', 'work', 'email', 'coach', 'scheduled', 'research', 'vault', 'cloud_files', 'teaching', 'integrations', 'activity', 'finances', 'workflows', 'skills', 'unknown']) {
+      expect(normalizeView(route)).toBe('tasks')
+    }
+    expect(normalizeView('settings')).toBe('settings')
+  })
+
   it('normalizes saved sidebar visibility and defaults invalid values to open', () => {
     expect(normalizeSidebarVisibility('closed')).toBe('closed')
     expect(normalizeSidebarVisibility('open')).toBe('open')
@@ -48,43 +59,15 @@ describe('navigation', () => {
     expect(new Set(items).size).toBe(items.length)
   })
 
-  it('defaults to task, work, and workflow shortcuts and safely normalizes saved choices', () => {
-    expect(DEFAULT_SIDEBAR_SHORTCUTS).toEqual(['today', 'work', 'workflows'])
-    expect(normalizeSidebarShortcuts(['email', 'today', 'email', 'missing', 'vault', 'settings'])).toEqual([
-      'email', 'today', 'vault', 'settings'
-    ])
+  it('defaults quick access to Tasks and normalizes saved choices', () => {
+    expect(DEFAULT_SIDEBAR_SHORTCUTS).toEqual(['tasks'])
+    expect(normalizeSidebarShortcuts(['settings', 'tasks', 'settings', 'missing'])).toEqual(['settings', 'tasks'])
     expect(normalizeSidebarShortcuts(null)).toEqual(DEFAULT_SIDEBAR_SHORTCUTS)
   })
 
-  it('routes Memory integration targets to Settings', () => {
-    expect(resolveIntegrationTargetView('memory')).toBe('settings')
-  })
-
-  it('opens Memory destinations as a Settings section', () => {
-    expect(resolveSettingsSection('memory')).toBe('memory')
-    expect(resolveSettingsSection('settings')).toBe('general')
-  })
-
-  it('does not expose Memory as a standalone navigation view', () => {
-    expect(Object.hasOwn(VIEW_META, 'memory')).toBe(false)
-    expect(NAV_GROUPS.flatMap((group) => group.items)).not.toContain('memory')
-  })
-
-  it('drops a saved standalone Memory shortcut after the navigation move', () => {
-    expect(normalizeSidebarShortcuts(['memory', 'email'])).toEqual(['email'])
-  })
-
-  it('finds the Work hub in global navigation search', () => {
-    expect(searchNavigationViews('work')).toContain('work')
-  })
-
-  it('prefers direct section matches over a matching group label', () => {
-    expect(filterNavigationGroups('work').flatMap((group) => group.items)).toEqual(['work', 'workflows'])
-    expect(filterNavigationGroups('workspace').flatMap((group) => group.items)).toEqual(['chat', 'today', 'work', 'coach'])
-  })
-
-  it('finds Tasks by the name used in quick access', () => {
-    expect(filterNavigationGroups('tasks').flatMap((group) => group.items)).toEqual(['today'])
+  it('finds task and settings destinations in navigation search', () => {
+    expect(filterNavigationGroups('tasks').flatMap((group) => group.items)).toEqual(['tasks'])
+    expect(filterNavigationGroups('settings').flatMap((group) => group.items)).toEqual(['settings'])
   })
 
   it('keeps the global navigation shortcut out of editors and dialogs', () => {

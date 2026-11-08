@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { AuditEvent, AuditType } from '../src/shared/types'
 import { describeEvent } from '../src/renderer/src/components/ActivityView'
 import { summarizeEvent } from '../src/renderer/src/components/AuditView'
-import { resolveIntegrationTargetView } from '../src/renderer/src/components/IntegrationsView'
 
 const ALL_AUDIT_TYPES: AuditType[] = [
   'chat.message',
@@ -133,23 +132,6 @@ function sampleEvent(type: AuditType): AuditEvent {
     }
   }
 }
-
-describe('IntegrationsView routing', () => {
-  it('routes both finance and finances card ids to the finances view', () => {
-    expect(resolveIntegrationTargetView('finances')).toBe('finances')
-    expect(resolveIntegrationTargetView('finance')).toBe('finances')
-    expect(resolveIntegrationTargetView('helper')).toBe('chat')
-    expect(resolveIntegrationTargetView('research')).toBe('research')
-    expect(resolveIntegrationTargetView('today')).toBe('today')
-    expect(resolveIntegrationTargetView('email')).toBe('email')
-    expect(resolveIntegrationTargetView('cloud_files')).toBe('cloud_files')
-    expect(resolveIntegrationTargetView('vault')).toBe('vault')
-    expect(resolveIntegrationTargetView('files')).toBe('settings')
-    expect(resolveIntegrationTargetView('mcp')).toBe('settings')
-    expect(resolveIntegrationTargetView('notion')).toBe('settings')
-    expect(resolveIntegrationTargetView('github')).toBe('settings')
-  })
-})
 
 describe('ActivityView and AuditView event formatters', () => {
   it('describes every AuditType with a human-friendly sentence rather than raw dot-key', () => {
