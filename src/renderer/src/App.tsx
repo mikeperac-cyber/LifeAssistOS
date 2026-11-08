@@ -20,7 +20,6 @@ export default function App(): React.JSX.Element {
   const [settingsError, setSettingsError] = useState('')
   const [quickCaptureOpen, setQuickCaptureOpen] = useState(false)
   const [taskRefreshVersion, setTaskRefreshVersion] = useState(0)
-  const [appWarning, setAppWarning] = useState('')
 
   const loadSettings = useCallback(async (): Promise<void> => {
     setSettingsLoading(true)
@@ -39,7 +38,6 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const unsubscribe = window.assist.onEvent((event) => {
       if (event.type === 'quick_capture_requested') setQuickCaptureOpen(true)
-      else if (event.type === 'warning') setAppWarning(event.message)
       else if (event.type === 'today_changed') setTaskRefreshVersion((version) => version + 1)
     })
     return unsubscribe
@@ -101,7 +99,6 @@ export default function App(): React.JSX.Element {
           </div>
         </header>
 
-        {appWarning && <p className="startup-load-notice has-error" role="alert">{appWarning}</p>}
         {view === 'tasks' && (
           <TodoView
             refreshVersion={taskRefreshVersion}

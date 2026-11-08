@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "author": "Mike Assist",
-  "description": "A local-first, permission-gated desktop AI assistant.",
+  "description": "A local-first to-do app with optional AI task planning.",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -18,10 +18,6 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "ajv": "^8.20.0",
-    "google-auth-library": "^11.3.2",
-    "pdfjs-dist": "6.5.438",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "zod": "^4.6.7"
@@ -46,10 +42,6 @@
     },
     "extraResources": [
       {
-        "from": "src/tools/code-runner-worker.cjs",
-        "to": "code-runner-worker.cjs"
-      },
-      {
         "from": "resources/app-icon.png",
         "to": "app-icon.png"
       }
@@ -62,15 +54,7 @@
     "files": [
       "out/**/*",
       "package.json",
-      "!**/*.map",
-      "!node_modules/pdfjs-dist/build/**",
-      "!node_modules/pdfjs-dist/web/**",
-      "!node_modules/pdfjs-dist/types/**",
-      "!node_modules/pdfjs-dist/wasm/**",
-      "!node_modules/pdfjs-dist/legacy/web/**",
-      "!node_modules/pdfjs-dist/legacy/build/*.min.mjs",
-      "!node_modules/pdfjs-dist/legacy/build/pdf.renderer.*",
-      "!node_modules/pdfjs-dist/legacy/build/pdf.sandbox.*"
+      "!**/*.map"
     ],
     "asar": true,
     "win": {

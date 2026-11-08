@@ -1,5 +1,0 @@
-import { TEACHING_PACKS, type TeachingPack } from '../../../shared/teaching'
-
-export function TeachingView({ onStart }: { onStart: (pack: TeachingPack) => void }): React.JSX.Element {
-  return <div className="teaching-view"><div className="teaching-header"><div><span className="eyebrow">LB English · Denizli</span><h2>Teaching packs</h2><p>Reusable lesson frames for IELTS Academic and practical English teaching. Start with a pack, then adapt it in chat.</p></div><span className="teaching-count">{TEACHING_PACKS.length} packs</span></div><div className="teaching-grid">{TEACHING_PACKS.map((pack) => <article className="teaching-card" key={pack.id}><div className="teaching-card-top"><span className={`teaching-skill skill-${pack.skill}`}>{pack.skill}</span><span>{pack.level}</span></div><h3>{pack.title}</h3><p>{pack.description}</p><ol>{pack.steps.map((step) => <li key={step}>{step}</li>)}</ol><button className="primary-button" type="button" onClick={() => onStart(pack)}>Start in chat</button></article>)}</div></div>
-}

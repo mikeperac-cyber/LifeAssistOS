@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_SIDEBAR_SHORTCUTS,
-  filterNavigationGroups,
   NAV_GROUPS,
   normalizeView,
-  normalizeSidebarShortcuts,
   normalizeSidebarVisibility,
   readSidebarVisibility,
   SIDEBAR_VISIBILITY_STORAGE_KEY,
-  shouldHandleNavigationShortcut,
   shouldHandleQuickCaptureShortcut,
   VIEW_META
 } from '../src/renderer/src/navigation'
@@ -57,27 +53,6 @@ describe('navigation', () => {
     const items = NAV_GROUPS.flatMap((group) => group.items)
     expect([...items].sort()).toEqual(Object.keys(VIEW_META).sort())
     expect(new Set(items).size).toBe(items.length)
-  })
-
-  it('defaults quick access to Tasks and normalizes saved choices', () => {
-    expect(DEFAULT_SIDEBAR_SHORTCUTS).toEqual(['tasks'])
-    expect(normalizeSidebarShortcuts(['settings', 'tasks', 'settings', 'missing'])).toEqual(['settings', 'tasks'])
-    expect(normalizeSidebarShortcuts(null)).toEqual(DEFAULT_SIDEBAR_SHORTCUTS)
-  })
-
-  it('finds task and settings destinations in navigation search', () => {
-    expect(filterNavigationGroups('tasks').flatMap((group) => group.items)).toEqual(['tasks'])
-    expect(filterNavigationGroups('settings').flatMap((group) => group.items)).toEqual(['settings'])
-  })
-
-  it('keeps the global navigation shortcut out of editors and dialogs', () => {
-    expect(shouldHandleNavigationShortcut(shortcut)).toBe(true)
-    expect(shouldHandleNavigationShortcut({ ...shortcut, metaKey: true, ctrlKey: false })).toBe(true)
-    expect(shouldHandleNavigationShortcut(shortcut, true)).toBe(false)
-    expect(shouldHandleNavigationShortcut({ ...shortcut, defaultPrevented: true })).toBe(false)
-    expect(shouldHandleNavigationShortcut({ ...shortcut, shiftKey: true })).toBe(false)
-    expect(shouldHandleNavigationShortcut({ ...shortcut, altKey: true })).toBe(false)
-    expect(shouldHandleNavigationShortcut({ ...shortcut, key: 'x' })).toBe(false)
   })
 
   it('keeps quick capture on its own shortcut and out of editors and dialogs', () => {

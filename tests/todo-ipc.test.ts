@@ -30,18 +30,7 @@ describe('todo task IPC', () => {
     } as unknown as IpcMain
     const context = {
       ipcMain,
-      getGateway: () => null,
-      getResearch: () => null,
-      getVault: () => null,
       getPlanning: () => planning,
-      getCoaching: () => null,
-      getWorkflows: () => null,
-      getScheduledTasks: () => null,
-      getScheduledTaskScheduler: () => null,
-      getSkills: () => null,
-      appendAuditAfterMutation: async () => true,
-      hasRunningAssistantTask: () => false,
-      setDirectToolBusy: () => undefined,
       errorMessage: (error: unknown) => error instanceof Error ? error.message : String(error)
     } as DomainIpcContext
     registerDomainIpcHandlers(context)

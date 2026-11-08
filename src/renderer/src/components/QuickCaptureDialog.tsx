@@ -40,7 +40,7 @@ export function QuickCaptureDialog({ open, onClose, onCaptured }: { open: boolea
       onCaptured?.()
       if (dialogRef.current?.open) {
         setDraft('')
-        setSaved('Saved to your Today inbox.')
+        setSaved('Saved to your Inbox.')
         requestAnimationFrame(() => inputRef.current?.focus())
       }
     } catch (cause) {
@@ -63,7 +63,7 @@ export function QuickCaptureDialog({ open, onClose, onCaptured }: { open: boolea
       <div className="quick-capture-content">
         <div className="quick-capture-header">
           <div>
-            <span className="eyebrow">Today inbox</span>
+            <span className="eyebrow">Inbox</span>
             <h2 id="quick-capture-title">Quick capture</h2>
           </div>
           <button type="button" className="ghost-button" onClick={onClose} aria-label="Close quick capture">Close</button>
@@ -96,7 +96,7 @@ export function QuickCaptureDialog({ open, onClose, onCaptured }: { open: boolea
           <div className="quick-capture-footer">
             <span className="quick-capture-hint"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to save</span>
             <button className="primary-button" type="submit" disabled={busy || !draft.trim()}>
-              {busy ? 'Saving…' : 'Save to Today'}
+              {busy ? 'Saving…' : 'Save to Inbox'}
             </button>
           </div>
         </form>

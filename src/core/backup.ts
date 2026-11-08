@@ -1,92 +1,22 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
-import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { AuditLog } from './audit/log'
-import type { ConversationStore } from './conversations'
-import type { FinanceStore } from './finance'
-import type { MemoryStore } from './memory'
-import type { ResearchStore } from './research'
-import type { VaultStore } from './vault'
 import type { PlanningStore } from './planning'
-import type { CoachingStore } from './coaching'
-import type { FileCheckpointStore } from './file-checkpoints'
-import { isPathInside } from '../tools/paths'
 
-const DATA_FILES = [
-  'settings.json',
-  'grants.json',
-  'allowed-domains.json',
-  'speech.json',
-  'workflows.json',
-  'skills.json'
-]
-const OPTIONAL_DATA_FILES = [
-  'mcp-servers.json',
-  'web-search.json',
-  'notion.json',
-  'google-calendar.json',
-  'google-gmail.json',
-  'google-drive.json',
-  'google-tasks.json',
-  'microsoft-todo.json',
-  'microsoft-calendar.json',
-  'microsoft-mail.json',
-  'microsoft-onedrive.json',
+const TASK_FILES = ['settings.json', 'planning.sqlite'] as const
+const LEGACY_FILES = new Set([
+  ...TASK_FILES, 'conversations.sqlite', 'finance.sqlite', 'memory.sqlite', 'research.sqlite', 'vault.sqlite',
+  'coaching.sqlite', 'file-checkpoints.sqlite', 'grants.json', 'allowed-domains.json', 'speech.json',
+  'workflows.json', 'skills.json', 'mcp-servers.json', 'web-search.json', 'notion.json',
+  'google-calendar.json', 'google-gmail.json', 'google-drive.json', 'google-tasks.json',
+  'microsoft-todo.json', 'microsoft-calendar.json', 'microsoft-mail.json', 'microsoft-onedrive.json',
   'scheduled-tasks.json'
-]
-const OPTIONAL_DATABASE_FILES = [
-  'research.sqlite',
-  'vault.sqlite',
-  'planning.sqlite',
-  'coaching.sqlite',
-  'file-checkpoints.sqlite'
-]
-const BACKUP_ROOT_FILES = new Set([
-  'conversations.sqlite',
-  'finance.sqlite',
-  'memory.sqlite',
-  'research.sqlite',
-  'vault.sqlite',
-  'planning.sqlite',
-  'coaching.sqlite',
-  'file-checkpoints.sqlite',
-  ...DATA_FILES,
-  ...OPTIONAL_DATA_FILES
 ])
-const REQUIRED_BACKUP_ENTRIES = [
-  'conversations.sqlite',
-  'finance.sqlite',
-  'memory.sqlite',
-  'settings.json',
-  'grants.json',
-  'allowed-domains.json',
-  'audit/'
-]
-const RESTORE_PENDING_PREFIX = '.mike-assist-restore-pending-'
-const RESTORE_COMMITTED_PREFIX = '.mike-assist-restore-committed-'
-const RESTORE_TRANSACTION_FILE = 'transaction.json'
-const RESTORABLE_ENTRIES = [...BACKUP_ROOT_FILES, 'audit/']
-const REQUIRED_DATABASE_TABLES: Record<string, string> = {
-  'conversations.sqlite': 'chat_messages',
-  'finance.sqlite': 'transactions',
-  'memory.sqlite': 'memory_facts',
-  'research.sqlite': 'projects',
-  'vault.sqlite': 'documents',
-  'planning.sqlite': 'tasks',
-  'coaching.sqlite': 'goals',
-  'file-checkpoints.sqlite': 'file_checkpoints'
-}
-
-export interface BackupExtras {
-  research?: ResearchStore
-  vault?: VaultStore
-  planning?: PlanningStore
-  coaching?: CoachingStore
-  fileCheckpoints?: FileCheckpointStore
-  passphrase?: string
-}
+const PENDING = '.mike-assist-restore-pending-'
+const COMMITTED = '.mike-assist-restore-committed-'
+const TRANSACTION_FILE = 'transaction.json'
 
 export interface BackupManifest {
   formatVersion: number
@@ -105,21 +35,9 @@ export interface BackupVerification {
   error?: string
 }
 
-interface EncryptedArchiveEnvelope {
-  salt: string
-  iv: string
-  tag: string
-  ciphertext: string
-}
-
-interface ArchivePayload {
-  files: Record<string, string>
-}
-
-interface RestoreTransactionManifest {
-  version: 1
-  previousEntries: string[]
-}
+interface EncryptedEnvelope { salt: string; iv: string; tag: string; ciphertext: string }
+interface ArchivePayload { files: Record<string, string> }
+interface RestoreManifest { version: 1 | 2; previousEntries: string[]; entries?: string[] }
 
 export class BackupRestoreRestartRequiredError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -128,102 +46,49 @@ export class BackupRestoreRestartRequiredError extends Error {
   }
 }
 
-/** Writes an atomic, consistent directory snapshot of the app's durable data. */
+/** Writes a portable snapshot of the current focused app data. */
 export async function createBackupSnapshot(
   userDataDir: string,
   destination: string,
-  conversations: ConversationStore,
-  finance: FinanceStore,
-  memory: MemoryStore,
+  planning: PlanningStore,
   appVersion: string,
-  extras?: BackupExtras
+  options?: { settingsFile?: string; passphrase?: string }
 ): Promise<void> {
   const source = path.resolve(userDataDir)
   const target = path.resolve(destination)
-  if (isPathInside(source, target)) {
-    throw new Error('Choose a backup location outside Mike Assist app data.')
-  }
+  if (isInside(source, target)) throw new Error('Choose a backup location outside Mike Assist app data.')
+  const stage = `${target}.tmp-${randomBytes(8).toString('hex')}`
+  const passphrase = options?.passphrase?.trim() ?? ''
 
-  const passphrase = extras?.passphrase?.trim() ?? ''
-  const encrypted = passphrase.length > 0
-
-  let created = false
   try {
-    await mkdir(target)
-    created = true
-    const stageDir = encrypted ? path.join(target, '.staging') : target
-    if (encrypted) await mkdir(stageDir, { recursive: true })
+    await mkdir(path.dirname(target), { recursive: true })
+    await mkdir(stage)
+    const settingsFile = path.resolve(options?.settingsFile ?? path.join(source, 'settings.json'))
+    if (!isInside(source, settingsFile) || path.basename(settingsFile) !== 'settings.json') {
+      throw new Error('The settings file must be inside Mike Assist app data.')
+    }
+    await copyRegularFile(settingsFile, path.join(stage, 'settings.json'))
+    await planning.backupTo(path.join(stage, 'planning.sqlite'))
 
-    await conversations.backupTo(path.join(stageDir, 'conversations.sqlite'))
-    await finance.backupTo(path.join(stageDir, 'finance.sqlite'))
-    await memory.backupTo(path.join(stageDir, 'memory.sqlite'))
-    const extraBackups: string[] = []
-    if (extras?.research) {
-      await extras.research.backupTo(path.join(stageDir, 'research.sqlite'))
-      extraBackups.push('research.sqlite')
-    }
-    if (extras?.vault) {
-      await extras.vault.backupTo(path.join(stageDir, 'vault.sqlite'))
-      extraBackups.push('vault.sqlite')
-    }
-    if (extras?.planning) {
-      await extras.planning.backupTo(path.join(stageDir, 'planning.sqlite'))
-      extraBackups.push('planning.sqlite')
-    }
-    if (extras?.coaching) {
-      await extras.coaching.backupTo(path.join(stageDir, 'coaching.sqlite'))
-      extraBackups.push('coaching.sqlite')
-    }
-    if (extras?.fileCheckpoints) {
-      await extras.fileCheckpoints.backupTo(path.join(stageDir, 'file-checkpoints.sqlite'))
-      extraBackups.push('file-checkpoints.sqlite')
-    }
-    await Promise.all(
-      DATA_FILES.map((name) => copyFile(path.join(source, name), path.join(stageDir, name)))
-    )
-    const optionalFiles: string[] = []
-    for (const name of OPTIONAL_DATA_FILES) {
-      try {
-        await copyFile(path.join(source, name), path.join(stageDir, name))
-        optionalFiles.push(name)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
-    }
-    await cp(path.join(source, 'audit'), path.join(stageDir, 'audit'), { recursive: true })
-
-    const includes = [
-      'conversations.sqlite',
-      'finance.sqlite',
-      'memory.sqlite',
-      ...extraBackups,
-      ...DATA_FILES,
-      ...optionalFiles,
-      'audit/'
-    ]
-
-    if (encrypted) {
-      const files = await collectFilesRecursively(stageDir, stageDir)
-      await rm(stageDir, { recursive: true, force: true })
-      const envelope = encryptArchive({ files }, passphrase)
-      await writeFile(path.join(target, 'archive.enc'), JSON.stringify(envelope, null, 2), 'utf8')
+    if (passphrase) {
+      const files: Record<string, string> = {}
+      for (const name of TASK_FILES) files[name] = (await readFile(path.join(stage, name))).toString('base64')
+      await rm(path.join(stage, 'settings.json'))
+      await rm(path.join(stage, 'planning.sqlite'))
+      await writeFile(path.join(stage, 'archive.enc'), `${JSON.stringify(encryptArchive({ files }, passphrase), null, 2)}\n`, { flag: 'wx', mode: 0o600 })
     }
 
     const manifest: BackupManifest = {
-      formatVersion: 1,
+      formatVersion: 2,
       appVersion,
       createdAt: new Date().toISOString(),
-      ...(encrypted ? { encrypted: true } : {}),
-      includes
+      ...(passphrase ? { encrypted: true } : {}),
+      includes: [...TASK_FILES]
     }
-
-    await writeFile(
-      path.join(target, 'manifest.json'),
-      `${JSON.stringify(manifest, null, 2)}\n`,
-      'utf8'
-    )
+    await writeFile(path.join(stage, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    await rename(stage, target)
   } catch (error) {
-    if (created) await rm(target, { recursive: true, force: true }).catch(() => undefined)
+    await rm(stage, { recursive: true, force: true }).catch(() => undefined)
     throw error
   }
 }
@@ -232,175 +97,48 @@ export async function verifyBackupSnapshot(
   backupDir: string,
   options?: { passphrase?: string }
 ): Promise<BackupVerification> {
-  const target = path.resolve(backupDir)
+  const source = path.resolve(backupDir)
   let manifest: BackupManifest
   try {
-    const raw = await readFile(path.join(target, 'manifest.json'), 'utf8')
-    const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { valid: false, encrypted: false, error: 'Missing or invalid manifest.json in backup folder.' }
-    }
-    manifest = parsed as BackupManifest
-  } catch {
-    return { valid: false, encrypted: false, error: 'Missing or invalid manifest.json in backup folder.' }
-  }
+    const value: unknown = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8'))
+    if (!isRecord(value)) return invalid('Missing or invalid manifest.json in backup folder.')
+    manifest = value as unknown as BackupManifest
+  } catch { return invalid('Missing or invalid manifest.json in backup folder.') }
+  if (!isValidManifest(manifest)) return invalid('Unsupported or incomplete backup manifest.', Boolean(manifest.encrypted))
 
-  if (
-    manifest.formatVersion !== 1 ||
-    typeof manifest.appVersion !== 'string' ||
-    typeof manifest.createdAt !== 'string' ||
-    manifest.encrypted !== undefined && typeof manifest.encrypted !== 'boolean' ||
-    !isValidManifestIncludes(manifest.includes)
-  ) {
-    return { valid: false, encrypted: Boolean(manifest.encrypted), error: 'Unsupported or incomplete backup manifest.' }
+  const metadata = {
+    encrypted: Boolean(manifest.encrypted), appVersion: manifest.appVersion,
+    createdAt: manifest.createdAt, includes: manifest.includes
   }
-
-  const encrypted = Boolean(manifest.encrypted)
-  if (encrypted) {
+  if (metadata.encrypted) {
     const passphrase = options?.passphrase?.trim() ?? ''
-    if (!passphrase) {
-      return {
-        valid: false,
-        encrypted: true,
-        appVersion: manifest.appVersion,
-        createdAt: manifest.createdAt,
-        includes: manifest.includes,
-        error: 'A passphrase is required to unlock this encrypted backup.'
-      }
-    }
+    if (!passphrase) return { valid: false, ...metadata, error: 'A passphrase is required to unlock this encrypted backup.' }
     try {
-      const rawEnvelope = await readFile(path.join(target, 'archive.enc'), 'utf8')
-      const envelope = JSON.parse(rawEnvelope) as EncryptedArchiveEnvelope
+      const envelope = JSON.parse(await readFile(path.join(source, 'archive.enc'), 'utf8')) as EncryptedEnvelope
       const payload = decryptArchive(envelope, passphrase)
-      if (
-        !payload ||
-        typeof payload.files !== 'object' ||
-        payload.files === null ||
-        Array.isArray(payload.files)
-      ) {
-        return {
-          valid: false,
-          encrypted: true,
-          error: 'Encrypted backup archive has an invalid file list.'
-        }
-      }
-      for (const [relPath, base64Data] of Object.entries(payload.files)) {
-        if (!isAllowedArchiveFile(relPath, manifest.includes) || typeof base64Data !== 'string' ||
-          Buffer.from(base64Data, 'base64').toString('base64') !== base64Data) {
-          return {
-            valid: false,
-            encrypted: true,
-            error: 'Encrypted backup contains an unsafe or unexpected entry.'
-          }
-        }
-      }
-      for (const item of manifest.includes) {
-        if (item === 'audit/') continue
-        if (!(item in payload.files)) {
-          return {
-            valid: false,
-            encrypted: true,
-            error: `Encrypted backup is missing expected file: ${item}`
-          }
-        }
-      }
-      const contentError = await verifyEncryptedContents(payload.files, manifest.includes)
-      if (contentError) {
-        return {
-          valid: false,
-          encrypted: true,
-          appVersion: manifest.appVersion,
-          createdAt: manifest.createdAt,
-          includes: manifest.includes,
-          error: contentError
-        }
-      }
-      return {
-        valid: true,
-        encrypted: true,
-        appVersion: manifest.appVersion,
-        createdAt: manifest.createdAt,
-        includes: manifest.includes
-      }
-    } catch {
-      return {
-        valid: false,
-        encrypted: true,
-        appVersion: manifest.appVersion,
-        createdAt: manifest.createdAt,
-        includes: manifest.includes,
-        error: 'Could not decrypt backup archive. Check your passphrase.'
-      }
-    }
-  }
-
-  for (const item of manifest.includes) {
-    const checkPath = item === 'audit/' ? path.join(target, 'audit') : path.join(target, item)
-    try {
-      const info = await lstat(checkPath)
-      if (info.isSymbolicLink() || (item === 'audit/' ? !info.isDirectory() : !info.isFile())) {
-        throw new Error('Backup entry has an unexpected file type.')
-      }
-      if (item === 'audit/') {
-        const entries = await readdir(checkPath, { withFileTypes: true })
-        if (entries.some((entry) => !entry.isFile() || !isAuditFileName(entry.name))) {
-          throw new Error('Backup audit folder contains an unsupported entry.')
-        }
-      }
-      if (item.endsWith('.sqlite')) {
-        try {
-          verifySqliteFile(checkPath)
-        } catch {
-          return {
-            valid: false,
-            encrypted: false,
-            appVersion: manifest.appVersion,
-            createdAt: manifest.createdAt,
-            includes: manifest.includes,
-            error: `Backup database failed its SQLite integrity check: ${item}`
-          }
-        }
-      }
-    } catch {
-      return {
-        valid: false,
-        encrypted: false,
-        appVersion: manifest.appVersion,
-        createdAt: manifest.createdAt,
-        includes: manifest.includes,
-        error: `Backup is missing required entry: ${item}`
-      }
+      validateArchiveFiles(payload, manifest)
+      const contentError = await verifyEncryptedContents(payload.files)
+      return contentError ? { valid: false, ...metadata, error: contentError } : { valid: true, ...metadata }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Backup')) return { valid: false, ...metadata, error: error.message }
+      return { valid: false, ...metadata, error: 'Could not decrypt backup archive. Check your passphrase.' }
     }
   }
 
   try {
-    const audit = new AuditLog(path.join(target, 'audit'), 'backup-verify')
-    await audit.init()
-    const integrity = audit.getIntegrity()
-    if (!integrity.valid) {
-      return {
-        valid: false,
-        encrypted: false,
-        appVersion: manifest.appVersion,
-        createdAt: manifest.createdAt,
-        includes: manifest.includes,
-        error: 'Backup audit log failed hash-chain integrity verification.'
+    for (const name of manifest.includes) {
+      const item = name === 'audit/' ? path.join(source, 'audit') : path.join(source, name)
+      const info = await lstat(item)
+      if (info.isSymbolicLink() || (name === 'audit/' ? !info.isDirectory() : !info.isFile())) {
+        return { valid: false, ...metadata, error: `Backup is missing required entry: ${name}` }
       }
     }
+    const settingsError = await verifySettingsFile(path.join(source, 'settings.json'))
+    if (settingsError) return { valid: false, ...metadata, error: settingsError }
+    if (manifest.includes.includes('planning.sqlite')) verifySqliteFile(path.join(source, 'planning.sqlite'))
+    return { valid: true, ...metadata }
   } catch (error) {
-    return {
-      valid: false,
-      encrypted: false,
-      error: error instanceof Error ? error.message : String(error)
-    }
-  }
-
-  return {
-    valid: true,
-    encrypted: false,
-    appVersion: manifest.appVersion,
-    createdAt: manifest.createdAt,
-    includes: manifest.includes
+    return { valid: false, ...metadata, error: error instanceof Error ? error.message : 'Backup contents could not be validated.' }
   }
 }
 
@@ -415,99 +153,35 @@ export async function restoreBackupSnapshot(
 ): Promise<{ restoredFiles: string[] }> {
   const source = path.resolve(backupDir)
   const destination = path.resolve(userDataDir)
-  if (isPathInside(destination, source)) {
-    throw new Error('Cannot restore from a folder inside Mike Assist app data.')
-  }
-
+  if (isInside(destination, source)) throw new Error('Cannot restore from a folder inside Mike Assist app data.')
   const verification = await verifyBackupSnapshot(source, { passphrase: options?.passphrase })
-  if (!verification.valid || !verification.includes) {
-    throw new Error(verification.error ?? 'Backup verification failed.')
-  }
+  if (!verification.valid || !verification.includes) throw new Error(verification.error ?? 'Backup verification failed.')
+  const files = await readRestorableFiles(source, verification, options?.passphrase)
 
-  const restoredFiles: string[] = []
   let transactionDir: string | undefined
   let recoveryRequired = false
   let restoreError: unknown
   try {
     await options?.closeStores?.()
     await mkdir(destination, { recursive: true })
-    transactionDir = await createRestoreTransaction(destination)
-
-    if (verification.encrypted) {
-      const rawEnvelope = await readFile(path.join(source, 'archive.enc'), 'utf8')
-      const envelope = JSON.parse(rawEnvelope) as EncryptedArchiveEnvelope
-      const payload = decryptArchive(envelope, options!.passphrase!.trim())
-      if (!payload || typeof payload.files !== 'object' || payload.files === null || Array.isArray(payload.files)) {
-        throw new Error('Encrypted backup archive has an invalid file list.')
+    transactionDir = await createRestoreTransaction(destination, Object.keys(files))
+    for (const [name, bytes] of Object.entries(files)) {
+      const target = path.join(destination, name)
+      if (name === 'planning.sqlite') {
+        await rm(`${target}-wal`, { force: true })
+        await rm(`${target}-shm`, { force: true })
       }
-      const archiveEntries = Object.entries(payload.files)
-      if (archiveEntries.some(([relPath, base64Data]) =>
-        !isAllowedArchiveFile(relPath, verification.includes!) || typeof base64Data !== 'string' ||
-        Buffer.from(base64Data, 'base64').toString('base64') !== base64Data
-      )) {
-        throw new Error('Encrypted backup contains an unsafe or unexpected entry.')
-      }
-      await rm(path.join(destination, 'audit'), { recursive: true, force: true }).catch(() => undefined)
-      if (verification.includes.includes('audit/')) {
-        await mkdir(path.join(destination, 'audit'), { recursive: true })
-      }
-      for (const [relPath, base64Data] of archiveEntries) {
-        const normalizedRel = relPath.split('/').join(path.sep)
-        const targetFile = path.resolve(destination, normalizedRel)
-        if (!isPathInside(destination, targetFile)) {
-          throw new Error('Encrypted backup entry resolves outside Mike Assist app data.')
-        }
-        if (targetFile.endsWith('.sqlite')) {
-          await rm(`${targetFile}-wal`, { force: true }).catch(() => undefined)
-          await rm(`${targetFile}-shm`, { force: true }).catch(() => undefined)
-        }
-        await mkdir(path.dirname(targetFile), { recursive: true })
-        await writeFile(targetFile, Buffer.from(base64Data, 'base64'))
-        restoredFiles.push(relPath)
-      }
-    } else {
-      for (const item of verification.includes) {
-        if (item === 'audit/') {
-          await rm(path.join(destination, 'audit'), { recursive: true, force: true }).catch(() => undefined)
-          await copySafeAuditDirectory(path.join(source, 'audit'), path.join(destination, 'audit'))
-          restoredFiles.push('audit/')
-          continue
-        }
-        const targetFile = path.resolve(destination, item)
-        if (!isPathInside(destination, targetFile)) {
-          throw new Error('Backup entry resolves outside Mike Assist app data.')
-        }
-        if (item.endsWith('.sqlite')) {
-          await rm(`${targetFile}-wal`, { force: true }).catch(() => undefined)
-          await rm(`${targetFile}-shm`, { force: true }).catch(() => undefined)
-        }
-        await copyFile(path.join(source, item), targetFile)
-        restoredFiles.push(item)
-      }
+      await writeFile(target, bytes, { mode: 0o600 })
     }
-    const included = new Set(verification.includes)
-    for (const item of OPTIONAL_DATA_FILES) {
-      if (!included.has(item)) {
-        await rm(path.join(destination, item), { force: true })
-      }
-    }
-    for (const item of OPTIONAL_DATABASE_FILES) {
-      if (!included.has(item)) {
-        const targetFile = path.join(destination, item)
-        await rm(`${targetFile}-wal`, { force: true })
-        await rm(`${targetFile}-shm`, { force: true })
-        await rm(targetFile, { force: true })
-      }
-    }
-
     await commitRestoreTransaction(transactionDir)
     transactionDir = undefined
-    return { restoredFiles }
+    return { restoredFiles: Object.keys(files) }
   } catch (error) {
     restoreError = error
     if (transactionDir) {
       try {
-        await rollbackRestoreTransaction(transactionDir, destination)
+        const manifest = await readTransactionManifest(transactionDir)
+        if (manifest) await rollbackRestoreTransaction(transactionDir, destination, manifest)
         await commitRestoreTransaction(transactionDir)
         transactionDir = undefined
       } catch (rollbackError) {
@@ -521,9 +195,8 @@ export async function restoreBackupSnapshot(
     throw error
   } finally {
     if (!recoveryRequired) {
-      try {
-        await options?.reopenStores?.()
-      } catch (error) {
+      try { await options?.reopenStores?.() }
+      catch (error) {
         throw new BackupRestoreRestartRequiredError(
           'Mike Assist could not reopen its stores after restore. The app must restart to reload its data.',
           { cause: restoreError === undefined ? error : new AggregateError([restoreError, error]) }
@@ -533,297 +206,232 @@ export async function restoreBackupSnapshot(
   }
 }
 
-function isValidManifestIncludes(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.every((entry) => entry === 'audit/' || (typeof entry === 'string' && BACKUP_ROOT_FILES.has(entry))) &&
-    new Set(value).size === value.length &&
-    REQUIRED_BACKUP_ENTRIES.every((entry) => value.includes(entry))
-  )
-}
-
-/** Restores a pending transaction before any application store opens its files. */
+/** Restores an interrupted focused-data transaction before application stores open. */
 export async function recoverInterruptedBackupRestore(userDataDir: string): Promise<void> {
   const destination = path.resolve(userDataDir)
-  let entries: import('node:fs').Dirent[]
-  try {
-    entries = await readdir(destination, { withFileTypes: true })
-  } catch (error) {
+  let entries
+  try { entries = await readdir(destination, { withFileTypes: true }) }
+  catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
     throw error
   }
-
   for (const entry of entries) {
-    if (/^\.mike-assist-restore-committed-[a-f0-9]{24}$/.test(entry.name)) {
-      await rm(path.join(destination, entry.name), { recursive: true, force: true }).catch((error) => {
-        console.warn('[backup] completed restore checkpoint cleanup will retry on next startup', error)
-      })
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+    if (new RegExp(`^${COMMITTED}[a-f0-9]{16}$`).test(entry.name)) {
+      await rm(path.join(destination, entry.name), { recursive: true, force: true }).catch(() => undefined)
       continue
     }
-    if (!/^\.mike-assist-restore-pending-[a-f0-9]{24}$/.test(entry.name) || !entry.isDirectory()) continue
-
+    if (!new RegExp(`^${PENDING}[a-f0-9]{16}(?:[a-f0-9]{8})?$`).test(entry.name)) continue
     const transactionDir = path.join(destination, entry.name)
-    const manifest = await readRestoreTransactionManifest(transactionDir)
-    if (manifest) {
+    const manifest = await readTransactionManifest(transactionDir)
+    if (!manifest) continue
+    if (manifest.version === 2) {
       await rollbackRestoreTransaction(transactionDir, destination, manifest)
       await commitRestoreTransaction(transactionDir)
-      console.warn('[backup] recovered an interrupted restore and restored the previous app data')
+      console.warn('[backup] recovered an interrupted task-data restore')
     } else {
-      await rm(transactionDir, { recursive: true, force: true }).catch((error) => {
-        console.warn('[backup] an unused restore checkpoint could not be cleaned up', error)
-      })
+      await rollbackLegacyFocusedFiles(transactionDir, destination, manifest)
+      const preserved = path.join(destination, `.mike-assist-legacy-restore-preserved-${entry.name.slice(PENDING.length)}`)
+      await rename(transactionDir, preserved)
     }
   }
 }
 
-async function createRestoreTransaction(destination: string): Promise<string> {
-  const transactionDir = path.join(destination, `${RESTORE_PENDING_PREFIX}${randomBytes(12).toString('hex')}`)
-  const previousDir = path.join(transactionDir, 'previous')
-  await mkdir(previousDir, { recursive: true })
+function isValidManifest(value: BackupManifest): boolean {
+  if (!isRecord(value) || ![1, 2].includes(value.formatVersion) || typeof value.appVersion !== 'string' ||
+    typeof value.createdAt !== 'string' || (value.encrypted !== undefined && typeof value.encrypted !== 'boolean') ||
+    !Array.isArray(value.includes) || value.includes.length === 0 || new Set(value.includes).size !== value.includes.length) return false
+  const safeEntries = value.includes.every((name) => name === 'audit/' || (typeof name === 'string' && LEGACY_FILES.has(name)))
+  return safeEntries && value.includes.includes('settings.json') &&
+    (value.formatVersion === 1 || value.includes.includes('planning.sqlite'))
+}
 
-  try {
-    const previousEntries: string[] = []
-    for (const name of BACKUP_ROOT_FILES) {
-      const source = path.join(destination, name)
-      let info
-      try {
-        info = await lstat(source)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
-        throw error
-      }
-      if (!info.isFile() || info.isSymbolicLink()) {
-        throw new Error(`Cannot create a restore checkpoint because ${name} is not a regular file.`)
-      }
-      await copyFile(source, path.join(previousDir, name))
-      previousEntries.push(name)
+function validateArchiveFiles(payload: ArchivePayload, manifest: BackupManifest): void {
+  if (!isRecord(payload) || !isRecord(payload.files)) throw new Error('Backup archive has an invalid file list.')
+  for (const [name, encoded] of Object.entries(payload.files)) {
+    const allowed = LEGACY_FILES.has(name) && manifest.includes.includes(name) ||
+      manifest.includes.includes('audit/') && /^audit\/[A-Za-z0-9._-]{1,120}\.jsonl$/.test(name)
+    if (!allowed || typeof encoded !== 'string' || !isCanonicalBase64(encoded)) {
+      throw new Error('Backup archive contains an unsafe or unexpected entry.')
     }
+  }
+  for (const name of manifest.includes) {
+    if (name !== 'audit/' && !(name in payload.files)) throw new Error(`Backup archive is missing expected file: ${name}`)
+  }
+}
 
-    const auditSource = path.join(destination, 'audit')
-    let auditInfo: Awaited<ReturnType<typeof lstat>> | undefined
+async function verifyEncryptedContents(encoded: Record<string, string>): Promise<string | undefined> {
+  const directory = await mkdtemp(path.join(tmpdir(), 'mike-assist-backup-verify-'))
+  try {
+    for (const name of TASK_FILES) {
+      if (encoded[name] === undefined) {
+        if (name === 'planning.sqlite') continue
+        return `Backup is missing required entry: ${name}`
+      }
+      await writeFile(path.join(directory, name), Buffer.from(encoded[name]!, 'base64'), { flag: 'wx' })
+    }
+    const settingsError = await verifySettingsFile(path.join(directory, 'settings.json'))
+    if (settingsError) return settingsError
     try {
-      auditInfo = await lstat(auditSource)
+      await lstat(path.join(directory, 'planning.sqlite'))
+      verifySqliteFile(path.join(directory, 'planning.sqlite'))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return 'Backup database failed its SQLite integrity check: planning.sqlite'
     }
-    if (auditInfo) {
-      if (!auditInfo.isDirectory() || auditInfo.isSymbolicLink()) {
-        throw new Error('Cannot create a restore checkpoint because the audit path is not a regular folder.')
-      }
-      await copySafeAuditDirectory(auditSource, path.join(previousDir, 'audit'))
-      previousEntries.push('audit/')
-    }
-
-    const manifest: RestoreTransactionManifest = { version: 1, previousEntries }
-    const temporaryManifest = path.join(transactionDir, `${RESTORE_TRANSACTION_FILE}.tmp`)
-    await writeFile(temporaryManifest, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: 'utf8', flag: 'wx', mode: 0o600 })
-    await rename(temporaryManifest, path.join(transactionDir, RESTORE_TRANSACTION_FILE))
-    return transactionDir
-  } catch (error) {
-    await rm(transactionDir, { recursive: true, force: true }).catch(() => undefined)
-    throw error
-  }
-}
-
-async function commitRestoreTransaction(transactionDir: string): Promise<void> {
-  const transactionId = path.basename(transactionDir).slice(RESTORE_PENDING_PREFIX.length)
-  const committedDir = path.join(path.dirname(transactionDir), `${RESTORE_COMMITTED_PREFIX}${transactionId}`)
-  await rename(transactionDir, committedDir)
-  await rm(committedDir, { recursive: true, force: true }).catch((error) => {
-    console.warn('[backup] completed restore checkpoint cleanup will retry on next startup', error)
-  })
-}
-
-async function readRestoreTransactionManifest(
-  transactionDir: string
-): Promise<RestoreTransactionManifest | undefined> {
-  let raw: string
-  try {
-    raw = await readFile(path.join(transactionDir, RESTORE_TRANSACTION_FILE), 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    throw error
-  }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('An interrupted restore has an invalid recovery manifest; its files were left untouched.')
-  }
-  if (!isRestoreTransactionManifest(parsed)) {
-    throw new Error('An interrupted restore has an unsupported recovery manifest; its files were left untouched.')
-  }
-  return parsed
-}
-
-function isRestoreTransactionManifest(value: unknown): value is RestoreTransactionManifest {
-  if (!value || typeof value !== 'object') return false
-  const manifest = value as Partial<RestoreTransactionManifest>
-  const previousEntries = manifest.previousEntries
-  return manifest.version === 1 && Array.isArray(previousEntries) &&
-    previousEntries.every((entry) => typeof entry === 'string' && RESTORABLE_ENTRIES.includes(entry)) &&
-    new Set(previousEntries).size === previousEntries.length
-}
-
-async function rollbackRestoreTransaction(
-  transactionDir: string,
-  destination: string,
-  knownManifest?: RestoreTransactionManifest
-): Promise<void> {
-  const manifest = knownManifest ?? await readRestoreTransactionManifest(transactionDir)
-  if (!manifest) return
-  const previousDir = path.join(transactionDir, 'previous')
-
-  // Confirm every checkpoint is present before removing any current app data.
-  for (const entry of manifest.previousEntries) {
-    const saved = path.join(previousDir, entry === 'audit/' ? 'audit' : entry)
-    const info = await lstat(saved)
-    if (info.isSymbolicLink() || (entry === 'audit/' ? !info.isDirectory() : !info.isFile())) {
-      throw new Error(`The restore checkpoint is missing a valid copy of ${entry}.`)
-    }
-    if (entry === 'audit/') await validateSafeAuditDirectory(saved)
-  }
-
-  for (const entry of RESTORABLE_ENTRIES) {
-    const target = path.join(destination, entry === 'audit/' ? 'audit' : entry)
-    if (entry.endsWith('.sqlite')) {
-      await rm(`${target}-wal`, { force: true })
-      await rm(`${target}-shm`, { force: true })
-    }
-    await rm(target, { recursive: true, force: true })
-  }
-
-  for (const entry of manifest.previousEntries) {
-    const saved = path.join(previousDir, entry === 'audit/' ? 'audit' : entry)
-    const target = path.join(destination, entry === 'audit/' ? 'audit' : entry)
-    if (entry === 'audit/') await copySafeAuditDirectory(saved, target)
-    else await copyFile(saved, target)
-  }
-}
-
-async function copySafeAuditDirectory(source: string, destination: string): Promise<void> {
-  await validateSafeAuditDirectory(source)
-  await mkdir(destination, { recursive: true })
-  const entries = await readdir(source, { withFileTypes: true })
-  for (const entry of entries) {
-    await copyFile(path.join(source, entry.name), path.join(destination, entry.name))
-  }
-}
-
-async function validateSafeAuditDirectory(directory: string): Promise<void> {
-  const info = await lstat(directory)
-  if (!info.isDirectory() || info.isSymbolicLink()) {
-    throw new Error('Audit data must be a regular folder.')
-  }
-  const entries = await readdir(directory, { withFileTypes: true })
-  if (entries.some((entry) => !entry.isFile() || !isAuditFileName(entry.name))) {
-    throw new Error('Audit data must contain only regular JSONL files.')
-  }
-}
-
-function isAuditFileName(name: string): boolean {
-  return /^[A-Za-z0-9._-]{1,120}\.jsonl$/.test(name)
-}
-
-async function verifyEncryptedContents(files: Record<string, string>, includes: readonly string[]): Promise<string | undefined> {
-  const temporaryDir = await mkdtemp(path.join(tmpdir(), 'mike-assist-backup-verify-'))
-  const auditDir = path.join(temporaryDir, 'audit')
-  try {
-    await mkdir(auditDir)
-    for (const [relPath, base64Data] of Object.entries(files)) {
-      if (relPath.startsWith('audit/')) {
-        await writeFile(path.join(auditDir, path.basename(relPath)), Buffer.from(base64Data, 'base64'), { flag: 'wx' })
-      } else if (relPath.endsWith('.sqlite')) {
-        await writeFile(path.join(temporaryDir, path.basename(relPath)), Buffer.from(base64Data, 'base64'), { flag: 'wx' })
-      }
-    }
-
-    for (const name of includes) {
-      if (!name.endsWith('.sqlite')) continue
-      try {
-        verifySqliteFile(path.join(temporaryDir, name))
-      } catch {
-        return `Backup database failed its SQLite integrity check: ${name}`
-      }
-    }
-
-    const audit = new AuditLog(auditDir, 'backup-verify')
-    await audit.init()
-    if (!audit.getIntegrity().valid) return 'Backup audit log failed hash-chain integrity verification.'
     return undefined
-  } catch {
-    return 'Encrypted backup contents could not be validated.'
-  } finally {
-    await rm(temporaryDir, { recursive: true, force: true }).catch(() => undefined)
-  }
+  } catch { return 'Encrypted backup contents could not be validated.' }
+  finally { await rm(directory, { recursive: true, force: true }).catch(() => undefined) }
+}
+
+async function verifySettingsFile(file: string): Promise<string | undefined> {
+  try {
+    const value: unknown = JSON.parse(await readFile(file, 'utf8'))
+    return isRecord(value) && isRecord(value.provider) ? undefined : 'Backup settings file is invalid.'
+  } catch { return 'Backup settings file is missing or invalid.' }
 }
 
 function verifySqliteFile(file: string): void {
   const database = new DatabaseSync(file, { readOnly: true })
   try {
-    const quickCheck = database.prepare('PRAGMA quick_check').all() as Array<Record<string, unknown>>
+    const check = database.prepare('PRAGMA quick_check').all() as Array<Record<string, unknown>>
     const tables = database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
-    const expectedTable = REQUIRED_DATABASE_TABLES[path.basename(file)]
-    if (
-      quickCheck.length !== 1 || Object.values(quickCheck[0] ?? {})[0] !== 'ok' ||
-      !expectedTable || !tables.some((table) => table.name === expectedTable)
-    ) {
-      throw new Error('SQLite backup is invalid or missing its application tables.')
+    if (check.length !== 1 || Object.values(check[0] ?? {})[0] !== 'ok' || !tables.some((table) => table.name === 'tasks')) {
+      throw new Error('Backup database failed its SQLite integrity check: planning.sqlite')
     }
-  } finally {
-    database.close()
+  } finally { database.close() }
+}
+
+async function readRestorableFiles(source: string, verification: BackupVerification, passphrase?: string): Promise<Record<string, Buffer>> {
+  const files: Record<string, Buffer> = {}
+  if (verification.encrypted) {
+    const envelope = JSON.parse(await readFile(path.join(source, 'archive.enc'), 'utf8')) as EncryptedEnvelope
+    const payload = decryptArchive(envelope, passphrase?.trim() ?? '')
+    const manifest = JSON.parse(await readFile(path.join(source, 'manifest.json'), 'utf8')) as BackupManifest
+    validateArchiveFiles(payload, manifest)
+    for (const name of TASK_FILES) if (payload.files[name] !== undefined) files[name] = Buffer.from(payload.files[name]!, 'base64')
+  } else {
+    for (const name of TASK_FILES) if (verification.includes?.includes(name)) files[name] = await readFile(path.join(source, name))
+  }
+  return files
+}
+
+async function copyRegularFile(source: string, destination: string): Promise<void> {
+  const info = await lstat(source)
+  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Backup source must be a regular file.')
+  await copyFile(source, destination)
+}
+
+async function createRestoreTransaction(destination: string, entries: string[]): Promise<string> {
+  const directory = path.join(destination, `${PENDING}${randomBytes(8).toString('hex')}`)
+  const previousDirectory = path.join(directory, 'previous')
+  await mkdir(previousDirectory, { recursive: true })
+  try {
+    const previousEntries: string[] = []
+    for (const name of TASK_FILES) {
+      try {
+        const info = await lstat(path.join(destination, name))
+        if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Cannot restore because ${name} is not a regular file.`)
+        await copyFile(path.join(destination, name), path.join(previousDirectory, name))
+        previousEntries.push(name)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+    const manifest: RestoreManifest = { version: 2, entries, previousEntries }
+    await writeFile(path.join(directory, TRANSACTION_FILE), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    return directory
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true }).catch(() => undefined)
+    throw error
   }
 }
 
-function isAllowedArchiveFile(relPath: string, includes: readonly string[]): boolean {
-  if (BACKUP_ROOT_FILES.has(relPath)) return includes.includes(relPath)
-  return includes.includes('audit/') && /^audit\/[A-Za-z0-9._-]{1,120}\.jsonl$/.test(relPath)
+async function readTransactionManifest(directory: string): Promise<RestoreManifest | undefined> {
+  let raw: string
+  try { raw = await readFile(path.join(directory, TRANSACTION_FILE), 'utf8') }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw error
+  }
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!isRecord(value) || (value.version !== 1 && value.version !== 2) || !Array.isArray(value.previousEntries) ||
+      !value.previousEntries.every((name) => name === 'audit/' || (typeof name === 'string' && LEGACY_FILES.has(name))) ||
+      (value.version === 2 && (!Array.isArray(value.entries) || !value.entries.every((name) => TASK_FILES.includes(name as typeof TASK_FILES[number])))) ||
+      new Set(value.previousEntries).size !== value.previousEntries.length) throw new Error('unsupported')
+    return value as unknown as RestoreManifest
+  } catch (error) {
+    if (error instanceof Error && error.message === 'unsupported') {
+      throw new Error('An interrupted restore has an unsupported recovery manifest; its files were left untouched.')
+    }
+    throw new Error('An interrupted restore has an invalid recovery manifest; its files were left untouched.')
+  }
 }
 
-async function collectFilesRecursively(
-  dir: string,
-  rootDir: string,
-  acc: Record<string, string> = {}
-): Promise<Record<string, string>> {
-  const entries = await readdir(dir, { withFileTypes: true })
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      await collectFilesRecursively(fullPath, rootDir, acc)
-    } else if (entry.isFile()) {
-      const rel = path.relative(rootDir, fullPath).split(path.sep).join('/')
-      const bytes = await readFile(fullPath)
-      acc[rel] = bytes.toString('base64')
+async function rollbackRestoreTransaction(directory: string, destination: string, manifest: RestoreManifest): Promise<void> {
+  const previousDirectory = path.join(directory, 'previous')
+  const affected = manifest.entries ?? []
+  const previous = manifest.previousEntries.filter((name) => TASK_FILES.includes(name as typeof TASK_FILES[number]))
+  for (const name of previous) {
+    const info = await lstat(path.join(previousDirectory, name))
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error(`Restore checkpoint is missing a valid copy of ${name}.`)
+  }
+  for (const name of affected) await rm(path.join(destination, name), { force: true })
+  for (const name of previous) await copyFile(path.join(previousDirectory, name), path.join(destination, name))
+  if (affected.includes('planning.sqlite')) {
+    await rm(path.join(destination, 'planning.sqlite-wal'), { force: true })
+    await rm(path.join(destination, 'planning.sqlite-shm'), { force: true })
+  }
+}
+
+async function rollbackLegacyFocusedFiles(directory: string, destination: string, manifest: RestoreManifest): Promise<void> {
+  for (const name of TASK_FILES) {
+    if (!manifest.previousEntries.includes(name)) continue
+    try {
+      const info = await lstat(path.join(directory, 'previous', name))
+      if (info.isFile() && !info.isSymbolicLink()) await copyFile(path.join(directory, 'previous', name), path.join(destination, name))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     }
   }
-  return acc
+  console.warn('[backup] preserved an older full-assistant restore checkpoint and its legacy data')
 }
 
-function encryptArchive(payload: ArchivePayload, passphrase: string): EncryptedArchiveEnvelope {
+async function commitRestoreTransaction(directory: string): Promise<void> {
+  const id = path.basename(directory).slice(PENDING.length)
+  const committed = path.join(path.dirname(directory), `${COMMITTED}${id}`)
+  await rename(directory, committed)
+  await rm(committed, { recursive: true, force: true }).catch((error) => {
+    console.warn('[backup] completed restore checkpoint cleanup will retry on next startup', error)
+  })
+}
+
+function encryptArchive(payload: ArchivePayload, passphrase: string): EncryptedEnvelope {
   const salt = randomBytes(16)
   const iv = randomBytes(12)
-  const key = scryptSync(passphrase, salt, 32)
-  const cipher = createCipheriv('aes-256-gcm', key, iv)
-  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8')
-  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()])
-  const tag = cipher.getAuthTag()
-  return {
-    salt: salt.toString('base64'),
-    iv: iv.toString('base64'),
-    tag: tag.toString('base64'),
-    ciphertext: encrypted.toString('base64')
-  }
+  const cipher = createCipheriv('aes-256-gcm', scryptSync(passphrase, salt, 32), iv)
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()])
+  return { salt: salt.toString('base64'), iv: iv.toString('base64'), tag: cipher.getAuthTag().toString('base64'), ciphertext: ciphertext.toString('base64') }
 }
 
-function decryptArchive(envelope: EncryptedArchiveEnvelope, passphrase: string): ArchivePayload {
+function decryptArchive(envelope: EncryptedEnvelope, passphrase: string): ArchivePayload {
+  if (!isRecord(envelope) || !['salt', 'iv', 'tag', 'ciphertext'].every((name) => typeof (envelope as unknown as Record<string, unknown>)[name] === 'string')) {
+    throw new Error('Invalid encrypted archive envelope.')
+  }
   const salt = Buffer.from(envelope.salt, 'base64')
   const iv = Buffer.from(envelope.iv, 'base64')
   const tag = Buffer.from(envelope.tag, 'base64')
   const ciphertext = Buffer.from(envelope.ciphertext, 'base64')
-  const key = scryptSync(passphrase, salt, 32)
-  const decipher = createDecipheriv('aes-256-gcm', key, iv)
+  if (salt.length !== 16 || iv.length !== 12 || tag.length !== 16 || !isCanonicalBase64(envelope.ciphertext)) throw new Error('Invalid encrypted archive envelope.')
+  const decipher = createDecipheriv('aes-256-gcm', scryptSync(passphrase, salt, 32), iv)
   decipher.setAuthTag(tag)
-  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()])
-  return JSON.parse(decrypted.toString('utf8')) as ArchivePayload
+  return JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')) as ArchivePayload
+}
+
+function isCanonicalBase64(value: string): boolean { return Buffer.from(value, 'base64').toString('base64') === value }
+function isRecord(value: unknown): value is Record<string, unknown> { return Boolean(value) && typeof value === 'object' && !Array.isArray(value) }
+function invalid(error: string, encrypted = false): BackupVerification { return { valid: false, encrypted, error } }
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
 }

@@ -34,7 +34,7 @@ export function SettingsView({
         }
         return
       }
-      setBackupMessage(restore ? 'Backup restored. Reloading your local data…' : `Backup saved${result.folderName ? ` to ${result.folderName}` : ''}.${result.warning ? ` ${result.warning}` : ''}`)
+      setBackupMessage(restore ? 'Backup restored. Reloading your local data…' : `Backup saved${result.folderName ? ` to ${result.folderName}` : ''}.`)
       if (restore) window.setTimeout(() => window.location.reload(), 250)
     } catch (error) {
       setBackupError(true)

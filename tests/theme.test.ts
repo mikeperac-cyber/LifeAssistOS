@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { APP_THEMES, APP_THEME_STORAGE_KEY, getSavedAppTheme, parseAppTheme } from '../src/renderer/src/theme'
 
 const styles = readFileSync(path.resolve('src/renderer/src/styles.css'), 'utf8')
-const domainStyles = readFileSync(path.resolve('src/renderer/src/styles/domains.css'), 'utf8')
 
 describe('app theme preferences', () => {
   it('accepts only a supported theme id', () => {
@@ -45,8 +44,7 @@ describe('app theme preferences', () => {
 
   it('keeps semantic tint colors synchronized with each theme palette', () => {
     const { rootTokens, themedTokens } = getThemeTokenSets()
-    const styledComponents = `${styles}\n${domainStyles}`
-    const literalPaletteTints = Array.from(styledComponents.matchAll(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,/g))
+    const literalPaletteTints = Array.from(styles.matchAll(/rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,/g))
       .map(([, red, green, blue]) => `${red},${green},${blue}`)
       .filter((rgb) => [
         '86,214,192', '21,121,111', '124,221,164', '196,168,255',
@@ -64,9 +62,9 @@ describe('app theme preferences', () => {
     }
   })
 
-  it('uses theme surfaces for tool and teaching cards', () => {
-    expect(styles).toMatch(/\.tool-card\s*\{[^}]*background:\s*var\(--panel-2\)/s)
-    expect(styles).toMatch(/\.teaching-card\s*\{[^}]*background:\s*var\(--panel\)/s)
+  it('uses theme surfaces for task groups and the quick capture dialog', () => {
+    expect(styles).toMatch(/\.todo-task-group,\s*\.todo-inbox-item\s*\{[^}]*background:\s*var\(--panel\)/s)
+    expect(styles).toMatch(/\.quick-capture-dialog\s*\{[^}]*background:\s*var\(--modal-gradient\)/s)
   })
 })
 
