@@ -262,6 +262,68 @@
 .task-editor-form textarea { width: 100%; resize: vertical; }
 .task-editor-schedule { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .task-editor-error { margin: 0; color: var(--red); font-size: 12px; }
+
+.todo-ai-panel {
+  margin: 4px 0 17px;
+  border: 1px solid rgba(var(--accent-rgb), 0.24);
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent-dim), transparent 38%), var(--panel);
+}
+.todo-ai-panel > details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 11px 14px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+.todo-ai-panel > details > summary::-webkit-details-marker { display: none; }
+.todo-ai-heading { display: inline-flex; align-items: center; gap: 8px; }
+.todo-ai-heading > span { color: var(--accent); font-size: 16px; }
+.todo-ai-summary { color: var(--muted); font-size: 11px; font-weight: 400; }
+.todo-ai-content { padding: 0 14px 14px; }
+.todo-ai-privacy { margin: 0 0 12px; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.todo-ai-setup { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 11px; }
+.todo-ai-setup .ghost-button { flex: 0 0 auto; }
+.todo-ai-message { margin: 0 0 10px; color: var(--accent); font-size: 11px; }
+.todo-ai-message.is-error { color: var(--red); }
+.todo-ai-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 10px; }
+.todo-ai-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--glass-bg); }
+.todo-ai-card-heading > div { display: flex; align-items: center; gap: 7px; }
+.todo-ai-card-heading h3 { margin: 0; color: var(--text); font-size: 12px; }
+.todo-ai-card-heading p { margin: 4px 0 0 25px; color: var(--faint); font-size: 10px; line-height: 1.4; }
+.todo-ai-step { display: grid; width: 18px; height: 18px; place-items: center; border-radius: 5px; background: var(--accent-dim); color: var(--accent); font-size: 9px; font-weight: 700; }
+.todo-ai-card .field { gap: 5px; }
+.todo-ai-card textarea { width: 100%; min-height: 58px; resize: vertical; }
+.todo-ai-run { align-self: flex-start; padding: 7px 10px; border: 1px solid rgba(var(--accent-rgb), 0.3); border-radius: 7px; background: var(--accent-dim); color: var(--accent); font: inherit; font-size: 10px; font-weight: 650; cursor: pointer; }
+.todo-ai-run:hover:not(:disabled) { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.16); }
+.todo-ai-run:disabled { opacity: 0.45; cursor: not-allowed; }
+.todo-ai-review { display: flex; flex-direction: column; gap: 9px; margin-top: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+.todo-ai-review-label { margin: 0; color: var(--muted); font-size: 10px; font-weight: 600; }
+.todo-ai-review .field-label { color: var(--faint); font-size: 9px; }
+.todo-ai-draft-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.todo-ai-draft-fields .field:last-child { grid-column: 1 / -1; }
+.todo-ai-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.todo-ai-subtask-list { display: flex; flex-direction: column; gap: 7px; }
+.todo-ai-subtask { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: start; gap: 7px; padding: 8px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel); }
+.todo-ai-subtask.is-saved { border-color: rgba(var(--accent-rgb), 0.28); }
+.todo-ai-select-step { padding-top: 5px; }
+.todo-ai-select-step input { accent-color: var(--accent-strong); }
+.todo-ai-step-fields { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.todo-ai-step-fields textarea { min-height: 42px; }
+.todo-ai-saved { padding-top: 5px; color: var(--accent); font-size: 9px; }
+.todo-ai-plan-list { display: flex; flex-direction: column; gap: 9px; margin: 0; padding-left: 22px; color: var(--accent); }
+.todo-ai-plan-list li { padding-left: 2px; font-size: 11px; }
+.todo-ai-plan-list strong { display: block; color: var(--text); font-size: 11px; font-weight: 600; }
+.todo-ai-plan-list span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+.todo-ai-limit,.todo-ai-empty,.todo-ai-pending { margin: 0; color: var(--faint); font-size: 10px; line-height: 1.5; }
+.todo-ai-limit { color: var(--amber); }
+.todo-ai-pending { margin-top: 10px; }
 .provider-advanced-settings summary { margin-bottom: 12px; color: var(--muted); font-size: 12px; cursor: pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
@@ -278,6 +340,9 @@
   .todo-inbox-item { flex-direction: column; }
   .todo-inbox-item .todo-task-actions { align-self: flex-end; }
   .task-editor-schedule { grid-template-columns: minmax(0, 1fr); }
+  .todo-ai-panel > details > summary { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .todo-ai-grid { grid-template-columns: minmax(0, 1fr); }
+  .todo-ai-setup { align-items: flex-start; flex-direction: column; }
 }
 
 :root[data-theme='light'] {

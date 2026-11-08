@@ -11,7 +11,10 @@ import type { Provider } from './providers/types'
 const PRIORITIES = ['low', 'normal', 'high'] as const
 
 const localDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isRealCalendarDate)
-const reminderSchema = z.string().datetime({ offset: true }).transform((value) => new Date(value).toISOString())
+const reminderSchema = z.string()
+  .datetime({ offset: true })
+  .refine(isRealCalendarDateTime)
+  .transform((value) => new Date(value).toISOString())
 const taskDraftSchema = z.object({
   title: z.string().trim().min(1).max(240),
   notes: z.string().max(2000),
@@ -160,8 +163,25 @@ function validateContext(context: TodoAiContext): void {
 
 function isRealCalendarDate(value: string): boolean {
   const [year, month, day] = value.split('-').map(Number)
+  if (year < 1000) return false
   const date = new Date(Date.UTC(year, month - 1, day))
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
+
+function isRealCalendarDateTime(value: string): boolean {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/i.exec(value)
+  if (!match || !isRealCalendarDate(match[1])) return false
+  const hour = Number(match[2])
+  const minute = Number(match[3])
+  const second = Number(match[4])
+  const offset = match[5]
+  if (hour > 23 || minute > 59 || second > 59) return false
+  if (offset !== 'Z' && offset !== 'z') {
+    const offsetHour = Number(offset.slice(1, 3))
+    const offsetMinute = Number(offset.slice(4, 6))
+    if (offsetHour > 23 || offsetMinute > 59) return false
+  }
+  return Number.isFinite(Date.parse(value))
 }
 
 function isValidTimeZone(value: string): boolean {

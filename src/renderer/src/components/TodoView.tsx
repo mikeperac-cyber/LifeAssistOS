@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { InboxItem, PlanTask } from '../../../shared/types'
+import type { PublicSettings } from '../../../shared/ipc'
 import { filterTasksByQuery, filterTasksForView, groupTasksForView, type TaskListView } from './todo-view-model'
 import { TaskEditorDialog, type TaskEditorValues } from './TaskEditorDialog'
 import { TodoTaskRow } from './TodoTaskRow'
+import { TodoAiActions } from './TodoAiActions'
+import type { TaskDraftValues } from './todo-ai-ui-model'
 
 type TodoFilter = TaskListView | 'inbox'
 type TaskEditorState =
@@ -18,7 +21,12 @@ const FILTERS: Array<{ id: TodoFilter; label: string }> = [
   { id: 'archived', label: 'Archived' }
 ]
 
-export function TodoView({ refreshVersion, onQuickCapture }: { refreshVersion: number; onQuickCapture: () => void }): React.JSX.Element {
+export function TodoView({ refreshVersion, onQuickCapture, settings, onOpenSettings }: {
+  refreshVersion: number
+  onQuickCapture: () => void
+  settings: PublicSettings | null
+  onOpenSettings: () => void
+}): React.JSX.Element {
   const [filter, setFilter] = useState<TodoFilter>('today')
   const [query, setQuery] = useState('')
   const [tasks, setTasks] = useState<PlanTask[]>([])
@@ -109,6 +117,17 @@ export function TodoView({ refreshVersion, onQuickCapture }: { refreshVersion: n
     }
   }
 
+  async function saveAiTask(values: TaskDraftValues): Promise<void> {
+    const result = await window.assist.addPlanTask(values)
+    if (!result.ok) throw new Error(result.error ?? 'Could not add this task.')
+    await refresh()
+  }
+
+  async function saveAiSubtask(parentTaskId: string, values: { title: string; notes: string }): Promise<void> {
+    const result = await window.assist.addPlanTask({ ...values, parentTaskId })
+    if (!result.ok) throw new Error(result.error ?? 'Could not add this subtask.')
+  }
+
   const activeLabel = FILTERS.find((item) => item.id === filter)?.label ?? 'Today'
   return (
     <section className="todo-view" aria-label="Tasks">
@@ -138,6 +157,16 @@ export function TodoView({ refreshVersion, onQuickCapture }: { refreshVersion: n
         </label>
         {filter === 'inbox' && <button className="ghost-button" type="button" onClick={onQuickCapture}>＋ Capture thought</button>}
       </div>
+
+      <TodoAiActions
+        tasks={tasks}
+        localDate={localDate}
+        providerReady={isTodoAiProviderReady(settings)}
+        onOpenSettings={onOpenSettings}
+        onSaveTask={saveAiTask}
+        onSaveSubtask={saveAiSubtask}
+        onRefreshTasks={refresh}
+      />
 
       {error && <div className="todo-error" role="alert"><span>{error}</span><button type="button" className="ghost-button" onClick={() => void refresh()}>Retry</button></div>}
       {loading ? <p className="todo-empty" role="status">Loading tasks…</p> : filter === 'inbox' ? (
@@ -215,4 +244,16 @@ function getLocalDate(): string {
 function formatCapturedDate(value: string): string {
   const date = new Date(value)
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : 'recently'
+}
+
+function isTodoAiProviderReady(settings: PublicSettings | null): boolean {
+  if (!settings) return false
+  const { provider } = settings
+  if (provider.preset === 'ollama' || provider.preset === 'lmstudio' || provider.hasApiKey) return true
+  try {
+    const hostname = new URL(provider.baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+    return hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return false
+  }
 }

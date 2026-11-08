@@ -155,4 +155,19 @@ describe('todo AI suggestions', () => {
       timeZone: 'Europe/Istanbul'
     })).rejects.toThrow()
   })
+
+  it('rejects impossible calendar dates and times in reminders', async () => {
+    const provider = makeProvider(JSON.stringify({
+      title: 'Call the dentist',
+      notes: '',
+      dueDate: null,
+      remindAt: '2026-02-31T29:15:00.000Z',
+      priority: 'normal'
+    }))
+
+    await expect(suggestTaskDraft(provider, 'Call the dentist', {
+      localDate: '2026-11-08',
+      timeZone: 'Europe/Istanbul'
+    })).rejects.toThrow()
+  })
 })

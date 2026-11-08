@@ -715,7 +715,7 @@ export interface AssistApi {
   getPlanTasks(includeCompleted?: boolean): Promise<PlanTask[]>
   suggestTaskDraft(text: string, context: TodoAiContext): Promise<TodoAiResult<TaskDraftSuggestion>>
   suggestTaskSubtasks(task: Pick<PlanTask, 'title' | 'notes' | 'dueDate' | 'priority'>): Promise<TodoAiResult<TodoSubtaskSuggestion[]>>
-  suggestTodayPlan(tasks: PlanTask[], context: TodoAiContext): Promise<TodoAiResult<TodayPlanSuggestion>>
+  suggestTodayPlan(tasks: Array<Pick<PlanTask, 'id' | 'title' | 'dueDate' | 'priority'>>, context: TodoAiContext): Promise<TodoAiResult<TodayPlanSuggestion>>
   exportTodayTasksCalendar(): Promise<TodayCalendarExportResult>
   addPlanTask(input: { title: string; notes?: string; dueDate?: string | null; remindAt?: string | null; priority?: PlanTaskPriority; parentTaskId?: string | null; sourceGoalId?: string }): Promise<PlanMutationResult>
   importPlanTask(input: { provider: RemoteTaskProvider; taskListId: string; taskId: string; title: string; notes?: string; dueDate?: string | null; priority?: PlanTaskPriority; status: string }): Promise<PlanMutationResult>

@@ -103,7 +103,12 @@ export default function App(): React.JSX.Element {
 
         {appWarning && <p className="startup-load-notice has-error" role="alert">{appWarning}</p>}
         {view === 'tasks' && (
-          <TodoView refreshVersion={taskRefreshVersion} onQuickCapture={() => setQuickCaptureOpen(true)} />
+          <TodoView
+            refreshVersion={taskRefreshVersion}
+            onQuickCapture={() => setQuickCaptureOpen(true)}
+            settings={settings}
+            onOpenSettings={() => navigateToView('settings')}
+          />
         )}
         {view === 'settings' && (
           <section className="settings-content">
