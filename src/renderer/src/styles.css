@@ -5447,10 +5447,10 @@ body {
   font-weight: 650;
   cursor: pointer;
 }
-.life-overview-complete:hover:not(:disabled),
+.life-overview-complete:hover:not([aria-disabled='true']),
 .life-overview-launch:hover { background: rgba(var(--accent-rgb), .18); color: var(--text); }
 .life-overview-complete { width: 30px; padding: 0; }
-.life-overview-complete:disabled { opacity: .6; cursor: default; }
+.life-overview-complete[aria-disabled='true'] { opacity: .6; cursor: default; }
 .life-overview-complete svg { width: 17px; height: 17px; }
 .life-overview-launch svg { width: 13px; height: 13px; flex: none; }
 .life-overview-goal-item { grid-template-columns: 44px minmax(0, 1fr); }

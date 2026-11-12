@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarEvent, JournalEntry, LifeGoal, PersonalContext, PlanTask, RoutineTemplate, TaskArea, TaskProject } from '../../../shared/types'
 import { parseCalendarIcs } from '../../../shared/calendar-ics'
 import { Icon } from './Icon'
-import { buildDashboardSummary, calendarEventsInRange } from './life-dashboard-model'
+import { buildDashboardSummary, calendarEventsInRange, getGoalProgress } from './life-dashboard-model'
 import { addDays } from './review-view-model'
 
 type LifeTab = 'overview' | 'goals' | 'routines' | 'journal' | 'calendar' | 'context'
@@ -28,25 +28,34 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([])
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
-  const [calendarDate, setCalendarDate] = useState(getLocalDate())
+  const [today, setToday] = useState(getLocalDate)
+  const [calendarDate, setCalendarDate] = useState(today)
   const [completingTask, setCompletingTask] = useState(false)
   const [query, setQuery] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [goalDraft, setGoalDraft] = useState<Partial<LifeGoal> | null>(null)
   const [routineDraft, setRoutineDraft] = useState<Partial<RoutineTemplate> | null>(null)
   const [journalDraft, setJournalDraft] = useState<Partial<JournalEntry> | null>(null)
   const [importSourceId, setImportSourceId] = useState('')
   const [importName, setImportName] = useState('')
   const refreshRequest = useRef(0)
+  const queryParams = useRef({ calendarDate, searchQuery })
+
+  useLayoutEffect(() => {
+    queryParams.current = { calendarDate, searchQuery }
+  }, [calendarDate, searchQuery])
 
   const refresh = useCallback(async (): Promise<void> => {
     const request = ++refreshRequest.current
+    const { calendarDate, searchQuery } = queryParams.current
+    const today = getLocalDate()
+    setToday(today)
     setLoading(true); setError('')
     try {
-      const today = getLocalDate()
       const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextTodayEvents, nextUpcomingEvents] = await Promise.all([
         window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(), window.assist.getJournalEntries(searchQuery),
         window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate),
@@ -56,18 +65,37 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
       setGoals(workspace.goals); setAreas(workspace.areas); setProjects(workspace.projects); setTasks(workspace.tasks)
       setRoutines(nextRoutines); setEntries(nextEntries); setContext(nextContext); setSources(nextSources); setEvents(nextEvents); setTodayEvents(nextTodayEvents)
       setUpcomingEvents(nextUpcomingEvents)
+      setHasLoaded(true)
     } catch (cause) {
       if (request === refreshRequest.current) setError(cause instanceof Error ? cause.message : 'Your Life workspace could not be loaded.')
     } finally {
       if (request === refreshRequest.current) setLoading(false)
     }
-  }, [calendarDate, searchQuery])
+  }, [])
 
-  useEffect(() => { void refresh() }, [refresh, refreshVersion])
+  useEffect(() => { void refresh() }, [refresh, refreshVersion, calendarDate, searchQuery])
   useEffect(() => {
-    const handleFocus = (): void => { void refresh() }
+    let timer: number
+    const scheduleMidnightRefresh = (): void => {
+      const now = new Date()
+      const midnight = new Date(now.getTime())
+      midnight.setHours(24, 0, 0, 0)
+      timer = window.setTimeout(() => {
+        void refresh()
+        scheduleMidnightRefresh()
+      }, midnight.getTime() - now.getTime())
+    }
+    const handleFocus = (): void => {
+      window.clearTimeout(timer)
+      scheduleMidnightRefresh()
+      void refresh()
+    }
+    scheduleMidnightRefresh()
     window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('focus', handleFocus)
+    }
   }, [refresh])
   useEffect(() => {
     const timer = window.setTimeout(() => setSearchQuery(query.trim()), 220)
@@ -106,17 +134,22 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     setNotice(`${routine.name} added to My Day.`); window.setTimeout(() => setNotice(''), 3000); await refresh()
   }
 
-  const completeFocusTask = async (task: PlanTask): Promise<void> => {
+  const completeFocusTask = async (task: PlanTask): Promise<boolean> => {
+    if (completingTask) return false
     setCompletingTask(true)
     setError('')
     try {
       const result = await window.assist.updatePlanTask(task.id, { status: 'done' })
       if (!result.ok) throw new Error(result.error ?? 'Could not complete the task.')
+      const completedTask = result.task
+      if (completedTask) setTasks((current) => current.map((item) => item.id === completedTask.id ? completedTask : item))
       setNotice(`Completed “${task.title}”.`)
       window.setTimeout(() => setNotice(''), 3000)
-      await refresh()
+      void refresh()
+      return true
     } catch (cause) {
       showError(cause)
+      return false
     } finally {
       setCompletingTask(false)
     }
@@ -165,8 +198,8 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
 
   const scheduledTasks = useMemo(() => tasks.filter((task) => task.status === 'open' && task.scheduledStart?.slice(0, 10) === calendarDate).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '')), [calendarDate, tasks])
   const selectedLabel = TABS.find((item) => item.id === tab)?.label ?? 'Overview'
-  const today = getLocalDate()
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  const selectedEvents = useMemo(() => calendarEventsInRange(events, calendarDate, calendarDate, timeZone), [events, calendarDate, timeZone])
 
   return <section className="life-view" aria-label="Life workspace" aria-busy={loading}>
     <nav className="life-tabs" aria-label="Life workspace sections" role="tablist">
@@ -175,9 +208,9 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
 
     {notice && <p className="life-notice" role="status">{notice}</p>}
     {error && <div className="life-error" role="alert"><span>{error}</span><button className="ghost-button" type="button" onClick={() => void refresh()}>Retry</button></div>}
-    {loading && goals.length === 0 && <p className="life-loading" role="status">Opening your Life workspace…</p>}
+    {loading && !hasLoaded && <p className="life-loading" role="status">Opening your Life workspace…</p>}
 
-    {!loading && tab === 'overview' && <LifeOverviewTab
+    {hasLoaded && tab === 'overview' && <LifeOverviewTab
       goals={goals}
       routines={routines}
       entries={entries}
@@ -188,7 +221,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
       today={today}
       timeZone={timeZone}
       completingTask={completingTask}
-      onCompleteTask={(task) => void completeFocusTask(task)}
+      onCompleteTask={completeFocusTask}
       onOpenTasks={onOpenTasks}
       onOpenUpcomingTasks={onOpenUpcomingTasks}
       onOpenProjects={onOpenProjects}
@@ -203,7 +236,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     {!loading && tab === 'goals' && <GoalsTab goals={goals} areas={areas} projects={projects} tasks={tasks} onNew={() => setGoalDraft({ status: 'active', areaId: null, targetDate: null })} onEdit={setGoalDraft} onDelete={(goal) => void deleteGoal(goal).catch(showError)} />}
     {!loading && tab === 'routines' && <RoutinesTab routines={routines} areas={areas} projects={projects} onNew={() => setRoutineDraft({ priority: 'normal', areaId: null, projectId: null, subtasks: [], recurrenceRule: null })} onEdit={setRoutineDraft} onApply={(routine) => void applyRoutine(routine).catch(showError)} onAddStarters={() => void addStarterRoutines().catch(showError)} onDelete={(routine) => void (async () => { const result = await window.assist.deleteRoutineTemplate(routine.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the routine.'); await refresh() })().catch(showError)} />}
     {!loading && tab === 'journal' && <JournalTab entries={entries} goals={goals} areas={areas} query={query} onQuery={setQuery} onNew={() => setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null })} onEdit={setJournalDraft} onDelete={async (entry) => { const result = await window.assist.deleteJournalEntry(entry.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the note.'); await refresh() }} />}
-    {!loading && tab === 'calendar' && <CalendarTab date={calendarDate} onDate={setCalendarDate} events={events} tasks={scheduledTasks} sources={sources} sourceId={importSourceId} onSource={setImportSourceId} importName={importName} onImportName={setImportName} onImport={(file) => void importCalendarFile(file)} onDeleteSource={async (id) => { const result = await window.assist.deleteCalendarSource(id); if (!result.ok) throw new Error(result.error ?? 'Could not remove that calendar.'); await refresh() }} />}
+    {!loading && tab === 'calendar' && <CalendarTab date={calendarDate} onDate={setCalendarDate} events={selectedEvents} tasks={scheduledTasks} sources={sources} sourceId={importSourceId} onSource={setImportSourceId} importName={importName} onImportName={setImportName} onImport={(file) => void importCalendarFile(file)} onDeleteSource={async (id) => { const result = await window.assist.deleteCalendarSource(id); if (!result.ok) throw new Error(result.error ?? 'Could not remove that calendar.'); await refresh() }} />}
     {!loading && tab === 'context' && <ContextTab value={context} onChange={setContext} onSave={() => void saveContext()} />}
 
     {goalDraft && <GoalEditor value={goalDraft} areas={areas} onChange={setGoalDraft} onSave={() => void saveGoal().catch(showError)} onClose={() => setGoalDraft(null)} />}
@@ -230,7 +263,7 @@ function LifeOverviewTab({
   today: string
   timeZone: string
   completingTask: boolean
-  onCompleteTask: (task: PlanTask) => void
+  onCompleteTask: (task: PlanTask) => Promise<boolean>
   onOpenTasks: () => void
   onOpenUpcomingTasks: () => void
   onOpenProjects: () => void
@@ -242,8 +275,33 @@ function LifeOverviewTab({
   onNewJournal: () => void
   onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
-  const agendaEvents = calendarEventsInRange(todayEvents, today, today, timeZone)
-  const summary = buildDashboardSummary({ tasks, projects, todayEvents: agendaEvents, upcomingEvents, today, timeZone })
+  const focusList = useRef<HTMLOListElement>(null)
+  const myDayAction = useRef<HTMLButtonElement>(null)
+  const [focusAfterCompletion, setFocusAfterCompletion] = useState<{ taskId: string; index: number; button: HTMLButtonElement } | null>(null)
+  const agendaEvents = useMemo(() => calendarEventsInRange(todayEvents, today, today, timeZone), [todayEvents, today, timeZone])
+  const summary = useMemo(
+    () => buildDashboardSummary({ tasks, projects, todayEvents: agendaEvents, upcomingEvents, today, timeZone }),
+    [tasks, projects, agendaEvents, upcomingEvents, today, timeZone]
+  )
+  const { focusTasks } = summary
+
+  useLayoutEffect(() => {
+    if (!focusAfterCompletion || focusTasks.some((task) => task.id === focusAfterCompletion.taskId)) return
+    const { button, index } = focusAfterCompletion
+    const activeElement = document.activeElement
+    if (activeElement === button || activeElement === document.body) {
+      const nextAction = focusList.current?.querySelectorAll<HTMLButtonElement>('.life-overview-complete')[index] ?? myDayAction.current
+      nextAction?.focus()
+    }
+    setFocusAfterCompletion(null)
+  }, [focusAfterCompletion, focusTasks])
+
+  const completeTask = async (task: PlanTask, index: number, button: HTMLButtonElement): Promise<void> => {
+    if (completingTask) return
+    const shouldRestoreFocus = document.activeElement === button
+    if (await onCompleteTask(task) && shouldRestoreFocus) setFocusAfterCompletion({ taskId: task.id, index, button })
+  }
+
   const metrics = [
     { label: 'Planned', count: summary.plannedTasks.length, icon: 'list', tone: 'violet' },
     { label: 'Due today', count: summary.dueTodayCount, icon: 'flag', tone: 'amber' },
@@ -302,10 +360,10 @@ function LifeOverviewTab({
         </ol> : <p className="life-overview-empty">Nothing scheduled today. Import a calendar or add a time block in My Day.</p>}
       </DashboardCard>
 
-      <DashboardCard id="focus" title="Focus queue" icon="target" action="My Day" onAction={onOpenTasks}>
-        {summary.focusTasks.length ? <ol className="life-overview-list">
-          {summary.focusTasks.map((task) => <li className="life-overview-focus-item" key={task.id}>
-            <button className="life-overview-complete" type="button" disabled={completingTask} onClick={() => onCompleteTask(task)} aria-label={'Complete ' + task.title} title={'Complete ' + task.title}>
+      <DashboardCard id="focus" title="Focus queue" icon="target" action="My Day" onAction={onOpenTasks} actionRef={myDayAction}>
+        {focusTasks.length ? <ol ref={focusList} className="life-overview-list">
+          {focusTasks.map((task, index) => <li className="life-overview-focus-item" key={task.id}>
+            <button className="life-overview-complete" type="button" aria-disabled={completingTask} onClick={(event) => void completeTask(task, index, event.currentTarget)} aria-label={'Complete ' + task.title} title={'Complete ' + task.title}>
               <Icon name="check" />
             </button>
             <span className="life-overview-row-copy"><strong>{task.title}</strong>{task.dueDate && <small>Due {formatDate(task.dueDate)}</small>}</span>
@@ -316,21 +374,18 @@ function LifeOverviewTab({
 
       <DashboardCard id="goals" title="Goal progress" icon="flag" action="All goals" onAction={onGoals}>
         {activeGoals.length ? <ul className="life-overview-list">{activeGoals.map((goal) => {
-          const projectIds = new Set(projects.filter((project) => project.goalId === goal.id).map((project) => project.id))
-          const goalTasks = tasks.filter((task) => task.projectId && projectIds.has(task.projectId) && task.status !== 'cancelled')
-          const completed = goalTasks.filter((task) => task.status === 'done').length
-          const percent = goalTasks.length ? Math.round(completed / goalTasks.length * 100) : 0
+          const { completed, total, percent } = getGoalProgress(goal.id, projects, tasks)
           return <li className="life-overview-goal-item" key={goal.id}>
             <span className="life-overview-ring" aria-hidden="true">
               <svg viewBox="0 0 44 44" focusable="false">
                 <circle cx="22" cy="22" r="18" />
                 <circle cx="22" cy="22" r="18" pathLength="100" strokeDasharray={percent + ' 100'} />
               </svg>
-              {goalTasks.length > 0 && <span>{percent}%</span>}
+              {total > 0 && <span>{percent}%</span>}
             </span>
             <span className="life-overview-row-copy">
               <strong>{goal.title}</strong>
-              <small>{goalTasks.length ? completed + ' of ' + goalTasks.length + ' tasks done' : 'No linked tasks yet'}</small>
+              <small>{total ? completed + ' of ' + total + ' tasks done' : 'No linked tasks yet'}</small>
             </span>
           </li>
         })}</ul> : <div className="life-overview-empty"><p>No active goals yet.</p><button type="button" className="todo-row-action" onClick={onNewGoal}>Create a goal</button></div>}
@@ -384,19 +439,20 @@ function LifeOverviewTab({
   </div>
 }
 
-function DashboardCard({ id, title, icon, action, onAction, children }: {
+function DashboardCard({ id, title, icon, action, onAction, actionRef, children }: {
   id: string
   title: string
   icon: React.ComponentProps<typeof Icon>['name']
   action: string
   onAction: () => void
+  actionRef?: React.Ref<HTMLButtonElement>
   children: React.ReactNode
 }): React.JSX.Element {
   const headingId = 'life-dashboard-' + id
   return <section className="life-overview-card" data-widget-id={id} aria-labelledby={headingId}>
     <header className="life-overview-card-head">
       <h2 id={headingId}><Icon name={icon} />{title}</h2>
-      <button type="button" className="todo-row-action" onClick={onAction}>{action}</button>
+      <button ref={actionRef} type="button" className="todo-row-action" onClick={onAction}>{action}</button>
     </header>
     {children}
   </section>
@@ -406,16 +462,12 @@ function GoalsTab({ goals, areas, projects, tasks, onNew, onEdit, onDelete }: { 
   return <div className="life-panel">
     <div className="life-panel-heading"><div><h3>Goals with a next step</h3><p>Link projects to a goal, then let their tasks make progress visible.</p></div><button className="primary-button" type="button" onClick={onNew}><Icon name="plus" />New goal</button></div>
     {goals.length ? <div className="life-goal-grid">{goals.map((goal) => {
-      const linkedProjects = projects.filter((project) => project.goalId === goal.id)
-      const linkedTasks = tasks.filter((task) => linkedProjects.some((project) => project.id === task.projectId))
-      const completed = linkedTasks.filter((task) => task.status === 'done').length
-      const active = linkedTasks.filter((task) => task.status === 'open').length
-      const progress = linkedTasks.length ? Math.round(completed / linkedTasks.length * 100) : 0
+      const { projectCount, completed, open, total, percent } = getGoalProgress(goal.id, projects, tasks)
       return <article className="life-goal-card" key={goal.id}>
         <div className="life-goal-top"><span className={`life-goal-status status-${goal.status}`}>{goal.status === 'done' ? 'Complete' : goal.status === 'paused' ? 'Paused' : 'In progress'}</span><span>{areas.find((area) => area.id === goal.areaId)?.name ?? 'Personal'}</span></div>
         <h4>{goal.title}</h4><p>{goal.description || 'A clear direction for the work and routines that matter.'}</p>
-        <div className="life-goal-progress"><span><i style={{ width: `${progress}%` }} /></span><small>{completed} done · {active} open</small></div>
-        <div className="life-goal-foot"><span>{linkedProjects.length} {linkedProjects.length === 1 ? 'project' : 'projects'}{goal.targetDate ? ` · target ${formatDate(goal.targetDate)}` : ''}</span><span><button type="button" className="todo-row-action" onClick={() => onEdit(goal)}>Edit</button><button type="button" className="todo-row-action" onClick={() => onDelete(goal)}>Delete</button></span></div>
+        <div className="life-goal-progress"><span><i style={{ width: `${percent}%` }} /></span><small>{total ? `${completed} done · ${open} open` : 'No linked tasks yet'}</small></div>
+        <div className="life-goal-foot"><span>{projectCount} {projectCount === 1 ? 'project' : 'projects'}{goal.targetDate ? ` · target ${formatDate(goal.targetDate)}` : ''}</span><span><button type="button" className="todo-row-action" onClick={() => onEdit(goal)}>Edit</button><button type="button" className="todo-row-action" onClick={() => onDelete(goal)}>Delete</button></span></div>
       </article>
     })}</div> : <LifeEmpty title="Give a priority a place to grow" body="Create one goal, assign an Area, then link projects to turn it into steady progress." action="Create your first goal" onAction={onNew} />}
   </div>

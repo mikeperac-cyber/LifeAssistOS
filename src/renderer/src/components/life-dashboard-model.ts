@@ -16,6 +16,21 @@ export function localDateFromTimestamp(value: string, timeZone: string): string 
   return localDateFormatter(timeZone)(value)
 }
 
+export function getGoalProgress(goalId: string, projects: readonly TaskProject[], tasks: readonly PlanTask[]): {
+  projectCount: number
+  completed: number
+  open: number
+  total: number
+  percent: number
+} {
+  const projectIds = new Set(projects.filter((project) => project.goalId === goalId).map((project) => project.id))
+  const linkedTasks = tasks.filter((task) => task.projectId && projectIds.has(task.projectId))
+  const completed = linkedTasks.filter((task) => task.status === 'done').length
+  const open = linkedTasks.filter((task) => task.status === 'open').length
+  const total = completed + open
+  return { projectCount: projectIds.size, completed, open, total, percent: total ? Math.round(completed / total * 100) : 0 }
+}
+
 export function buildDashboardSummary(input: {
   tasks: readonly PlanTask[]
   projects: readonly TaskProject[]
