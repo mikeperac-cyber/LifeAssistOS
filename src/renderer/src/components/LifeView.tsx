@@ -49,12 +49,34 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [importName, setImportName] = useState('')
   const refreshRequest = useRef(0)
   const dashboardCalendarRequest = useRef(0)
+  const journalRequest = useRef(0)
   const pinnedJournalRequest = useRef(0)
+  const journalList = useRef<HTMLDivElement>(null)
+  const focusedJournalControl = useRef<HTMLElement | null>(null)
   const queryParams = useRef({ calendarDate, searchQuery })
 
   useLayoutEffect(() => {
     queryParams.current = { calendarDate, searchQuery }
   }, [calendarDate, searchQuery])
+
+  useLayoutEffect(() => {
+    const control = focusedJournalControl.current
+    focusedJournalControl.current = null
+    if (control?.isConnected && document.activeElement === document.body) control.focus()
+  }, [entries])
+
+  const refreshJournal = useCallback(async (): Promise<void> => {
+    const request = ++journalRequest.current
+    try {
+      const nextEntries = await window.assist.getJournalEntries(queryParams.current.searchQuery)
+      if (request !== journalRequest.current) return
+      const focused = document.activeElement
+      focusedJournalControl.current = focused instanceof HTMLElement && journalList.current?.contains(focused) ? focused : null
+      setEntries(nextEntries)
+    } catch (cause) {
+      if (request === journalRequest.current) throw cause
+    }
+  }, [])
 
   const refreshPinnedJournal = useCallback(async (): Promise<void> => {
     const request = ++pinnedJournalRequest.current
@@ -69,16 +91,13 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const refresh = useCallback(async (): Promise<void> => {
     const request = ++refreshRequest.current
     const calendarRequest = ++dashboardCalendarRequest.current
-    const { calendarDate, searchQuery } = queryParams.current
+    const { calendarDate } = queryParams.current
     setLoading(true); setError('')
     try {
       const [workspace, nextRoutines, nextContext, nextSources, nextEvents, nextDashboardCalendar] = await Promise.all([
         window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(),
         window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate),
-        loadDashboardCalendar(), refreshPinnedJournal(),
-        window.assist.getJournalEntries(searchQuery).then((nextEntries) => {
-          if (request === refreshRequest.current) setEntries(nextEntries)
-        })
+        loadDashboardCalendar(), refreshPinnedJournal(), refreshJournal()
       ])
       if (request !== refreshRequest.current) return
       setGoals(workspace.goals); setAreas(workspace.areas); setProjects(workspace.projects); setTasks(workspace.tasks)
@@ -90,7 +109,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     } finally {
       if (request === refreshRequest.current) setLoading(false)
     }
-  }, [refreshPinnedJournal])
+  }, [refreshJournal, refreshPinnedJournal])
 
   useEffect(() => { void refresh() }, [refresh, refreshVersion, calendarDate, searchQuery])
   useEffect(() => {
@@ -219,7 +238,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
         if (updatedEntry.isPinned) remaining.push(updatedEntry)
         return remaining.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
       })
-      void refreshPinnedJournal().catch(showError)
+      void Promise.all([refreshJournal(), refreshPinnedJournal()]).catch(showError)
       return true
     } catch (cause) {
       showError(cause)
@@ -287,6 +306,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     {!loading && tab === 'routines' && <RoutinesTab routines={routines} areas={areas} projects={projects} onNew={() => setRoutineDraft({ priority: 'normal', areaId: null, projectId: null, subtasks: [], recurrenceRule: null })} onEdit={setRoutineDraft} onApply={(routine) => void applyRoutine(routine).catch(showError)} onAddStarters={() => void addStarterRoutines().catch(showError)} onDelete={(routine) => void (async () => { const result = await window.assist.deleteRoutineTemplate(routine.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the routine.'); await refresh() })().catch(showError)} />}
     {!loading && tab === 'journal' && <JournalTab
       entries={entries}
+      listRef={journalList}
       goals={goals}
       areas={areas}
       query={query}
@@ -577,8 +597,9 @@ function RoutinesTab({ routines, areas, projects, onNew, onEdit, onApply, onAddS
   </div>
 }
 
-function JournalTab({ entries, goals, areas, query, onQuery, onNew, onEdit, onTogglePin, onDelete }: {
+function JournalTab({ entries, listRef, goals, areas, query, onQuery, onNew, onEdit, onTogglePin, onDelete }: {
   entries: JournalEntry[]
+  listRef: React.Ref<HTMLDivElement>
   goals: LifeGoal[]
   areas: TaskArea[]
   query: string
@@ -591,7 +612,7 @@ function JournalTab({ entries, goals, areas, query, onQuery, onNew, onEdit, onTo
   return <div className="life-panel">
     <div className="life-panel-heading"><div><h3>Notes that remember the why</h3><p>Keep decisions, reflections, and working notes close to the goals they support.</p></div><button className="primary-button" type="button" onClick={onNew}><Icon name="plus" />New note</button></div>
     <label className="life-search"><Icon name="search" /><span className="sr-only">Search notes</span><input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search notes and reflections" /></label>
-    {entries.length ? <div className="life-journal-list">{entries.map((entry) => <article className="life-journal-card" key={entry.id}>
+    {entries.length ? <div className="life-journal-list" ref={listRef}>{entries.map((entry) => <article className="life-journal-card" key={entry.id}>
       <div className="life-journal-date">{formatDate(entry.entryDate)}</div><div className="life-journal-copy"><h4>{entry.title || 'Untitled note'}</h4><p>{entry.content}</p><small>{areas.find((area) => area.id === entry.areaId)?.name ?? 'Personal'}{entry.goalId ? ` · ${goals.find((goal) => goal.id === entry.goalId)?.title ?? 'Goal'}` : ''}</small></div>
       <button className="todo-row-action" type="button" onClick={() => onTogglePin(entry)}>{entry.isPinned ? 'Unpin note' : 'Pin note'}</button>
       <button className="todo-row-action" type="button" onClick={() => onEdit(entry)}>Edit</button><button className="todo-row-action" type="button" onClick={() => void onDelete(entry)}>Delete</button>

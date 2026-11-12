@@ -265,9 +265,10 @@ function stopFolderAutoSync(): void {
 }
 
 async function runFolderAutoSync(): Promise<void> {
-  if (folderSyncRunning || !planning || !await safeStorage.isAsyncEncryptionAvailable()) return
+  if (folderSyncRunning || !planning) return
   folderSyncRunning = true
   try {
+    if (!await safeStorage.isAsyncEncryptionAvailable()) return
     const config = await readFolderSyncConfig(app.getPath('userData'))
     if (!config.folderPath || !config.encryptedPassphrase) return
     const passphrase = (await safeStorage.decryptStringAsync(Buffer.from(config.encryptedPassphrase, 'base64'))).result
@@ -331,7 +332,8 @@ async function createBackup(passphrase: unknown): Promise<{ ok: boolean; cancell
 }
 
 async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancelled?: boolean; error?: string; folderName?: string }> {
-  if (!planning || !settings) return { ok: false, error: 'Backup services are not ready.' }
+  const planningStore = planning
+  if (!planningStore || !settings) return { ok: false, error: 'Backup services are not ready.' }
   if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the restore again shortly.' }
   if (passphrase !== undefined && typeof passphrase !== 'string') return { ok: false, error: 'Invalid backup passphrase.' }
   const selection = mainWindow
@@ -349,9 +351,15 @@ async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancel
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setEnabled(false)
     const result = await restoreBackupSnapshot(backupPath, app.getPath('userData'), {
       passphrase: typeof passphrase === 'string' ? passphrase : undefined,
-      closeStores: () => planning?.close(),
+      closeStores: () => {
+        planningStore.close()
+        life = null
+      },
       reopenStores: async () => {
-        await planning?.init()
+        await planningStore.init()
+        const reopenedLife = new LifeStore(planningStore.database, planningStore)
+        reopenedLife.init()
+        life = reopenedLife
         await settings?.init()
       }
     })
@@ -360,10 +368,10 @@ async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancel
     restartRequired = error instanceof BackupRestoreRestartRequiredError
     return { ok: false, error: asErrorMessage(error) }
   } finally {
-    folderSyncRunning = false
     if (restartRequired) {
       setTimeout(() => { app.relaunch(); app.exit(0) }, 1_000)
     } else {
+      folderSyncRunning = false
       reminders?.start()
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setEnabled(wasEnabled)
     }
