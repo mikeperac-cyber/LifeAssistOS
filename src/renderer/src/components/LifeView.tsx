@@ -191,9 +191,13 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   }
 
   const toggleJournalPin = async (entry: JournalEntry): Promise<void> => {
+    setError('')
     const result = await window.assist.setJournalPinned(entry.id, !entry.isPinned)
-    if (!result.ok) throw new Error(result.error ?? 'Could not change the pin for this note.')
-    await refresh()
+    const updatedEntry = result.journalEntry
+    if (!result.ok || !updatedEntry) throw new Error(result.error ?? 'Could not change the pin for this note.')
+    setEntries((current) => current.map((item) => item.id === updatedEntry.id
+      ? { ...item, isPinned: updatedEntry.isPinned, updatedAt: updatedEntry.updatedAt }
+      : item))
   }
 
   const saveContext = async (): Promise<void> => {
