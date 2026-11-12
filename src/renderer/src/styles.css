@@ -5328,7 +5328,8 @@ body {
   color: var(--purple);
 }
 .life-overview-card-head .todo-row-action,
-.life-overview-empty .todo-row-action {
+.life-overview-empty .todo-row-action,
+.life-overview-note .todo-row-action {
   padding: 6px 8px;
   color: var(--purple);
   font-size: 12px;
@@ -5423,8 +5424,7 @@ body {
 }
 .life-overview-range { margin: -6px 0 7px; }
 .life-overview-row-copy { display: grid; gap: 3px; min-width: 0; }
-.life-overview-row-copy strong,
-.life-overview-note strong {
+.life-overview-row-copy strong {
   color: var(--text);
   font-size: 13px;
   font-weight: 620;
@@ -5518,20 +5518,19 @@ body {
   line-height: 1.5;
 }
 .life-overview-empty p { margin: 0; }
-.life-overview-note {
-  display: grid;
-  width: 100%;
-  gap: 5px;
-  padding: 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--hover-bg);
-  text-align: left;
-  cursor: pointer;
-}
-.life-overview-note:hover { border-color: var(--line); background: var(--panel-2); }
+.life-overview-note { align-items: start; }
 .life-overview-note time { color: var(--muted); font-size: 12px; }
-.life-overview-note p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.life-overview-note p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 
 .life-weekly-chart {
   display: grid;

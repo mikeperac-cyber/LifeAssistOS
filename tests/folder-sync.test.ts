@@ -64,6 +64,50 @@ describe('encrypted shared-folder sync', () => {
     await expect(syncSharedFolder(b.planning.database, folder, DEVICE_B, 'wrong passphrase here')).rejects.toThrow(/same passphrase/i)
     expect(b.planning.listTasks(true).map((task) => task.title)).toEqual(['Local-only task'])
   })
+
+  it('defaults old journal snapshots without a pin column to unpinned', async () => {
+    const root = await makeRoot(roots)
+    const folder = path.join(root, 'shared')
+    const a = await makeStore(root, 'device-a', stores)
+    const b = await makeStore(root, 'device-b', stores)
+    const note = a.life.saveJournal({ entryDate: '2026-11-12', title: 'An old note', content: 'Keep this.' })
+    // Publish through the normal encryption path with the pre-pin journal schema.
+    a.planning.database.exec('ALTER TABLE journal_entries DROP COLUMN is_pinned')
+
+    await syncSharedFolder(a.planning.database, folder, DEVICE_A, PASSPHRASE)
+    await syncSharedFolder(b.planning.database, folder, DEVICE_B, PASSPHRASE)
+
+    expect(b.life.listJournal()).toEqual([{ ...note, isPinned: false }])
+    expect(b.planning.database.prepare('SELECT is_pinned FROM journal_entries WHERE id = ?').get(note.id))
+      .toMatchObject({ is_pinned: 0 })
+  })
+
+  it('syncs journal pin state from the newer row timestamp', async () => {
+    const root = await makeRoot(roots)
+    const folder = path.join(root, 'shared')
+    const a = await makeStore(root, 'device-a', stores)
+    const b = await makeStore(root, 'device-b', stores)
+    const note = a.life.saveJournal({ entryDate: '2026-11-12', title: 'A shared note', content: 'Keep this handy.' })
+    const initialTimestamp = '2026-01-01T10:00:00.000Z'
+    a.planning.database.prepare('UPDATE journal_entries SET updated_at = ? WHERE id = ?').run(initialTimestamp, note.id)
+
+    await syncSharedFolder(a.planning.database, folder, DEVICE_A, PASSPHRASE)
+    await syncSharedFolder(b.planning.database, folder, DEVICE_B, PASSPHRASE)
+    expect(b.life.listJournal()).toEqual([{ ...note, updatedAt: initialTimestamp, isPinned: false }])
+
+    const pinned = a.life.setJournalPinned(note.id, true)
+    expect(pinned.updatedAt > initialTimestamp).toBe(true)
+    await syncSharedFolder(a.planning.database, folder, DEVICE_A, PASSPHRASE)
+    await syncSharedFolder(b.planning.database, folder, DEVICE_B, PASSPHRASE)
+
+    expect(b.life.listPinnedJournal()).toEqual([{ ...note, updatedAt: pinned.updatedAt, isPinned: true }])
+
+    const unpinned = b.life.setJournalPinned(note.id, false)
+    await syncSharedFolder(b.planning.database, folder, DEVICE_B, PASSPHRASE)
+    await syncSharedFolder(a.planning.database, folder, DEVICE_A, PASSPHRASE)
+
+    expect(a.life.listJournal()).toEqual([{ ...note, updatedAt: unpinned.updatedAt, isPinned: false }])
+  })
 })
 
 async function makeRoot(roots: string[]): Promise<string> {

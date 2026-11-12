@@ -27,6 +27,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [tasks, setTasks] = useState<PlanTask[]>([])
   const [routines, setRoutines] = useState<RoutineTemplate[]>([])
   const [entries, setEntries] = useState<JournalEntry[]>([])
+  const [pinnedEntries, setPinnedEntries] = useState<JournalEntry[]>([])
   const [context, setContext] = useState<PersonalContext>({ aboutMe: '', preferences: '', currentFocus: '', updatedAt: '' })
   const [sources, setSources] = useState<Array<{ id: string; name: string; importedAt: string; eventCount: number }>>([])
   const [events, setEvents] = useState<CalendarEvent[]>([])
@@ -48,11 +49,22 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [importName, setImportName] = useState('')
   const refreshRequest = useRef(0)
   const dashboardCalendarRequest = useRef(0)
+  const pinnedJournalRequest = useRef(0)
   const queryParams = useRef({ calendarDate, searchQuery })
 
   useLayoutEffect(() => {
     queryParams.current = { calendarDate, searchQuery }
   }, [calendarDate, searchQuery])
+
+  const refreshPinnedJournal = useCallback(async (): Promise<void> => {
+    const request = ++pinnedJournalRequest.current
+    try {
+      const nextPinnedEntries = await window.assist.getPinnedJournalEntries()
+      if (request === pinnedJournalRequest.current) setPinnedEntries(nextPinnedEntries)
+    } catch (cause) {
+      if (request === pinnedJournalRequest.current) throw cause
+    }
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     const request = ++refreshRequest.current
@@ -60,14 +72,17 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     const { calendarDate, searchQuery } = queryParams.current
     setLoading(true); setError('')
     try {
-      const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextDashboardCalendar] = await Promise.all([
-        window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(), window.assist.getJournalEntries(searchQuery),
+      const [workspace, nextRoutines, nextContext, nextSources, nextEvents, nextDashboardCalendar] = await Promise.all([
+        window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(),
         window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate),
-        loadDashboardCalendar()
+        loadDashboardCalendar(), refreshPinnedJournal(),
+        window.assist.getJournalEntries(searchQuery).then((nextEntries) => {
+          if (request === refreshRequest.current) setEntries(nextEntries)
+        })
       ])
       if (request !== refreshRequest.current) return
       setGoals(workspace.goals); setAreas(workspace.areas); setProjects(workspace.projects); setTasks(workspace.tasks)
-      setRoutines(nextRoutines); setEntries(nextEntries); setContext(nextContext); setSources(nextSources); setEvents(nextEvents)
+      setRoutines(nextRoutines); setContext(nextContext); setSources(nextSources); setEvents(nextEvents)
       if (calendarRequest === dashboardCalendarRequest.current) setDashboardCalendar(nextDashboardCalendar)
       setHasLoaded(true)
     } catch (cause) {
@@ -75,7 +90,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     } finally {
       if (request === refreshRequest.current) setLoading(false)
     }
-  }, [])
+  }, [refreshPinnedJournal])
 
   useEffect(() => { void refresh() }, [refresh, refreshVersion, calendarDate, searchQuery])
   useEffect(() => {
@@ -190,14 +205,26 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     setJournalDraft(null); await refresh()
   }
 
-  const toggleJournalPin = async (entry: JournalEntry): Promise<void> => {
+  const toggleJournalPin = async (entry: JournalEntry): Promise<boolean> => {
     setError('')
-    const result = await window.assist.setJournalPinned(entry.id, !entry.isPinned)
-    const updatedEntry = result.journalEntry
-    if (!result.ok || !updatedEntry) throw new Error(result.error ?? 'Could not change the pin for this note.')
-    setEntries((current) => current.map((item) => item.id === updatedEntry.id
-      ? { ...item, isPinned: updatedEntry.isPinned, updatedAt: updatedEntry.updatedAt }
-      : item))
+    try {
+      const result = await window.assist.setJournalPinned(entry.id, !entry.isPinned)
+      const updatedEntry = result.journalEntry
+      if (!result.ok || !updatedEntry) throw new Error(result.error ?? 'Could not change the pin for this note.')
+      setEntries((current) => current.map((item) => item.id === updatedEntry.id
+        ? { ...item, isPinned: updatedEntry.isPinned, updatedAt: updatedEntry.updatedAt }
+        : item))
+      setPinnedEntries((current) => {
+        const remaining = current.filter((item) => item.id !== updatedEntry.id)
+        if (updatedEntry.isPinned) remaining.push(updatedEntry)
+        return remaining.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3)
+      })
+      void refreshPinnedJournal().catch(showError)
+      return true
+    } catch (cause) {
+      showError(cause)
+      return false
+    }
   }
 
   const saveContext = async (): Promise<void> => {
@@ -236,7 +263,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     {hasLoaded && tab === 'overview' && <LifeOverviewTab
       goals={goals}
       routines={routines}
-      entries={entries}
+      pinnedEntries={pinnedEntries}
       tasks={tasks}
       projects={projects}
       todayEvents={todayEvents}
@@ -253,7 +280,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
       onJournal={() => setTab('journal')}
       onCalendar={(date) => { setCalendarDate(date); setTab('calendar') }}
       onNewGoal={() => { setTab('goals'); setGoalDraft({ status: 'active', areaId: null, targetDate: null }) }}
-      onNewJournal={() => { setTab('journal'); setJournalDraft({ entryDate: today, title: '', content: '', areaId: null, goalId: null }) }}
+      onToggleJournalPin={toggleJournalPin}
       onApplyRoutine={(routine) => void applyRoutine(routine).catch(showError)}
     />}
     {!loading && tab === 'goals' && <GoalsTab goals={goals} areas={areas} projects={projects} tasks={tasks} onNew={() => setGoalDraft({ status: 'active', areaId: null, targetDate: null })} onEdit={setGoalDraft} onDelete={(goal) => void deleteGoal(goal).catch(showError)} />}
@@ -266,7 +293,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
       onQuery={setQuery}
       onNew={() => setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null })}
       onEdit={setJournalDraft}
-      onTogglePin={(entry) => void toggleJournalPin(entry).catch(showError)}
+      onTogglePin={(entry) => void toggleJournalPin(entry)}
       onDelete={async (entry) => { const result = await window.assist.deleteJournalEntry(entry.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the note.'); await refresh() }}
     />}
     {!loading && tab === 'calendar' && <CalendarTab date={calendarDate} onDate={setCalendarDate} events={selectedEvents} tasks={scheduledTasks} sources={sources} sourceId={importSourceId} onSource={setImportSourceId} importName={importName} onImportName={setImportName} onImport={(file) => void importCalendarFile(file)} onDeleteSource={async (id) => { const result = await window.assist.deleteCalendarSource(id); if (!result.ok) throw new Error(result.error ?? 'Could not remove that calendar.'); await refresh() }} />}
@@ -282,13 +309,13 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
 }
 
 function LifeOverviewTab({
-  goals, routines, entries, tasks, projects, todayEvents, upcomingEvents, today, timeZone, completingTask,
+  goals, routines, pinnedEntries, tasks, projects, todayEvents, upcomingEvents, today, timeZone, completingTask,
   onCompleteTask, onOpenTasks, onOpenUpcomingTasks, onOpenProjects, onGoals, onRoutines, onJournal, onCalendar,
-  onNewGoal, onNewJournal, onApplyRoutine
+  onNewGoal, onToggleJournalPin, onApplyRoutine
 }: {
   goals: LifeGoal[]
   routines: RoutineTemplate[]
-  entries: JournalEntry[]
+  pinnedEntries: JournalEntry[]
   tasks: PlanTask[]
   projects: TaskProject[]
   todayEvents: CalendarEvent[]
@@ -305,11 +332,12 @@ function LifeOverviewTab({
   onJournal: () => void
   onCalendar: (date: string) => void
   onNewGoal: () => void
-  onNewJournal: () => void
+  onToggleJournalPin: (entry: JournalEntry) => Promise<boolean>
   onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
   const focusList = useRef<HTMLOListElement>(null)
   const myDayAction = useRef<HTMLButtonElement>(null)
+  const journalAction = useRef<HTMLButtonElement>(null)
   const [focusAfterCompletion, setFocusAfterCompletion] = useState<{ taskId: string; index: number; button: HTMLButtonElement } | null>(null)
   const agendaEvents = useMemo(() => calendarEventsInRange(todayEvents, today, today, timeZone), [todayEvents, today, timeZone])
   const summary = useMemo(
@@ -337,6 +365,12 @@ function LifeOverviewTab({
     if (await onCompleteTask(task) && shouldRestoreFocus) setFocusAfterCompletion({ taskId: task.id, index, button })
   }
 
+  const toggleNotePin = async (entry: JournalEntry, button: HTMLButtonElement): Promise<void> => {
+    const hadFocus = document.activeElement === button
+    if (!await onToggleJournalPin(entry) || !hadFocus) return
+    if (document.activeElement === button || document.activeElement === document.body) journalAction.current?.focus()
+  }
+
   const metrics = [
     { label: 'Planned', count: summary.plannedTasks.length, icon: 'list', tone: 'violet' },
     { label: 'Due today', count: summary.dueTodayCount, icon: 'flag', tone: 'amber' },
@@ -357,7 +391,6 @@ function LifeOverviewTab({
     })
   ].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.time) - Date.parse(b.time))
   const activeGoals = goals.filter((goal) => goal.status === 'active').slice(0, 3)
-  const recentEntry = entries[0]
   const upcoming = [
     ...summary.upcomingTasks.map((task) => ({
       key: 'task-' + task.id, date: task.dueDate ?? today, title: task.title, kind: 'task', onOpen: onOpenUpcomingTasks
@@ -480,12 +513,20 @@ function LifeOverviewTab({
         </ol>
       </DashboardCard>
 
-      <DashboardCard id="pinned-notes" title="Recent note" icon="book" action="Write a note" onAction={onNewJournal}>
-        {recentEntry ? <button type="button" className="life-overview-note" onClick={onJournal}>
-          <time dateTime={recentEntry.entryDate}>{formatDate(recentEntry.entryDate)}</time>
-          <strong>{recentEntry.title || 'Untitled note'}</strong>
-          <p>{recentEntry.content.slice(0, 240)}{recentEntry.content.length > 240 ? '…' : ''}</p>
-        </button> : <p className="life-overview-empty">Write a note to keep a decision, reflection, or idea close to your goals.</p>}
+      <DashboardCard id="pinned-notes" title="Pinned notes" icon="book" action="Notes & journal" onAction={onJournal} actionRef={journalAction}>
+        {pinnedEntries.length ? <ul className="life-overview-tiles">
+          {pinnedEntries.map((entry) => {
+            const title = entry.title || 'Untitled note'
+            return <li className="life-overview-tile life-overview-note" key={entry.id}>
+              <div className="life-overview-row-copy">
+                <strong>{title}</strong>
+                <time dateTime={entry.entryDate}>{formatDate(entry.entryDate)}</time>
+                <p>{entry.content.slice(0, 240)}{entry.content.length > 240 ? '…' : ''}</p>
+              </div>
+              <button className="todo-row-action" type="button" aria-label={`Unpin note: ${title}`} onClick={(event) => void toggleNotePin(entry, event.currentTarget)}>Unpin note</button>
+            </li>
+          })}
+        </ul> : <p className="life-overview-empty">No pinned notes yet.</p>}
       </DashboardCard>
     </div>
   </div>
