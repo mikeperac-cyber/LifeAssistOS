@@ -2,50 +2,56 @@
 
 <div align="center">
 
-### A calmer place to plan your day and keep life moving.
+### Your day, your projects, and the rest of life in one calm workspace.
 
-Capture what’s on your mind, turn it into clear next steps, and connect daily work to the goals that matter. LifeAssistOS is a local-first Windows productivity app with optional AI support.
+LifeAssistOS is a local-first Windows productivity app for turning loose thoughts into clear next steps, keeping projects moving, and staying connected to the goals behind your work.
 
-**Tasks · Projects · Goals · Routines · Journal · Calendar · AI coaching**
+[![Latest release](https://img.shields.io/github/v/release/mikeperac-cyber/LifeAssistOS?label=latest%20release&color=7c3aed)](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-Windows-2563eb?logo=windows&logoColor=white)](https://github.com/mikeperac-cyber/LifeAssistOS)
+[![AI optional](https://img.shields.io/badge/AI-optional-8b5cf6)](https://github.com/mikeperac-cyber/LifeAssistOS)
+
+**Dashboard · My Day · Projects · Goals · Routines · Notes · Calendar · Optional AI**
 
 </div>
 
 ---
 
-## Make progress feel manageable
+## A clear view of what matters today
 
-LifeAssistOS brings the pieces of a productive day into one focused workspace. Start with a quick capture, decide what matters today, and keep your bigger plans close without turning every part of life into a score.
+The Dashboard brings your real plans together without turning productivity into a score. See what you planned, what is due, completed work, and your imported calendar context at a glance.
 
-| Plan | Connect | Reflect |
+- **Find your next step.** Keep up to three My Day tasks in a quick focus queue, with one-click completion.
+- **See the shape of your week.** Review seven days of completed task counts, including quiet days, with no streaks or invented forecasts.
+- **Keep the bigger picture close.** Follow goal progress, see projects with open work, and jump to each project’s next task.
+- **Make routines easy to start.** Add an existing routine to My Day when you are ready to begin.
+- **Keep useful notes nearby.** Pin journal entries to the Dashboard and sync pin state through your encrypted folder.
+- **Make it yours.** Reorder or hide Dashboard cards. Your layout stays on this device.
+
+## One workspace, connected
+
+| Plan | Build momentum | Reflect and reset |
 | --- | --- | --- |
-| Inbox, My Day, projects, boards, priorities, reminders, and recurring tasks | Goals, reusable routines, journal notes, and a calendar-aware day agenda | A private weekly review with recent completions and focused task filters |
+| Capture thoughts in the Inbox, choose a focused My Day list, and organize work by Area, project, priority, due date, or schedule. | Track project work in List or Board views, create reusable routines, and keep goals connected to your active tasks. | Search notes and journal entries, bring read-only `.ics` calendars into your agenda, and use weekly review to choose the next step. |
 
-## What you can do
-
-- **Shape your day.** Capture ideas in the Inbox, choose a focused My Day list, and see overdue and due-today work alongside your schedule.
-- **Move projects forward.** Group work into Areas and projects, then use List or Board views to track what’s next, in progress, or waiting.
-- **Build routines that stick.** Repeat tasks daily, on chosen weekdays, or monthly. Reuse checklist templates for the workflows you do often.
-- **Keep life connected.** Link goals to Areas and projects, write searchable notes and journal entries, and bring read-only calendar events into your agenda.
-- **Get useful AI help.** Ask for a draft task, subtasks, or a suggested day plan. Review every suggestion before saving or applying it.
-- **Choose a workspace that feels right.** Switch between Midnight, Light, Forest, Violet, and Blueprint themes. Use `Ctrl+K` to jump to a view or capture an item.
+AI support is optional. Ask for task drafts, subtasks, or a suggested day plan; review each suggestion before saving or applying it. Coach and Teacher modes support learning and everyday decisions without taking control of your workspace.
 
 ## Your data stays yours
 
-Your tasks and life workspace are stored locally. AI features are optional; when you use a hosted provider, LifeAssistOS sends only the information needed for that action. Personal context and open tasks each have their own sharing controls. API keys stay in the main process and are encrypted with Windows secure storage when available.
+Tasks and life-workspace records are stored locally. When you use a hosted AI provider, LifeAssistOS sends only the information needed for that action. Personal context and open tasks have separate sharing controls. API keys stay in the main process and are encrypted with Windows secure storage when available.
 
-Back up your workspace from **Settings → Local backup & restore**, with optional passphrase encryption. For multiple devices, choose a folder already synchronized by your cloud-storage provider and enable **Encrypted folder sync**. Devices exchange AES-256-GCM encrypted snapshots; each device’s provider credentials and appearance remain local.
+Create a local backup from **Settings → Local backup & restore**, with optional passphrase encryption. To sync devices, choose a folder already synchronized by your cloud-storage provider and enable **Encrypted folder sync**. Devices exchange AES-256-GCM encrypted snapshots; provider credentials and appearance remain local to each device.
 
-Calendar support currently imports read-only `.ics` files from Google Calendar or Outlook. LifeAssistOS does not connect to those calendar accounts directly.
+Calendar support imports read-only `.ics` files from Google Calendar or Outlook. LifeAssistOS does not connect to those calendar accounts directly.
 
-## AI providers
+## Themes
 
-Use OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, NVIDIA, Together AI, Fireworks AI, Cerebras, Ollama, LM Studio, or a custom OpenAI-compatible endpoint. Local Ollama and LM Studio setups can keep AI requests on your device. AI output is a draft: it never changes your tasks without your review.
+Choose **Midnight**, **Light**, **Forest**, **Violet**, or **Blueprint**. Midnight uses a deep charcoal workspace with violet actions and restrained amber and pink accents.
 
 ## Install on Windows
 
-Download **LifeAssistOS-Setup-0.3.0.exe** from [GitHub Releases](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest) and run the installer. LifeAssistOS can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
+Download the latest **LifeAssistOS** installer from [GitHub Releases](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest) and run it. The app installs per user and does not require administrator access. Upgrades and reinstalls preserve your existing workspace.
 
-Windows may show a SmartScreen prompt because this build is not code-signed. Confirm the publisher details and continue only if you downloaded the installer from the project’s [GitHub Releases page](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest).
+Windows may show a SmartScreen prompt because the build is not code-signed. Check that you downloaded the installer from this project’s [GitHub Releases page](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest).
 
 ## Keyboard shortcuts
 
@@ -67,8 +73,9 @@ npm run build
 npm run dist:win
 ```
 
-The Windows installer is written to `release\LifeAssistOS-Setup-0.3.0.exe`.
+The Windows installer is written to `release\LifeAssistOS-Setup-0.4.0.exe`.
 
 ## Product direction
 
-LifeAssistOS aims to be a practical life workspace: useful enough to connect plans, routines, and reflection, while keeping everyday task planning quick and private by default. See the [work-management roadmap](docs/superpowers/specs/2026-11-08-work-management-roadmap.md) for the product rationale and deferred ideas.
+LifeAssistOS is designed to keep daily planning quick while connecting it to projects, routines, and reflection. See the [work-management roadmap](docs/superpowers/specs/2026-11-08-work-management-roadmap.md) for product rationale and deferred ideas.
+

@@ -1,6 +1,6 @@
 {
   "name": "lifeassist-os",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "author": "LifeAssistOS",
   "description": "A local-first productivity companion with optional AI coaching, learning, and task planning.",
@@ -27,7 +27,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.2",
-    "electron": "^45.2.1",
+    "electron": "45.2.1",
     "electron-builder": "^26.7.0",
     "electron-vite": "^6.0.0",
     "typescript": "^5.9.3",
@@ -83,3 +83,4 @@
     }
   }
 }
+
