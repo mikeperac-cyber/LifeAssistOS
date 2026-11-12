@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarEvent, JournalEntry, LifeGoal, PersonalContext, PlanTask, RoutineTemplate, TaskArea, TaskProject } from '../../../shared/types'
 import { parseCalendarIcs } from '../../../shared/calendar-ics'
 import { Icon } from './Icon'
+import { buildDashboardSummary, calendarEventsInRange } from './life-dashboard-model'
+import { addDays } from './review-view-model'
 
 type LifeTab = 'overview' | 'goals' | 'routines' | 'journal' | 'calendar' | 'context'
 const TABS: Array<{ id: LifeTab; label: string }> = [
   { id: 'overview', label: 'Overview' }, { id: 'goals', label: 'Goals' }, { id: 'routines', label: 'Routines' }, { id: 'journal', label: 'Notes & journal' }, { id: 'calendar', label: 'Calendar' }, { id: 'context', label: 'AI context' }
 ]
 
-export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: number; onOpenTasks: () => void }): React.JSX.Element {
+export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onOpenProjects }: {
+  refreshVersion: number
+  onOpenTasks: () => void
+  onOpenUpcomingTasks: () => void
+  onOpenProjects: () => void
+}): React.JSX.Element {
   const [tab, setTab] = useState<LifeTab>('overview')
   const [goals, setGoals] = useState<LifeGoal[]>([])
   const [areas, setAreas] = useState<TaskArea[]>([])
@@ -20,7 +27,9 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
   const [sources, setSources] = useState<Array<{ id: string; name: string; importedAt: string; eventCount: number }>>([])
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([])
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
   const [calendarDate, setCalendarDate] = useState(getLocalDate())
+  const [completingTask, setCompletingTask] = useState(false)
   const [query, setQuery] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState('')
@@ -31,18 +40,27 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
   const [journalDraft, setJournalDraft] = useState<Partial<JournalEntry> | null>(null)
   const [importSourceId, setImportSourceId] = useState('')
   const [importName, setImportName] = useState('')
+  const refreshRequest = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
+    const request = ++refreshRequest.current
     setLoading(true); setError('')
     try {
-      const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextTodayEvents] = await Promise.all([
+      const today = getLocalDate()
+      const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextTodayEvents, nextUpcomingEvents] = await Promise.all([
         window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(), window.assist.getJournalEntries(searchQuery),
-        window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate), window.assist.getCalendarEvents(getLocalDate(), getLocalDate())
+        window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate),
+        window.assist.getCalendarEvents(today, today), window.assist.getCalendarEvents(today, addDays(today, 6))
       ])
+      if (request !== refreshRequest.current) return
       setGoals(workspace.goals); setAreas(workspace.areas); setProjects(workspace.projects); setTasks(workspace.tasks)
       setRoutines(nextRoutines); setEntries(nextEntries); setContext(nextContext); setSources(nextSources); setEvents(nextEvents); setTodayEvents(nextTodayEvents)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Your Life workspace could not be loaded.') }
-    finally { setLoading(false) }
+      setUpcomingEvents(nextUpcomingEvents)
+    } catch (cause) {
+      if (request === refreshRequest.current) setError(cause instanceof Error ? cause.message : 'Your Life workspace could not be loaded.')
+    } finally {
+      if (request === refreshRequest.current) setLoading(false)
+    }
   }, [calendarDate, searchQuery])
 
   useEffect(() => { void refresh() }, [refresh, refreshVersion])
@@ -88,6 +106,22 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
     setNotice(`${routine.name} added to My Day.`); window.setTimeout(() => setNotice(''), 3000); await refresh()
   }
 
+  const completeFocusTask = async (task: PlanTask): Promise<void> => {
+    setCompletingTask(true)
+    setError('')
+    try {
+      const result = await window.assist.updatePlanTask(task.id, { status: 'done' })
+      if (!result.ok) throw new Error(result.error ?? 'Could not complete the task.')
+      setNotice(`Completed “${task.title}”.`)
+      window.setTimeout(() => setNotice(''), 3000)
+      await refresh()
+    } catch (cause) {
+      showError(cause)
+    } finally {
+      setCompletingTask(false)
+    }
+  }
+
   const addStarterRoutines = async (): Promise<void> => {
     const starters = [
       { name: 'Weekly reset', description: 'Clear space and choose a focus for the week.', title: 'Review the week ahead', subtasks: ['Clear the Inbox', 'Check upcoming dates', 'Choose this week’s top three'], recurrenceRule: { frequency: 'weekly' as const, weekdays: [0] } },
@@ -131,13 +165,10 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
 
   const scheduledTasks = useMemo(() => tasks.filter((task) => task.status === 'open' && task.scheduledStart?.slice(0, 10) === calendarDate).sort((a, b) => (a.scheduledStart ?? '').localeCompare(b.scheduledStart ?? '')), [calendarDate, tasks])
   const selectedLabel = TABS.find((item) => item.id === tab)?.label ?? 'Overview'
+  const today = getLocalDate()
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
   return <section className="life-view" aria-label="Life workspace" aria-busy={loading}>
-    <header className="life-header">
-      <div><span className="life-kicker"><Icon name="leaf" /> Your life, in one place</span><h2>Make room for what matters.</h2><p>Connect goals, plans, routines, and notes without losing control of your data.</p></div>
-      <button className="primary-button" type="button" onClick={onOpenTasks}><Icon name="calendar" />Open My Day</button>
-    </header>
-
     <nav className="life-tabs" aria-label="Life workspace sections" role="tablist">
       {TABS.map((item) => <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}
     </nav>
@@ -146,7 +177,29 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
     {error && <div className="life-error" role="alert"><span>{error}</span><button className="ghost-button" type="button" onClick={() => void refresh()}>Retry</button></div>}
     {loading && goals.length === 0 && <p className="life-loading" role="status">Opening your Life workspace…</p>}
 
-    {!loading && tab === 'overview' && <LifeOverviewTab goals={goals} routines={routines} entries={entries} tasks={tasks} projects={projects} todayEvents={todayEvents} onOpenTasks={onOpenTasks} onGoals={() => setTab('goals')} onRoutines={() => setTab('routines')} onJournal={() => setTab('journal')} onCalendar={() => setTab('calendar')} onNewGoal={() => { setTab('goals'); setGoalDraft({ status: 'active', areaId: null, targetDate: null }) }} onNewJournal={() => { setTab('journal'); setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null }) }} onApplyRoutine={(routine) => void applyRoutine(routine).catch(showError)} />}
+    {!loading && tab === 'overview' && <LifeOverviewTab
+      goals={goals}
+      routines={routines}
+      entries={entries}
+      tasks={tasks}
+      projects={projects}
+      todayEvents={todayEvents}
+      upcomingEvents={upcomingEvents}
+      today={today}
+      timeZone={timeZone}
+      completingTask={completingTask}
+      onCompleteTask={(task) => void completeFocusTask(task)}
+      onOpenTasks={onOpenTasks}
+      onOpenUpcomingTasks={onOpenUpcomingTasks}
+      onOpenProjects={onOpenProjects}
+      onGoals={() => setTab('goals')}
+      onRoutines={() => setTab('routines')}
+      onJournal={() => setTab('journal')}
+      onCalendar={(date) => { setCalendarDate(date); setTab('calendar') }}
+      onNewGoal={() => { setTab('goals'); setGoalDraft({ status: 'active', areaId: null, targetDate: null }) }}
+      onNewJournal={() => { setTab('journal'); setJournalDraft({ entryDate: today, title: '', content: '', areaId: null, goalId: null }) }}
+      onApplyRoutine={(routine) => void applyRoutine(routine).catch(showError)}
+    />}
     {!loading && tab === 'goals' && <GoalsTab goals={goals} areas={areas} projects={projects} tasks={tasks} onNew={() => setGoalDraft({ status: 'active', areaId: null, targetDate: null })} onEdit={setGoalDraft} onDelete={(goal) => void deleteGoal(goal).catch(showError)} />}
     {!loading && tab === 'routines' && <RoutinesTab routines={routines} areas={areas} projects={projects} onNew={() => setRoutineDraft({ priority: 'normal', areaId: null, projectId: null, subtasks: [], recurrenceRule: null })} onEdit={setRoutineDraft} onApply={(routine) => void applyRoutine(routine).catch(showError)} onAddStarters={() => void addStarterRoutines().catch(showError)} onDelete={(routine) => void (async () => { const result = await window.assist.deleteRoutineTemplate(routine.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the routine.'); await refresh() })().catch(showError)} />}
     {!loading && tab === 'journal' && <JournalTab entries={entries} goals={goals} areas={areas} query={query} onQuery={setQuery} onNew={() => setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null })} onEdit={setJournalDraft} onDelete={async (entry) => { const result = await window.assist.deleteJournalEntry(entry.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the note.'); await refresh() }} />}
@@ -162,53 +215,191 @@ export function LifeView({ refreshVersion, onOpenTasks }: { refreshVersion: numb
   function showError(cause: unknown): void { setError(cause instanceof Error ? cause.message : 'That action could not be completed.') }
 }
 
-function LifeOverviewTab({ goals, routines, entries, tasks, projects, todayEvents, onOpenTasks, onGoals, onRoutines, onJournal, onCalendar, onNewGoal, onNewJournal, onApplyRoutine }: {
-  goals: LifeGoal[]; routines: RoutineTemplate[]; entries: JournalEntry[]; tasks: PlanTask[]; projects: TaskProject[]; todayEvents: CalendarEvent[]
-  onOpenTasks: () => void; onGoals: () => void; onRoutines: () => void; onJournal: () => void; onCalendar: () => void; onNewGoal: () => void; onNewJournal: () => void; onApplyRoutine: (routine: RoutineTemplate) => void
+function LifeOverviewTab({
+  goals, routines, entries, tasks, projects, todayEvents, upcomingEvents, today, timeZone, completingTask,
+  onCompleteTask, onOpenTasks, onOpenUpcomingTasks, onOpenProjects, onGoals, onRoutines, onJournal, onCalendar,
+  onNewGoal, onNewJournal, onApplyRoutine
+}: {
+  goals: LifeGoal[]
+  routines: RoutineTemplate[]
+  entries: JournalEntry[]
+  tasks: PlanTask[]
+  projects: TaskProject[]
+  todayEvents: CalendarEvent[]
+  upcomingEvents: CalendarEvent[]
+  today: string
+  timeZone: string
+  completingTask: boolean
+  onCompleteTask: (task: PlanTask) => void
+  onOpenTasks: () => void
+  onOpenUpcomingTasks: () => void
+  onOpenProjects: () => void
+  onGoals: () => void
+  onRoutines: () => void
+  onJournal: () => void
+  onCalendar: (date: string) => void
+  onNewGoal: () => void
+  onNewJournal: () => void
+  onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
-  const today = getLocalDate()
-  const plannedTasks = tasks.filter((task) => task.status === 'open' && task.plannedDate === today)
-  const doneToday = tasks.filter((task) => task.status === 'done' && task.completedAt?.slice(0, 10) === today).length
+  const agendaEvents = calendarEventsInRange(todayEvents, today, today, timeZone)
+  const summary = buildDashboardSummary({ tasks, projects, todayEvents: agendaEvents, upcomingEvents, today, timeZone })
+  const metrics = [
+    { label: 'Planned', count: summary.plannedTasks.length, icon: 'list', tone: 'violet' },
+    { label: 'Due today', count: summary.dueTodayCount, icon: 'flag', tone: 'amber' },
+    { label: 'Completed', count: summary.completedTodayCount, icon: 'check', tone: 'pink' },
+    { label: 'Calendar events', count: summary.todayEventCount, icon: 'calendar', tone: 'violet' }
+  ] as const
   const timeline = [
-    ...todayEvents.map((event) => ({ key: `event-${event.id}`, time: event.startsAt, label: event.title, detail: event.location, allDay: event.allDay, type: 'event' as const })),
-    ...plannedTasks.filter((task) => task.scheduledStart).map((task) => ({ key: `task-${task.id}`, time: task.scheduledStart!, label: task.title, detail: `${task.durationMinutes ?? 30} min planned`, allDay: false, type: 'task' as const }))
-  ].sort((a, b) => a.time.localeCompare(b.time))
+    ...agendaEvents.map((event) => ({
+      key: 'event-' + event.id, time: event.startsAt, title: event.title, detail: event.location, allDay: event.allDay, kind: 'event'
+    })),
+    ...tasks.flatMap((task) => {
+      const time = task.scheduledStart
+      if (task.status !== 'open' || !time || time.slice(0, 10) !== today) return []
+      return [{
+        key: 'task-' + task.id, time, title: task.title,
+        detail: task.durationMinutes ? task.durationMinutes + ' min' : '', allDay: false, kind: 'task'
+      }]
+    })
+  ].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.time) - Date.parse(b.time))
   const activeGoals = goals.filter((goal) => goal.status === 'active').slice(0, 3)
   const recentEntry = entries[0]
+  const upcoming = [
+    ...summary.upcomingTasks.map((task) => ({
+      key: 'task-' + task.id, date: task.dueDate ?? today, title: task.title, kind: 'task', onOpen: onOpenUpcomingTasks
+    })),
+    ...summary.upcomingEvents.map((event) => {
+      const starts = event.allDay ? event.startsAt.slice(0, 10) : getLocalDate(new Date(event.startsAt))
+      const date = starts < today ? today : starts
+      return { key: 'event-' + event.id, date, title: event.title, kind: 'event', onOpen: () => onCalendar(date) }
+    })
+  ].sort((a, b) => a.date.localeCompare(b.date))
+
   return <div className="life-overview">
-    <section className="life-overview-day">
-      <div><span className="life-kicker"><Icon name="calendar" />{formatLongDate(today)}</span><h3>Keep today connected to the bigger picture.</h3><p>{plannedTasks.length} planned task{plannedTasks.length === 1 ? '' : 's'} · {todayEvents.length} calendar event{todayEvents.length === 1 ? '' : 's'} · {doneToday} completed</p></div>
-      <button type="button" className="primary-button" onClick={onOpenTasks}>Open My Day</button>
+    <section className="life-overview-card life-overview-day" data-widget-id="today-summary" aria-labelledby="life-today-summary">
+      <header className="life-overview-card-head">
+        <div><h2 id="life-today-summary">Today</h2><time dateTime={today}>{formatLongDate(today)}</time></div>
+        <button type="button" className="primary-button" onClick={onOpenTasks}><Icon name="calendar" />Open My Day</button>
+      </header>
+      <dl className="life-overview-metrics">
+        {metrics.map((metric) => <div className={'life-overview-metric tone-' + metric.tone} key={metric.label}>
+          <Icon name={metric.icon} />
+          <dt>{metric.label}</dt>
+          <dd>{metric.count}</dd>
+        </div>)}
+      </dl>
     </section>
+
     <div className="life-overview-grid">
-      <section className="life-overview-card life-overview-agenda">
-        <div className="life-overview-card-head"><div><span>PLAN</span><h3>Today at a glance</h3></div><button type="button" className="todo-row-action" onClick={onCalendar}>Calendar</button></div>
-        {timeline.length ? <div className="life-overview-agenda-list">{timeline.map((item) => <div key={item.key} className={`life-overview-agenda-item ${item.type}`}><time>{item.allDay ? 'All day' : formatTime(item.time)}</time><span><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</span><em>{item.type === 'event' ? 'Event' : 'Task'}</em></div>)}</div> : <div className="life-overview-empty"><p>No calendar events or scheduled tasks today.</p><button type="button" onClick={onCalendar}>Add calendar context</button><button type="button" onClick={onOpenTasks}>Plan a task</button></div>}
-        {plannedTasks.length > 0 && <p className="life-overview-more">{plannedTasks.length} task{plannedTasks.length === 1 ? '' : 's'} planned for My Day</p>}
-      </section>
+      <DashboardCard id="agenda" title="Day agenda" icon="calendar" action="Calendar" onAction={() => onCalendar(today)}>
+        {timeline.length ? <ol className="life-overview-list">
+          {timeline.map((item) => <li className="life-overview-agenda-item" key={item.key}>
+            <time dateTime={item.time}>{item.allDay ? 'All day' : formatTime(item.time)}</time>
+            <span className="life-overview-row-copy"><strong>{item.title}</strong>{item.detail && <small>{item.detail}</small>}</span>
+            <span className={'life-overview-kind ' + item.kind}>{item.kind === 'event' ? 'Event' : 'Task'}</span>
+          </li>)}
+        </ol> : <p className="life-overview-empty">Nothing scheduled today. Import a calendar or add a time block in My Day.</p>}
+      </DashboardCard>
 
-      <section className="life-overview-card">
-        <div className="life-overview-card-head"><div><span>DIRECTION</span><h3>Goals in motion</h3></div><button type="button" className="todo-row-action" onClick={onGoals}>All goals</button></div>
-        {activeGoals.length ? <div className="life-overview-goals">{activeGoals.map((goal) => {
-          const goalProjects = projects.filter((project) => project.goalId === goal.id)
-          const goalTasks = tasks.filter((task) => goalProjects.some((project) => project.id === task.projectId))
-          const complete = goalTasks.filter((task) => task.status === 'done').length
-          const percent = goalTasks.length ? Math.round(complete / goalTasks.length * 100) : 0
-          return <article key={goal.id}><div><strong>{goal.title}</strong><small>{goalProjects.length} projects · {complete}/{goalTasks.length} tasks done</small></div><span className="life-overview-progress"><i style={{ width: `${percent}%` }} /></span></article>
-        })}</div> : <div className="life-overview-empty"><p>Give a priority a place to grow.</p><button type="button" onClick={onNewGoal}>Create a goal</button></div>}
-      </section>
+      <DashboardCard id="focus" title="Focus queue" icon="target" action="My Day" onAction={onOpenTasks}>
+        {summary.focusTasks.length ? <ol className="life-overview-list">
+          {summary.focusTasks.map((task) => <li className="life-overview-focus-item" key={task.id}>
+            <button className="life-overview-complete" type="button" disabled={completingTask} onClick={() => onCompleteTask(task)} aria-label={'Complete ' + task.title} title={'Complete ' + task.title}>
+              <Icon name="check" />
+            </button>
+            <span className="life-overview-row-copy"><strong>{task.title}</strong>{task.dueDate && <small>Due {formatDate(task.dueDate)}</small>}</span>
+            {task.priority === 'high' && <span className="life-overview-kind task">High priority</span>}
+          </li>)}
+        </ol> : <p className="life-overview-empty">Plan a task in My Day to add it to your focus queue.</p>}
+      </DashboardCard>
 
-      <section className="life-overview-card">
-        <div className="life-overview-card-head"><div><span>REPEAT</span><h3>Ready-to-use routines</h3></div><button type="button" className="todo-row-action" onClick={onRoutines}>All routines</button></div>
-        {routines.length ? <div className="life-overview-routines">{routines.slice(0, 3).map((routine) => <article key={routine.id}><span><strong>{routine.name}</strong><small>{routine.subtasks.length} checklist items</small></span><button type="button" className="ghost-button" onClick={() => onApplyRoutine(routine)}>Add to My Day</button></article>)}</div> : <div className="life-overview-empty"><p>Save a checklist once, then add it whenever it fits.</p><button type="button" onClick={onRoutines}>Create a routine</button></div>}
-      </section>
+      <DashboardCard id="goals" title="Goal progress" icon="flag" action="All goals" onAction={onGoals}>
+        {activeGoals.length ? <ul className="life-overview-list">{activeGoals.map((goal) => {
+          const projectIds = new Set(projects.filter((project) => project.goalId === goal.id).map((project) => project.id))
+          const goalTasks = tasks.filter((task) => task.projectId && projectIds.has(task.projectId) && task.status !== 'cancelled')
+          const completed = goalTasks.filter((task) => task.status === 'done').length
+          const percent = goalTasks.length ? Math.round(completed / goalTasks.length * 100) : 0
+          return <li className="life-overview-goal-item" key={goal.id}>
+            <span className="life-overview-ring" aria-hidden="true">
+              <svg viewBox="0 0 44 44" focusable="false">
+                <circle cx="22" cy="22" r="18" />
+                <circle cx="22" cy="22" r="18" pathLength="100" strokeDasharray={percent + ' 100'} />
+              </svg>
+              {goalTasks.length > 0 && <span>{percent}%</span>}
+            </span>
+            <span className="life-overview-row-copy">
+              <strong>{goal.title}</strong>
+              <small>{goalTasks.length ? completed + ' of ' + goalTasks.length + ' tasks done' : 'No linked tasks yet'}</small>
+            </span>
+          </li>
+        })}</ul> : <div className="life-overview-empty"><p>No active goals yet.</p><button type="button" className="todo-row-action" onClick={onNewGoal}>Create a goal</button></div>}
+      </DashboardCard>
 
-      <section className="life-overview-card life-overview-journal">
-        <div className="life-overview-card-head"><div><span>REFLECT</span><h3>Recent note</h3></div><button type="button" className="todo-row-action" onClick={onNewJournal}>Write a note</button></div>
-        {recentEntry ? <button type="button" className="life-overview-note" onClick={onJournal}><time>{formatDate(recentEntry.entryDate)}</time><strong>{recentEntry.title || 'Untitled note'}</strong><p>{recentEntry.content.slice(0, 240)}{recentEntry.content.length > 240 ? '…' : ''}</p></button> : <div className="life-overview-empty"><p>Keep a decision, reflection, or idea close to your goals.</p><button type="button" onClick={onNewJournal}>Write your first note</button></div>}
-      </section>
+      <DashboardCard id="projects" title="Projects with open work" icon="projects" action="Projects" onAction={onOpenProjects}>
+        {summary.projectCards.length ? <ul className="life-overview-tiles">
+          {summary.projectCards.map(({ project, openTaskCount, nextTask }) => <li className="life-overview-tile" key={project.id}>
+            <div className="life-overview-row-copy">
+              <strong>{project.name}</strong>
+              <small><span>Next</span> {nextTask.title}</small>
+            </div>
+            <span className="life-overview-kind">{openTaskCount} open</span>
+          </li>)}
+        </ul> : <p className="life-overview-empty">Add an open task to a project to see its next step here.</p>}
+      </DashboardCard>
+
+      <DashboardCard id="routines" title="Routines" icon="checklist" action="All routines" onAction={onRoutines}>
+        {routines.length ? <ul className="life-overview-tiles">
+          {routines.slice(0, 3).map((routine) => <li className="life-overview-tile" key={routine.id}>
+            <span className="life-overview-row-copy">
+              <strong>{routine.name}</strong>
+              <small>{routine.subtasks.length ? routine.subtasks.length + ' checklist ' + (routine.subtasks.length === 1 ? 'item' : 'items') : routine.title}</small>
+            </span>
+            <button type="button" className="life-overview-launch" onClick={() => onApplyRoutine(routine)} aria-label={'Add to My Day, ' + routine.name}><Icon name="plus" />Add to My Day</button>
+          </li>)}
+        </ul> : <p className="life-overview-empty">Create a routine to add its task and checklist to My Day whenever you need it.</p>}
+      </DashboardCard>
+
+      <DashboardCard id="upcoming" title="Upcoming life admin" icon="clock" action="Due this week" onAction={onOpenUpcomingTasks}>
+        <p className="life-overview-range">{formatDate(today)} to {formatDate(addDays(today, 6))}</p>
+        {upcoming.length ? <ul className="life-overview-list">
+          {upcoming.map((item) => <li key={item.key}>
+            <button type="button" className="life-overview-agenda-item life-overview-upcoming-item" onClick={item.onOpen}>
+              <time dateTime={item.date}>{item.date === today ? 'Today' : formatDate(item.date)}</time>
+              <span className="life-overview-row-copy"><strong>{item.title}</strong></span>
+              <span className={'life-overview-kind ' + item.kind}>{item.kind === 'event' ? 'Event' : 'Due'}</span>
+            </button>
+          </li>)}
+        </ul> : <div className="life-overview-empty"><p>No tasks due or calendar events in the next seven days.</p><button type="button" className="todo-row-action" onClick={() => onCalendar(today)}>Open Calendar</button></div>}
+      </DashboardCard>
+
+      <DashboardCard id="pinned-notes" title="Recent note" icon="book" action="Write a note" onAction={onNewJournal}>
+        {recentEntry ? <button type="button" className="life-overview-note" onClick={onJournal}>
+          <time dateTime={recentEntry.entryDate}>{formatDate(recentEntry.entryDate)}</time>
+          <strong>{recentEntry.title || 'Untitled note'}</strong>
+          <p>{recentEntry.content.slice(0, 240)}{recentEntry.content.length > 240 ? '…' : ''}</p>
+        </button> : <p className="life-overview-empty">Write a note to keep a decision, reflection, or idea close to your goals.</p>}
+      </DashboardCard>
     </div>
   </div>
+}
+
+function DashboardCard({ id, title, icon, action, onAction, children }: {
+  id: string
+  title: string
+  icon: React.ComponentProps<typeof Icon>['name']
+  action: string
+  onAction: () => void
+  children: React.ReactNode
+}): React.JSX.Element {
+  const headingId = 'life-dashboard-' + id
+  return <section className="life-overview-card" data-widget-id={id} aria-labelledby={headingId}>
+    <header className="life-overview-card-head">
+      <h2 id={headingId}><Icon name={icon} />{title}</h2>
+      <button type="button" className="todo-row-action" onClick={onAction}>{action}</button>
+    </header>
+    {children}
+  </section>
 }
 
 function GoalsTab({ goals, areas, projects, tasks, onNew, onEdit, onDelete }: { goals: LifeGoal[]; areas: TaskArea[]; projects: TaskProject[]; tasks: PlanTask[]; onNew: () => void; onEdit: (goal: LifeGoal) => void; onDelete: (goal: LifeGoal) => void }): React.JSX.Element {
@@ -326,8 +517,7 @@ function LifeEmpty({ title, body, action, onAction }: { title: string; body: str
   return <div className="life-empty-state"><span><Icon name="leaf" /></span><h4>{title}</h4><p>{body}</p>{action && <button className="ghost-button" type="button" onClick={onAction}>{action}</button>}</div>
 }
 
-function getLocalDate(): string {
-  const date = new Date()
+function getLocalDate(date = new Date()): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
 }
 function formatDate(value: string): string {

@@ -172,7 +172,16 @@ export default function App(): React.JSX.Element {
           /></Suspense>
         )}
         {view === 'projects' && <Suspense fallback={<ViewLoading label="Opening Projects…" />}><ProjectsView /></Suspense>}
-        {view === 'life' && <Suspense fallback={<ViewLoading label="Opening Dashboard…" />}><LifeView refreshVersion={taskRefreshVersion} onOpenTasks={() => navigateToView('tasks')} /></Suspense>}
+        {view === 'life' && (
+          <Suspense fallback={<ViewLoading label="Opening Dashboard…" />}>
+            <LifeView
+              refreshVersion={taskRefreshVersion}
+              onOpenTasks={() => navigateToView('tasks')}
+              onOpenUpcomingTasks={() => openTasksAt('due-week')}
+              onOpenProjects={() => navigateToView('projects')}
+            />
+          </Suspense>
+        )}
         {view === 'settings' && (
           <section className="settings-content">
             {settingsLoading && <p className="muted" role="status">Loading settings…</p>}
