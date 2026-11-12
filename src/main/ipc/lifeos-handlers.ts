@@ -78,7 +78,7 @@ export function registerLifeIpcHandlers(context: LifeIpcContext): void {
 
 function requiredLife(context: LifeIpcContext): LifeStore {
   const life = context.getLife()
-  if (!life) throw new Error('Mike Assist is still starting. Try again in a moment.')
+  if (!life) throw new Error('LifeAssistOS is still starting. Try again in a moment.')
   return life
 }
 

@@ -29,19 +29,19 @@ export class SystemTrayManager {
       const icon = this.host.nativeImage.createFromPath(this.host.iconPath)
       if (icon.isEmpty()) throw new Error(`Tray icon could not be loaded from ${this.host.iconPath}`)
       tray = new this.host.Tray(icon)
-      tray.setToolTip('Mike Assist')
+      tray.setToolTip('LifeAssistOS')
       const menu = this.host.Menu.buildFromTemplate([
         {
           label: 'Quick capture',
           click: () => this.host.onQuickCapture()
         },
         {
-          label: 'Open Mike Assist',
+          label: 'Open LifeAssistOS',
           click: () => this.host.onOpenWindow()
         },
         { type: 'separator' },
         {
-          label: 'Quit Mike Assist',
+          label: 'Quit LifeAssistOS',
           click: () => this.host.onQuitApp()
         }
       ])

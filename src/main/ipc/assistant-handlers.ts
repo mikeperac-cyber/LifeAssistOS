@@ -49,7 +49,7 @@ export function registerAssistantIpcHandlers(context: AssistantIpcContext): void
     const parsed = requestSchema.safeParse(raw)
     if (!parsed.success) return { ok: false, error: 'Enter a message and try again.' }
     const settings = context.getProviderSettings()
-    if (!settings) return { ok: false, error: 'Mike Assist is still starting. Try again in a moment.' }
+    if (!settings) return { ok: false, error: 'LifeAssistOS is still starting. Try again in a moment.' }
     if (providerRequiresApiKey(settings.preset, settings.baseUrl) && !settings.apiKey?.trim()) {
       return { ok: false, error: 'Connect an AI provider in Settings to start a conversation.' }
     }
@@ -91,7 +91,7 @@ function safeProviderError(code: ProviderError['code']): string {
     case 'auth': return 'The provider rejected its key. Check Settings.'
     case 'rate_limit': return 'The provider is busy. Wait a moment and try again.'
     case 'server': return 'The provider returned an error. Try again later.'
-    case 'bad_response': return 'The provider returned a response Mike Assist could not read.'
+    case 'bad_response': return 'The provider returned a response LifeAssistOS could not read.'
     case 'tools_unsupported': return 'Choose a model that supports chat responses in Settings.'
     case 'not_found': return 'Check the provider endpoint in Settings.'
     case 'network': return 'Could not reach the provider. Check the connection and try again.'

@@ -41,7 +41,7 @@ function parseIcsDate(entry: { value: string; params: Record<string, string> }):
   const dateOnly = /^\d{8}$/.test(entry.value)
   const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/.exec(entry.value)
   const dateMatch = /^(\d{4})(\d{2})(\d{2})$/.exec(entry.value)
-  if (!match && !dateMatch) throw new Error('This calendar has a date format Mike Assist cannot read.')
+  if (!match && !dateMatch) throw new Error('This calendar has a date format LifeAssistOS cannot read.')
   const parts = match ?? dateMatch!
   const [year, month, day] = parts.slice(1, 4).map(Number)
   if (dateOnly || !match) return { value: new Date(Date.UTC(year, month - 1, day)).toISOString(), allDay: true }

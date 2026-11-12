@@ -55,7 +55,7 @@ describe('retired assistant features', () => {
     }
     expect(packageConfig.build).toMatchObject({
       appId: 'com.mikeassist.desktop',
-      productName: 'Mike Assist',
+      productName: 'LifeAssistOS',
       nsis: { deleteAppDataOnUninstall: false }
     })
   })

@@ -280,7 +280,7 @@ function decrypt(envelope: Envelope, passphrase: string): unknown {
 function parseEnvelope(value: unknown): Envelope {
   if (!isRecord(value) || value['format'] !== 'mike-assist-encrypted-sync' || value['version'] !== 1 ||
     !isBase64(value['salt']) || !isBase64(value['iv']) || !isBase64(value['tag']) || !isBase64(value['ciphertext'])) {
-    throw new Error('The sync folder contains an unsupported or invalid Mike Assist file.')
+    throw new Error('The sync folder contains an unsupported or invalid LifeAssistOS file.')
   }
   return value as unknown as Envelope
 }

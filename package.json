@@ -1,8 +1,8 @@
 {
-  "name": "mike-assist",
-  "version": "0.2.0",
+  "name": "lifeassist-os",
+  "version": "0.3.0",
   "private": true,
-  "author": "Mike Assist",
+  "author": "LifeAssistOS",
   "description": "A local-first productivity companion with optional AI coaching, learning, and task planning.",
   "main": "./out/main/index.js",
   "scripts": {
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "com.mikeassist.desktop",
-    "productName": "Mike Assist",
+    "productName": "LifeAssistOS",
     "directories": {
       "output": "release"
     },
@@ -70,7 +70,7 @@
           ]
         }
       ],
-      "artifactName": "Mike-Assist-Setup-${version}.${ext}"
+      "artifactName": "LifeAssistOS-Setup-${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -78,7 +78,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Mike Assist",
+      "shortcutName": "LifeAssistOS",
       "deleteAppDataOnUninstall": false
     }
   }

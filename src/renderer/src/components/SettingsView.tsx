@@ -146,7 +146,7 @@ export function SettingsView({
       <section className="settings-section" aria-labelledby="folder-sync-title">
         <div className="section-head">
           <h2 id="folder-sync-title">Encrypted folder sync</h2>
-          <p>Use the same cloud-synced folder and passphrase on each device. Mike Assist encrypts workspace records before writing per-device snapshots; edits from offline devices merge the next time you sync. The newest saved version wins if the same record changed on two devices.</p>
+          <p>Use the same cloud-synced folder and passphrase on each device. LifeAssistOS encrypts workspace records before writing per-device snapshots; edits from offline devices merge the next time you sync. The newest saved version wins if the same record changed on two devices.</p>
         </div>
         <div className="folder-sync-location">
           <div><strong>Shared folder</strong><span>{syncLoaded ? syncFolder ?? 'No folder selected' : 'Loading sync settings…'}</span></div>
@@ -157,7 +157,7 @@ export function SettingsView({
           <input type="password" value={syncPassphrase} onChange={(event) => setSyncPassphrase(event.target.value)} autoComplete="new-password" minLength={12} maxLength={1024} />
         </label>
         <label className="folder-sync-remember"><input type="checkbox" checked={rememberSyncPassphrase} disabled={!secureStorageAvailable || syncBusy} onChange={(event) => setRememberSyncPassphrase(event.target.checked)} /><span>Remember on this device using Windows secure storage</span></label>
-        <p className="folder-sync-help">Use at least 12 characters. Keep the same phrase on every device. Sync after your cloud storage has finished updating the shared folder. Remembering the phrase enables automatic sync while Mike Assist is running. API keys and appearance settings stay on this device.</p>
+        <p className="folder-sync-help">Use at least 12 characters. Keep the same phrase on every device. Sync after your cloud storage has finished updating the shared folder. Remembering the phrase enables automatic sync while LifeAssistOS is running. API keys and appearance settings stay on this device.</p>
         <div className="settings-actions">
           <button className="primary-button" type="button" onClick={() => void syncFolderNow()} disabled={syncBusy || !syncFolder || (syncPassphrase.length < 12 && !(syncPassphraseSaved && !syncPassphrase))}>{syncBusy ? 'Syncing…' : 'Sync now'}</button>
           {syncPassphraseSaved && <button className="ghost-button" type="button" onClick={() => void forgetSyncPassphrase()} disabled={syncBusy}>Forget saved passphrase</button>}

@@ -110,7 +110,7 @@ export function describeProviderError(error: unknown): string {
     case 'tools_unsupported':
       return 'This model cannot call tools. Choose a tool-capable model such as qwen2.5:3b in Settings.'
     case 'bad_response':
-      return 'The provider sent a response Mike Assist could not read.'
+      return 'The provider sent a response LifeAssistOS could not read.'
     default:
       return error.message
   }

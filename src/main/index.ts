@@ -27,6 +27,7 @@ import { registerProviderAuthIpcHandlers } from './ipc/provider-auth-handlers'
 import { registerLifeIpcHandlers } from './ipc/lifeos-handlers'
 import { ProviderRequestGate, ProviderRequestGateError } from './ipc/provider-request-gate'
 
+// Keep the pre-rebrand name to preserve existing per-user data at %APPDATA%\Mike Assist.
 app.setName('Mike Assist')
 nativeTheme.themeSource = 'dark'
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.mikeassist.desktop' : process.execPath)
@@ -100,7 +101,7 @@ async function initialize(): Promise<void> {
 
 function deliverReminder(reminder: { id: string; title: string }): void {
   if (!Notification.isSupported()) return
-  const notification = new Notification({ title: 'Mike Assist reminder', body: reminder.title })
+  const notification = new Notification({ title: 'LifeAssistOS reminder', body: reminder.title })
   notification.on('click', () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow()
     else { mainWindow.show(); mainWindow.focus() }
@@ -113,7 +114,7 @@ function registerIpc(): void {
   const guardedIpcMain = {
     handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
       ipcMain.handle(channel, (event, ...args) => {
-        if (!isTrustedRenderer(event)) throw new Error('This request did not come from the Mike Assist window.')
+        if (!isTrustedRenderer(event)) throw new Error('This request did not come from the LifeAssistOS window.')
         return listener(event, ...args)
       })
     }
@@ -162,7 +163,7 @@ function registerIpc(): void {
 
   guardedIpcMain.handle('assist:settings', () => settings?.public() ?? fallbackSettings())
   guardedIpcMain.handle('assist:settings-update', async (_event, raw: unknown) => {
-    if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (!settings) return { ok: false, error: 'LifeAssistOS is still starting.' }
     if (!isRecord(raw)) return { ok: false, error: 'Invalid settings.' }
     try {
       await settings.update(raw as SettingsPatch)
@@ -170,7 +171,7 @@ function registerIpc(): void {
     } catch (error) { return { ok: false, error: asErrorMessage(error) } }
   })
   guardedIpcMain.handle('assist:provider-credential-remove', async (_event, raw: unknown) => {
-    if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (!settings) return { ok: false, error: 'LifeAssistOS is still starting.' }
     if (!isRecord(raw) || Object.keys(raw).length !== 2 || typeof raw['preset'] !== 'string' || typeof raw['baseUrl'] !== 'string') {
       return { ok: false, error: 'Invalid provider connection.' }
     }
@@ -197,8 +198,8 @@ function registerIpc(): void {
   guardedIpcMain.handle('assist:folder-sync-choose', async () => {
     try {
       const selection = mainWindow
-        ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a cloud-synced folder for Mike Assist', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
-        : await dialog.showOpenDialog({ title: 'Choose a cloud-synced folder for Mike Assist', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
+        ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a cloud-synced folder for LifeAssistOS', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
+        : await dialog.showOpenDialog({ title: 'Choose a cloud-synced folder for LifeAssistOS', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
       if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
       const current = await readFolderSyncConfig(app.getPath('userData'))
       await writeFolderSyncConfig(app.getPath('userData'), { ...current, folderPath: path.resolve(selection.filePaths[0]) })
@@ -231,7 +232,7 @@ function registerIpc(): void {
         catch { return { ok: false, error: 'The saved sync passphrase could not be unlocked. Enter it again.' } }
       }
       if (passphrase.length < 12 || passphrase.length > 1024) return { ok: false, error: 'Use a sync passphrase with at least 12 characters.' }
-      if (raw['rememberPassphrase'] && !await safeStorage.isAsyncEncryptionAvailable()) return { ok: false, error: 'Windows secure storage is unavailable, so Mike Assist cannot remember this passphrase safely.' }
+      if (raw['rememberPassphrase'] && !await safeStorage.isAsyncEncryptionAvailable()) return { ok: false, error: 'Windows secure storage is unavailable, so LifeAssistOS cannot remember this passphrase safely.' }
       let encryptedPassphrase: string | undefined
       if (raw['rememberPassphrase']) encryptedPassphrase = (await safeStorage.encryptStringAsync(passphrase)).toString('base64')
       const result = await syncSharedFolder(planning.database, config.folderPath, config.deviceId, passphrase)
@@ -311,11 +312,11 @@ async function createBackup(passphrase: unknown): Promise<{ ok: boolean; cancell
   if (!planning || !settings) return { ok: false, error: 'Backup services are not ready.' }
   if (passphrase !== undefined && typeof passphrase !== 'string') return { ok: false, error: 'Invalid backup passphrase.' }
   const selection = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, { title: 'Choose where to create a Mike Assist backup', buttonLabel: 'Choose backup location', properties: ['openDirectory', 'createDirectory'] })
-    : await dialog.showOpenDialog({ title: 'Choose where to create a Mike Assist backup', buttonLabel: 'Choose backup location', properties: ['openDirectory', 'createDirectory'] })
+    ? await dialog.showOpenDialog(mainWindow, { title: 'Choose where to create a LifeAssistOS backup', buttonLabel: 'Choose backup location', properties: ['openDirectory', 'createDirectory'] })
+    : await dialog.showOpenDialog({ title: 'Choose where to create a LifeAssistOS backup', buttonLabel: 'Choose backup location', properties: ['openDirectory', 'createDirectory'] })
   if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
 
-  const folderName = `Mike Assist Backup ${new Date().toISOString().replace(/[:.]/g, '-')}`
+  const folderName = `LifeAssistOS Backup ${new Date().toISOString().replace(/[:.]/g, '-')}`
   const backupPath = path.resolve(selection.filePaths[0], folderName)
   if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the backup again shortly.' }
   folderSyncRunning = true
@@ -334,8 +335,8 @@ async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancel
   if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the restore again shortly.' }
   if (passphrase !== undefined && typeof passphrase !== 'string') return { ok: false, error: 'Invalid backup passphrase.' }
   const selection = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a Mike Assist backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
-    : await dialog.showOpenDialog({ title: 'Choose a Mike Assist backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
+    ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a LifeAssistOS backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
+    : await dialog.showOpenDialog({ title: 'Choose a LifeAssistOS backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
   if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
   if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the restore again shortly.' }
 
@@ -381,7 +382,7 @@ function createWindow(): void {
     minHeight: 620,
     show: false,
     backgroundColor: '#090c12',
-    title: 'Mike Assist',
+    title: 'LifeAssistOS',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -455,7 +456,7 @@ if (hasSingleInstanceLock) {
       createWindow()
     } catch (error) {
       const detail = error instanceof Error ? (error.stack ?? error.message) : String(error)
-      dialog.showErrorBox('Mike Assist could not start', detail)
+      dialog.showErrorBox('LifeAssistOS could not start', detail)
       app.quit()
     }
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

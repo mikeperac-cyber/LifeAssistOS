@@ -50,7 +50,7 @@ export class OpenRouterOAuth {
       server.on('request', (request, response) => {
         callbackAttempts += 1
         if (callbackAttempts > 12) {
-          reply(response, 429, 'Too many sign-in callback attempts. Return to Mike Assist and try again.')
+          reply(response, 429, 'Too many sign-in callback attempts. Return to LifeAssistOS and try again.')
           finish(() => rejectCode(new Error('Too many sign-in callback attempts. Start again to retry.')))
           return
         }
@@ -64,7 +64,7 @@ export class OpenRouterOAuth {
       authorization.searchParams.set('callback_url', callbackUrl)
       authorization.searchParams.set('code_challenge', challenge)
       authorization.searchParams.set('code_challenge_method', 'S256')
-      authorization.searchParams.set('key_label', 'Mike Assist')
+      authorization.searchParams.set('key_label', 'LifeAssistOS')
       authorization.searchParams.set('state', state)
       await openExternal(authorization.toString())
 
@@ -98,7 +98,7 @@ function handleCallback(
 ): void {
   const remoteAddress = request.socket.remoteAddress
   if (remoteAddress !== '127.0.0.1' && remoteAddress !== '::ffff:127.0.0.1') {
-    reply(response, 403, 'This sign-in callback is available only to Mike Assist on this device.')
+    reply(response, 403, 'This sign-in callback is available only to LifeAssistOS on this device.')
     return
   }
 
@@ -116,20 +116,20 @@ function handleCallback(
   const code = callback.searchParams.get('code') ?? ''
   const returnedState = callback.searchParams.get('state') ?? ''
   if (!sameSecret(returnedState, expectedState)) {
-    reply(response, 400, 'The sign-in response could not be verified. Return to Mike Assist and try again.')
+    reply(response, 400, 'The sign-in response could not be verified. Return to LifeAssistOS and try again.')
     return
   }
   if (callback.searchParams.get('error') === 'access_denied') {
-    reply(response, 200, 'OpenRouter sign-in was cancelled. You can return to Mike Assist.')
+    reply(response, 200, 'OpenRouter sign-in was cancelled. You can return to LifeAssistOS.')
     finish(() => rejectCode(new Error('OpenRouter sign-in was cancelled.')))
     return
   }
   if (!/^[A-Za-z0-9._~-]{1,4096}$/.test(code)) {
-    reply(response, 400, 'The sign-in response could not be verified. Return to Mike Assist and try again.')
+    reply(response, 400, 'The sign-in response could not be verified. Return to LifeAssistOS and try again.')
     return
   }
 
-  reply(response, 200, 'OpenRouter authorized. You can return to Mike Assist.')
+  reply(response, 200, 'OpenRouter authorized. You can return to LifeAssistOS.')
   finish(() => resolveCode(code))
 }
 

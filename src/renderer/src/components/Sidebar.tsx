@@ -22,7 +22,7 @@ export function Sidebar({
       <div className="brand">
         <div className="brand-mark" aria-hidden="true"><Icon name="checklist" /></div>
         <div className="brand-text">
-          <span className="brand-name">Mike Assist</span>
+          <span className="brand-name">LifeAssistOS</span>
           <span className="brand-sub">Plan · learn · grow</span>
         </div>
         {sidebarVisibility === 'open' && (

@@ -14,7 +14,7 @@ const openRouterOAuth = new OpenRouterOAuth()
 export function registerProviderAuthIpcHandlers(context: ProviderAuthIpcContext): void {
   context.ipcMain.handle('assist:openrouter-sign-in', async (): Promise<ProviderAuthResult> => {
     const settings = context.getSettings()
-    if (!settings) return { ok: false, error: 'Mike Assist is still starting. Try again in a moment.' }
+    if (!settings) return { ok: false, error: 'LifeAssistOS is still starting. Try again in a moment.' }
     let storedSecurely = false
     const result = await openRouterOAuth.connect(
       context.openExternal,

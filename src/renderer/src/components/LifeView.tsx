@@ -264,7 +264,7 @@ function CalendarTab({ date, onDate, events, tasks, sources, sourceId, onSource,
           : <article className="life-agenda-item is-task" key={`task-${item.task.id}`}><time>{formatLocalTime(item.task.scheduledStart)}</time><span><strong>{item.task.title}</strong><small>{item.task.durationMinutes ?? 30} min planned</small></span><span className="life-agenda-kind">Task</span></article>)}
       </section>
       <aside className="life-calendar-import">
-        <h4>Read a calendar export</h4><p>Export an .ics file from Google Calendar or Outlook. Mike Assist stores the event details locally and does not edit the source calendar.</p>
+        <h4>Read a calendar export</h4><p>Export an .ics file from Google Calendar or Outlook. LifeAssistOS stores the event details locally and does not edit the source calendar.</p>
         <label className="field"><span className="field-label">Replace calendar (optional)</span><select value={sourceId} onChange={(event) => onSource(event.target.value)}><option value="">Import as new calendar</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label>
         <label className="field"><span className="field-label">Calendar name</span><input value={importName} maxLength={120} placeholder="Personal calendar" onChange={(event) => onImportName(event.target.value)} /></label>
         <label className="life-file-button ghost-button"><Icon name="plus" />Choose .ics file<input type="file" accept=".ics,text/calendar" onChange={(event) => onImport(event.target.files?.[0])} /></label>

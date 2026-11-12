@@ -204,7 +204,7 @@ export function AssistantPanel({ providerReady, lifeContextAvailable = { goals: 
             ? <button className="assistant-stop" type="button" aria-label="Stop response" onClick={() => void stopResponse()}><Icon name="stop" /></button>
             : <button type="submit" aria-label="Send message" disabled={!draft.trim()}><Icon name="send" /></button>}
         </form>
-        <p className="assistant-privacy">Conversations stay in memory while Mike Assist runs and clear when you quit. Only selected context is sent to your chosen provider.</p>
+        <p className="assistant-privacy">Conversations stay in memory while LifeAssistOS runs and clear when you quit. Only selected context is sent to your chosen provider.</p>
       </>}
     </aside>
   )

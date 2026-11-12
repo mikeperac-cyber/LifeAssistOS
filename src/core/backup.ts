@@ -62,7 +62,7 @@ export async function createBackupSnapshot(
 ): Promise<void> {
   const source = path.resolve(userDataDir)
   const target = path.resolve(destination)
-  if (isInside(source, target)) throw new Error('Choose a backup location outside Mike Assist app data.')
+  if (isInside(source, target)) throw new Error('Choose a backup location outside the existing Mike Assist data folder.')
   const stage = `${target}.tmp-${randomBytes(8).toString('hex')}`
   const passphrase = options?.passphrase?.trim() ?? ''
 
@@ -71,7 +71,7 @@ export async function createBackupSnapshot(
     await mkdir(stage)
     const settingsFile = path.resolve(options?.settingsFile ?? path.join(source, 'settings.json'))
     if (!isInside(source, settingsFile) || path.basename(settingsFile) !== 'settings.json') {
-      throw new Error('The settings file must be inside Mike Assist app data.')
+      throw new Error('The settings file must be inside the existing Mike Assist data folder.')
     }
     await copyRegularFile(settingsFile, path.join(stage, 'settings.json'))
     await planning.backupTo(path.join(stage, 'planning.sqlite'))
@@ -163,7 +163,7 @@ export async function restoreBackupSnapshot(
 ): Promise<{ restoredFiles: string[] }> {
   const source = path.resolve(backupDir)
   const destination = path.resolve(userDataDir)
-  if (isInside(destination, source)) throw new Error('Cannot restore from a folder inside Mike Assist app data.')
+  if (isInside(destination, source)) throw new Error('Cannot restore from a folder inside the existing Mike Assist data folder.')
   const verification = await verifyBackupSnapshot(source, { passphrase: options?.passphrase })
   if (!verification.valid || !verification.includes) throw new Error(verification.error ?? 'Backup verification failed.')
   const files = await readRestorableFiles(source, verification, options?.passphrase)
@@ -198,7 +198,7 @@ export async function restoreBackupSnapshot(
       } catch (rollbackError) {
         recoveryRequired = true
         throw new BackupRestoreRestartRequiredError(
-          'The restore failed and automatic rollback could not finish. Mike Assist must restart to recover the previous data.',
+          'The restore failed and automatic rollback could not finish. LifeAssistOS must restart to recover the previous data.',
           { cause: new AggregateError([error, rollbackError]) }
         )
       }
@@ -209,7 +209,7 @@ export async function restoreBackupSnapshot(
       try { await options?.reopenStores?.() }
       catch (error) {
         throw new BackupRestoreRestartRequiredError(
-          'Mike Assist could not reopen its stores after restore. The app must restart to reload its data.',
+          'LifeAssistOS could not reopen its stores after restore. The app must restart to reload its data.',
           { cause: restoreError === undefined ? error : new AggregateError([restoreError, error]) }
         )
       }
@@ -375,7 +375,7 @@ async function verifySqliteBuffer(bytes: Buffer): Promise<void> {
         throw new Error('Recurring task did not advance.')
       }
     } catch {
-      throw new Error('Backup database is incompatible with Mike Assist.')
+      throw new Error('Backup database is incompatible with LifeAssistOS.')
     } finally {
       store.close()
     }

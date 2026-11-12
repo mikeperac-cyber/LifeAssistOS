@@ -63,7 +63,7 @@ export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
 
 function getReadyProvider(context: TodoAiIpcContext): { provider: Provider } | { error: string } {
   const settings = context.getProviderSettings()
-  if (!settings) return { error: 'Mike Assist is still starting. Try again in a moment.' }
+  if (!settings) return { error: 'LifeAssistOS is still starting. Try again in a moment.' }
   if (providerRequiresApiKey(settings.preset, settings.baseUrl) && !settings.apiKey?.trim()) {
     return { error: 'Add your provider API key in Settings to use AI task suggestions.' }
   }
@@ -146,7 +146,7 @@ function safeProviderError(code: ProviderErrorCode): string {
     case 'auth': return 'The provider rejected its API key. Check Settings.'
     case 'rate_limit': return 'The provider is busy. Wait a moment and try again.'
     case 'server': return 'The provider returned an error. Try again later.'
-    case 'bad_response': return 'The provider returned a response Mike Assist could not read.'
+    case 'bad_response': return 'The provider returned a response LifeAssistOS could not read.'
     case 'tools_unsupported': return 'The selected provider model could not complete this request.'
     case 'not_found': return 'Check the provider endpoint in Settings.'
     case 'network': return 'Could not reach the AI provider. Check the connection and try again.'

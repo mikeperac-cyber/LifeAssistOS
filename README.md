@@ -1,10 +1,10 @@
-# Mike Assist
+# LifeAssistOS
 
 <div align="center">
 
 ### A calmer place to plan your day and keep life moving.
 
-Capture what’s on your mind, turn it into clear next steps, and connect daily work to the goals that matter. Mike Assist is a local-first Windows productivity app with optional AI support.
+Capture what’s on your mind, turn it into clear next steps, and connect daily work to the goals that matter. LifeAssistOS is a local-first Windows productivity app with optional AI support.
 
 **Tasks · Projects · Goals · Routines · Journal · Calendar · AI coaching**
 
@@ -14,7 +14,7 @@ Capture what’s on your mind, turn it into clear next steps, and connect daily 
 
 ## Make progress feel manageable
 
-Mike Assist brings the pieces of a productive day into one focused workspace. Start with a quick capture, decide what matters today, and keep your bigger plans close without turning every part of life into a score.
+LifeAssistOS brings the pieces of a productive day into one focused workspace. Start with a quick capture, decide what matters today, and keep your bigger plans close without turning every part of life into a score.
 
 | Plan | Connect | Reflect |
 | --- | --- | --- |
@@ -31,11 +31,11 @@ Mike Assist brings the pieces of a productive day into one focused workspace. St
 
 ## Your data stays yours
 
-Your tasks and life workspace are stored locally. AI features are optional; when you use a hosted provider, Mike Assist sends only the information needed for that action. Personal context and open tasks each have their own sharing controls. API keys stay in the main process and are encrypted with Windows secure storage when available.
+Your tasks and life workspace are stored locally. AI features are optional; when you use a hosted provider, LifeAssistOS sends only the information needed for that action. Personal context and open tasks each have their own sharing controls. API keys stay in the main process and are encrypted with Windows secure storage when available.
 
 Back up your workspace from **Settings → Local backup & restore**, with optional passphrase encryption. For multiple devices, choose a folder already synchronized by your cloud-storage provider and enable **Encrypted folder sync**. Devices exchange AES-256-GCM encrypted snapshots; each device’s provider credentials and appearance remain local.
 
-Calendar support currently imports read-only `.ics` files from Google Calendar or Outlook. Mike Assist does not connect to those calendar accounts directly.
+Calendar support currently imports read-only `.ics` files from Google Calendar or Outlook. LifeAssistOS does not connect to those calendar accounts directly.
 
 ## AI providers
 
@@ -43,7 +43,7 @@ Use OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, 
 
 ## Install on Windows
 
-Download **Mike-Assist-Setup-0.2.0.exe** from the project’s GitHub Releases page and run the installer. Mike Assist can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
+Download **LifeAssistOS-Setup-0.3.0.exe** from the project’s GitHub Releases page and run the installer. LifeAssistOS can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
 
 Windows may show a SmartScreen prompt because this build is not code-signed. Confirm the publisher details and continue only if you downloaded the installer from the project’s GitHub Releases page.
 
@@ -67,8 +67,8 @@ npm run build
 npm run dist:win
 ```
 
-The Windows installer is written to `release\Mike-Assist-Setup-0.2.0.exe`.
+The Windows installer is written to `release\LifeAssistOS-Setup-0.3.0.exe`.
 
 ## Product direction
 
-Mike Assist aims to be a practical life workspace: useful enough to connect plans, routines, and reflection, while keeping everyday task planning quick and private by default. See the [work-management roadmap](docs/superpowers/specs/2026-11-08-work-management-roadmap.md) for the product rationale and deferred ideas.
+LifeAssistOS aims to be a practical life workspace: useful enough to connect plans, routines, and reflection, while keeping everyday task planning quick and private by default. See the [work-management roadmap](docs/superpowers/specs/2026-11-08-work-management-roadmap.md) for the product rationale and deferred ideas.

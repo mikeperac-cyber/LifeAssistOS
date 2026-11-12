@@ -236,7 +236,7 @@ export function ProviderSettingsPanel({
           <div className="field-wide openrouter-auth-option">
             <div>
               <strong>Use your OpenRouter account</strong>
-              <p>Sign in in your browser. Mike Assist receives a user-controlled API key, never your OpenRouter password.</p>
+              <p>Sign in in your browser. LifeAssistOS receives a user-controlled API key, never your OpenRouter password.</p>
             </div>
             <div className="openrouter-auth-actions">
               <button className="ghost-button" type="button" onClick={() => void signInToOpenRouter()} disabled={saving || testing || openRouterSigningIn}>
