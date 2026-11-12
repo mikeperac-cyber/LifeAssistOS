@@ -16,7 +16,7 @@ export const VIEW_META = {
     description: 'Organize work by Area, project, and next step.'
   },
   life: {
-    label: 'Life',
+    label: 'Dashboard',
     description: 'Connect goals, routines, notes, and your calendar.'
   },
   settings: {
@@ -26,15 +26,15 @@ export const VIEW_META = {
 } as const
 
 export type View = keyof typeof VIEW_META
-export const DEFAULT_VIEW: View = 'tasks'
+export const DEFAULT_VIEW: View = 'life'
 
-/** Redirect routes saved by older Mike Assist versions to the new Tasks home. */
+/** Preserve saved routes and send unrecognized routes to Tasks. */
 export function normalizeView(value: unknown): View {
   return value === 'settings' || value === 'projects' || value === 'review' || value === 'assistant' || value === 'life' ? value : 'tasks'
 }
 
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
-  { label: 'Main', items: ['tasks', 'life', 'assistant', 'review', 'projects'] },
+  { label: 'Main', items: ['life', 'tasks', 'assistant', 'review', 'projects'] },
   { label: 'System', items: ['settings'] }
 ]
 

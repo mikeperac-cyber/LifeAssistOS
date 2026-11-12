@@ -711,30 +711,6 @@ summary:focus-visible {
 
 .nav-shortcut-button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
-.quick-capture-trigger {
-  display: flex;
-  width: calc(100% - 2px);
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin: 0 1px 12px;
-  padding: 8px 10px;
-  text-align: left;
-}
-
-.quick-capture-trigger > span:first-child {
-  color: var(--accent);
-  font-size: 16px;
-  line-height: 1;
-}
-
-.quick-capture-shortcut {
-  margin-left: auto;
-  color: var(--faint);
-  font-family: var(--mono);
-  font-size: 9px;
-}
-
 .sidebar-shortcuts {
   flex: none;
   margin: 1px 0 9px;
@@ -4395,7 +4371,6 @@ dialog.modal :focus-visible {
 }
 
 @media (max-width: 440px) {
-  .quick-capture-shortcut { display: none; }
   .quick-capture-content { padding: 18px; }
 }
 
@@ -4702,19 +4677,19 @@ dialog.modal :focus-visible {
 }
 
 body {
-  background: var(--bg);
+  background: radial-gradient(1000px 680px at 84% 0%, var(--glow-accent), transparent 65%), var(--bg);
 }
 
 .sidebar {
-  width: 238px;
-  padding: 22px 16px 16px;
+  width: 222px;
+  padding: 18px 12px 14px;
   background: var(--sidebar-bg);
   backdrop-filter: none;
 }
 
 .brand {
-  gap: 12px;
-  padding: 4px 6px 26px;
+  gap: 10px;
+  padding: 4px 6px 20px;
 }
 
 .brand-mark {
@@ -4728,43 +4703,44 @@ body {
 .brand-name { font-size: 15px; font-weight: 700; }
 .brand-sub { font-size: 10px; }
 
-.quick-capture-trigger {
-  min-height: 43px;
-  margin-bottom: 20px;
-  padding: 9px 12px;
-  border-radius: 12px;
-  background: var(--accent-dim);
-  color: var(--accent-strong);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.quick-capture-trigger > span:first-child { display: inline-flex; color: inherit; }
-.quick-capture-trigger svg { width: 17px; height: 17px; }
-.quick-capture-trigger:hover { border-color: var(--accent-strong); color: var(--accent-strong); }
-.quick-capture-shortcut { display: none; }
-
-.nav { gap: 5px; }
-.nav-group { margin-bottom: 16px; }
-.nav-group-label { padding: 0 11px 7px; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
-.nav-button { min-height: 42px; gap: 12px; padding: 9px 12px; border-radius: 11px; font-size: 12.5px; font-weight: 560; }
-.nav-button.active { border-color: transparent; box-shadow: none; font-weight: 650; }
+.nav { gap: 14px; }
+.nav-group-label { padding: 0 10px 4px; font-size: 11px; letter-spacing: 0; text-transform: none; }
+.nav-button { min-height: 36px; gap: 9px; padding: 6px 10px; border-radius: 9px; font-size: 12.5px; font-weight: 560; }
+.nav-button.active { border-color: var(--accent-line); box-shadow: none; font-weight: 650; }
+.nav-button.active svg { opacity: 1; }
 .nav-glyph { display: inline-flex; width: 19px; height: 19px; align-items: center; justify-content: center; }
 .nav-glyph svg { width: 18px; height: 18px; }
 
 .topbar {
   min-height: 62px;
+  align-items: center;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   padding: 13px 30px;
   border-bottom-color: var(--line-soft);
   background: transparent;
   backdrop-filter: none;
 }
 
+.topbar-titles { flex: 1 1 140px; }
 .topbar-titles h1 { font-size: 15px; font-weight: 680; }
 .topbar-titles p { color: var(--faint); font-size: 11px; }
 .topbar.assistant-topbar { min-height: 0; padding-block: 8px 0; border: 0; }
 .sidebar-toggle-button { border-radius: 10px; }
 .sidebar-open-button svg { width: 17px; height: 17px; }
+
+@media (max-width: 760px) {
+  .sidebar {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "nav";
+    padding: 9px 14px 8px;
+  }
+
+  .brand { padding: 0 4px; }
+  .nav { gap: 4px; }
+}
 
 .todo-view {
   width: 100%;
@@ -4972,7 +4948,6 @@ body {
 }
 
 @media (max-width: 600px) {
-  .sidebar { width: 218px; }
   .topbar { min-height: 56px; padding: 11px 16px; }
   .todo-view { padding: 19px 16px 30px; }
   .todo-page-head { align-items: flex-start; gap: 12px; }
@@ -5346,10 +5321,40 @@ body {
 .today-agenda-item.task em { color: var(--accent-strong); }
 .today-agenda-empty { margin: 2px 0 0; color: var(--muted); font-size: 10px; }
 .today-agenda-empty button { padding: 0; border: 0; background: transparent; color: var(--accent-strong); font: inherit; cursor: pointer; }
-.command-trigger { display: inline-flex; align-items: center; gap: 9px; min-height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; }
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.command-trigger,
+.create-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.command-trigger { background: var(--panel); color: var(--muted); font-size: 11px; }
 .command-trigger:hover { border-color: var(--accent-soft); background: var(--hover-bg); color: var(--text); }
-.command-trigger > svg { width: 14px; height: 14px; }
+.command-trigger > svg,
+.create-trigger > svg { width: 15px; height: 15px; }
 .command-trigger kbd { padding: 3px 5px; border: 1px solid var(--line-soft); border-radius: 5px; color: var(--faint); font: 9px var(--font-mono, monospace); }
+.create-trigger {
+  padding-inline: 11px;
+  border-color: transparent;
+  background: var(--accent-strong);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 650;
+}
+.create-trigger:hover { filter: brightness(1.1); }
 @media (max-width: 560px) { .command-trigger { padding: 0 8px; } .command-trigger > span { display: none; } }
 @keyframes command-enter { from { opacity: 0; transform: translateY(-6px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .command-palette { animation: none; } }
@@ -6120,8 +6125,7 @@ body {
   .repeat-weekday span { min-width: 36px; }
 }
 
-.nav-shortcut,
-.quick-capture-shortcut {
+.nav-shortcut {
   font-size: 11px;
 }
 

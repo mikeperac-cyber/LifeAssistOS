@@ -8,14 +8,12 @@ export function Sidebar({
   sidebarVisibility,
   onToggleSidebar,
   view,
-  onChange,
-  onQuickCapture
+  onChange
 }: {
   sidebarVisibility: SidebarVisibility
   onToggleSidebar: () => void
   view: View
   onChange: (view: View) => void
-  onQuickCapture: () => void
 }): React.JSX.Element {
   return (
     <aside id="app-sidebar" className="sidebar">
@@ -40,18 +38,6 @@ export function Sidebar({
         )}
       </div>
 
-      <button
-        type="button"
-        className="quick-capture-trigger ghost-button"
-        onClick={onQuickCapture}
-        aria-keyshortcuts="Control+Shift+K Meta+Shift+K"
-        title="Save a thought to the Inbox"
-      >
-        <span aria-hidden="true"><Icon name="plus" /></span>
-        <span>Quick capture</span>
-        <kbd className="quick-capture-shortcut">Ctrl ⇧ K</kbd>
-      </button>
-
       <nav className="nav" aria-label="Main navigation">
         {NAV_GROUPS.map((group) => (
           <div className="nav-group" key={group.label}>
@@ -64,7 +50,7 @@ export function Sidebar({
                 aria-current={view === item ? 'page' : undefined}
                 onClick={() => onChange(item)}
               >
-              <span className="nav-glyph"><Icon name={item === 'assistant' ? 'assistant' : item === 'tasks' ? 'tasks' : item === 'life' ? 'leaf' : item === 'projects' ? 'projects' : item === 'review' ? 'review' : 'settings'} /></span>
+                <span className="nav-glyph"><Icon name={item === 'life' ? 'home' : item} /></span>
                 <span>{VIEW_META[item].label}</span>
               </button>
             ))}

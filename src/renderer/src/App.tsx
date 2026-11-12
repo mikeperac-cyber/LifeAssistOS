@@ -78,7 +78,7 @@ export default function App(): React.JSX.Element {
   }, [sidebarVisibility])
 
   useEffect(() => {
-    try { window.localStorage.setItem(SAVED_VIEW_STORAGE_KEY, view) } catch { /* The Tasks screen remains the default after restart. */ }
+    try { window.localStorage.setItem(SAVED_VIEW_STORAGE_KEY, view) } catch { /* Keep this session's view active. */ }
   }, [view])
 
   const navigateToView = (nextView: View): void => {
@@ -100,7 +100,6 @@ export default function App(): React.JSX.Element {
         onToggleSidebar={() => setSidebarVisibility((current) => current === 'open' ? 'closed' : 'open')}
         view={view}
         onChange={navigateToView}
-        onQuickCapture={() => setQuickCaptureOpen(true)}
       />
       <main className="main">
         <header className={`topbar${view === 'assistant' ? ' assistant-topbar' : ''}`}>
@@ -120,7 +119,29 @@ export default function App(): React.JSX.Element {
             <h1>{VIEW_META[view].label}</h1>
             <p>{VIEW_META[view].description}</p>
           </div>}
-          <button type="button" className="command-trigger" aria-keyshortcuts="Control+K Meta+K" onClick={() => setCommandOpen(true)}><Icon name="search" /><span>Jump to…</span><kbd>Ctrl K</kbd></button>
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="command-trigger"
+              aria-label="Jump to…"
+              aria-keyshortcuts="Control+K Meta+K"
+              onClick={() => setCommandOpen(true)}
+            >
+              <Icon name="search" />
+              <span>Jump to…</span>
+              <kbd aria-hidden="true">Ctrl K</kbd>
+            </button>
+            <button
+              type="button"
+              className="create-trigger"
+              aria-keyshortcuts="Control+Shift+K Meta+Shift+K"
+              title="Save a thought to the Inbox"
+              onClick={() => setQuickCaptureOpen(true)}
+            >
+              <Icon name="plus" />
+              Create
+            </button>
+          </div>
         </header>
 
         {view === 'tasks' && (
@@ -151,7 +172,7 @@ export default function App(): React.JSX.Element {
           /></Suspense>
         )}
         {view === 'projects' && <Suspense fallback={<ViewLoading label="Opening Projects…" />}><ProjectsView /></Suspense>}
-        {view === 'life' && <Suspense fallback={<ViewLoading label="Opening Life…" />}><LifeView refreshVersion={taskRefreshVersion} onOpenTasks={() => navigateToView('tasks')} /></Suspense>}
+        {view === 'life' && <Suspense fallback={<ViewLoading label="Opening Dashboard…" />}><LifeView refreshVersion={taskRefreshVersion} onOpenTasks={() => navigateToView('tasks')} /></Suspense>}
         {view === 'settings' && (
           <section className="settings-content">
             {settingsLoading && <p className="muted" role="status">Loading settings…</p>}
