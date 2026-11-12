@@ -176,6 +176,11 @@ export class LifeStore {
     return (rows as unknown as JournalRow[]).map(journalFromRow)
   }
 
+  listPinnedJournal(limit = 3): JournalEntry[] {
+    const rows = this.db.prepare('SELECT * FROM journal_entries WHERE is_pinned = 1 ORDER BY updated_at DESC LIMIT ?').all(limit)
+    return (rows as unknown as JournalRow[]).map(journalFromRow)
+  }
+
   saveJournal(input: JournalInput): JournalEntry {
     const entryDate = assertDateOnly(input.entryDate)
     const title = optionalText(input.title, 160)
@@ -192,10 +197,17 @@ export class LifeStore {
         .run(entryDate, title, content, areaId, goalId, now, current.id)
       return entry
     }
-    const entry: JournalEntry = { id: randomUUID(), entryDate, title, content, areaId, goalId, createdAt: now, updatedAt: now }
+    const entry: JournalEntry = { id: randomUUID(), entryDate, title, content, areaId, goalId, isPinned: false, createdAt: now, updatedAt: now }
     this.db.prepare('INSERT INTO journal_entries (id, entry_date, title, content, area_id, goal_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(entry.id, entryDate, title, content, areaId, goalId, now, now)
     return entry
+  }
+
+  setJournalPinned(id: string, isPinned: boolean): JournalEntry {
+    const row = this.db.prepare('UPDATE journal_entries SET is_pinned = ?, updated_at = ? WHERE id = ? RETURNING *')
+      .get(isPinned ? 1 : 0, new Date().toISOString(), validateId(id)) as JournalRow | undefined
+    if (!row) throw new Error('That note no longer exists.')
+    return journalFromRow(row)
   }
 
   deleteJournal(id: string): void {

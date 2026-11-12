@@ -95,7 +95,9 @@ export interface AssistApi {
   deleteRoutineTemplate(id: string): Promise<LifeMutationResult>
   applyRoutineTemplate(id: string, plannedDate: string): Promise<LifeMutationResult>
   getJournalEntries(query?: string): Promise<JournalEntry[]>
+  getPinnedJournalEntries(): Promise<JournalEntry[]>
   saveJournalEntry(input: JournalEntryInput): Promise<LifeMutationResult>
+  setJournalPinned(id: string, isPinned: boolean): Promise<LifeMutationResult>
   deleteJournalEntry(id: string): Promise<LifeMutationResult>
   getPersonalContext(): Promise<PersonalContext>
   savePersonalContext(input: Pick<PersonalContext, 'aboutMe' | 'preferences' | 'currentFocus'>): Promise<PersonalContext>

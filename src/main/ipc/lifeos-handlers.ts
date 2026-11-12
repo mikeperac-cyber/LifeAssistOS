@@ -42,9 +42,15 @@ export function registerLifeIpcHandlers(context: LifeIpcContext): void {
     } catch (error) { return failure(context.errorMessage(error)) }
   })
   ipcMain.handle('assist:journal-list', (_event, query: unknown) => requiredLife(context).listJournal(typeof query === 'string' ? query : ''))
+  ipcMain.handle('assist:journal-pinned-list', () => requiredLife(context).listPinnedJournal())
   ipcMain.handle('assist:journal-save', (_event, raw: unknown) => {
     if (!isRecord(raw)) return failure('Enter a valid note.')
     try { return { ok: true, journalEntry: requiredLife(context).saveJournal(raw as unknown as JournalEntryInput) } }
+    catch (error) { return failure(context.errorMessage(error)) }
+  })
+  ipcMain.handle('assist:journal-pin', (_event, raw: unknown) => {
+    if (!isRecord(raw) || !isId(raw.id) || typeof raw.isPinned !== 'boolean') return failure('Choose a valid note and pin state.')
+    try { return { ok: true, journalEntry: requiredLife(context).setJournalPinned(raw.id, raw.isPinned) } }
     catch (error) { return failure(context.errorMessage(error)) }
   })
   ipcMain.handle('assist:journal-delete', (_event, id: unknown) => {

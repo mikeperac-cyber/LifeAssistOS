@@ -190,6 +190,12 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     setJournalDraft(null); await refresh()
   }
 
+  const toggleJournalPin = async (entry: JournalEntry): Promise<void> => {
+    const result = await window.assist.setJournalPinned(entry.id, !entry.isPinned)
+    if (!result.ok) throw new Error(result.error ?? 'Could not change the pin for this note.')
+    await refresh()
+  }
+
   const saveContext = async (): Promise<void> => {
     setError(''); setNotice('')
     try { setContext(await window.assist.savePersonalContext(context)); setNotice('AI context saved on this device.') }
@@ -248,7 +254,17 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     />}
     {!loading && tab === 'goals' && <GoalsTab goals={goals} areas={areas} projects={projects} tasks={tasks} onNew={() => setGoalDraft({ status: 'active', areaId: null, targetDate: null })} onEdit={setGoalDraft} onDelete={(goal) => void deleteGoal(goal).catch(showError)} />}
     {!loading && tab === 'routines' && <RoutinesTab routines={routines} areas={areas} projects={projects} onNew={() => setRoutineDraft({ priority: 'normal', areaId: null, projectId: null, subtasks: [], recurrenceRule: null })} onEdit={setRoutineDraft} onApply={(routine) => void applyRoutine(routine).catch(showError)} onAddStarters={() => void addStarterRoutines().catch(showError)} onDelete={(routine) => void (async () => { const result = await window.assist.deleteRoutineTemplate(routine.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the routine.'); await refresh() })().catch(showError)} />}
-    {!loading && tab === 'journal' && <JournalTab entries={entries} goals={goals} areas={areas} query={query} onQuery={setQuery} onNew={() => setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null })} onEdit={setJournalDraft} onDelete={async (entry) => { const result = await window.assist.deleteJournalEntry(entry.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the note.'); await refresh() }} />}
+    {!loading && tab === 'journal' && <JournalTab
+      entries={entries}
+      goals={goals}
+      areas={areas}
+      query={query}
+      onQuery={setQuery}
+      onNew={() => setJournalDraft({ entryDate: getLocalDate(), title: '', content: '', areaId: null, goalId: null })}
+      onEdit={setJournalDraft}
+      onTogglePin={(entry) => void toggleJournalPin(entry).catch(showError)}
+      onDelete={async (entry) => { const result = await window.assist.deleteJournalEntry(entry.id); if (!result.ok) throw new Error(result.error ?? 'Could not delete the note.'); await refresh() }}
+    />}
     {!loading && tab === 'calendar' && <CalendarTab date={calendarDate} onDate={setCalendarDate} events={selectedEvents} tasks={scheduledTasks} sources={sources} sourceId={importSourceId} onSource={setImportSourceId} importName={importName} onImportName={setImportName} onImport={(file) => void importCalendarFile(file)} onDeleteSource={async (id) => { const result = await window.assist.deleteCalendarSource(id); if (!result.ok) throw new Error(result.error ?? 'Could not remove that calendar.'); await refresh() }} />}
     {!loading && tab === 'context' && <ContextTab value={context} onChange={setContext} onSave={() => void saveContext()} />}
 
@@ -516,12 +532,23 @@ function RoutinesTab({ routines, areas, projects, onNew, onEdit, onApply, onAddS
   </div>
 }
 
-function JournalTab({ entries, goals, areas, query, onQuery, onNew, onEdit, onDelete }: { entries: JournalEntry[]; goals: LifeGoal[]; areas: TaskArea[]; query: string; onQuery: (query: string) => void; onNew: () => void; onEdit: (entry: JournalEntry) => void; onDelete: (entry: JournalEntry) => Promise<void> }): React.JSX.Element {
+function JournalTab({ entries, goals, areas, query, onQuery, onNew, onEdit, onTogglePin, onDelete }: {
+  entries: JournalEntry[]
+  goals: LifeGoal[]
+  areas: TaskArea[]
+  query: string
+  onQuery: (query: string) => void
+  onNew: () => void
+  onEdit: (entry: JournalEntry) => void
+  onTogglePin: (entry: JournalEntry) => void
+  onDelete: (entry: JournalEntry) => Promise<void>
+}): React.JSX.Element {
   return <div className="life-panel">
     <div className="life-panel-heading"><div><h3>Notes that remember the why</h3><p>Keep decisions, reflections, and working notes close to the goals they support.</p></div><button className="primary-button" type="button" onClick={onNew}><Icon name="plus" />New note</button></div>
     <label className="life-search"><Icon name="search" /><span className="sr-only">Search notes</span><input value={query} onChange={(event) => onQuery(event.target.value)} placeholder="Search notes and reflections" /></label>
     {entries.length ? <div className="life-journal-list">{entries.map((entry) => <article className="life-journal-card" key={entry.id}>
       <div className="life-journal-date">{formatDate(entry.entryDate)}</div><div className="life-journal-copy"><h4>{entry.title || 'Untitled note'}</h4><p>{entry.content}</p><small>{areas.find((area) => area.id === entry.areaId)?.name ?? 'Personal'}{entry.goalId ? ` · ${goals.find((goal) => goal.id === entry.goalId)?.title ?? 'Goal'}` : ''}</small></div>
+      <button className="todo-row-action" type="button" onClick={() => onTogglePin(entry)}>{entry.isPinned ? 'Unpin note' : 'Pin note'}</button>
       <button className="todo-row-action" type="button" onClick={() => onEdit(entry)}>Edit</button><button className="todo-row-action" type="button" onClick={() => void onDelete(entry)}>Delete</button>
     </article>)}</div> : <LifeEmpty title={query ? 'No notes match that search' : 'Start with a blank page'} body={query ? 'Try a different word or phrase.' : 'Keep a decision, a reflection, or the idea you do not want to lose.'} action={query ? undefined : 'Write a note'} onAction={onNew} />}
   </div>
