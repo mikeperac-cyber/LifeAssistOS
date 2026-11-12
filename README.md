@@ -43,9 +43,9 @@ Use OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, 
 
 ## Install on Windows
 
-Download **LifeAssistOS-Setup-0.3.0.exe** from the project’s GitHub Releases page and run the installer. LifeAssistOS can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
+Download **LifeAssistOS-Setup-0.3.0.exe** from [GitHub Releases](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest) and run the installer. LifeAssistOS can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
 
-Windows may show a SmartScreen prompt because this build is not code-signed. Confirm the publisher details and continue only if you downloaded the installer from the project’s GitHub Releases page.
+Windows may show a SmartScreen prompt because this build is not code-signed. Confirm the publisher details and continue only if you downloaded the installer from the project’s [GitHub Releases page](https://github.com/mikeperac-cyber/LifeAssistOS/releases/latest).
 
 ## Keyboard shortcuts
 
