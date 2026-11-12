@@ -32,6 +32,10 @@ const dashboardLayoutStorage = {
   getItem: (key: string) => window.localStorage.getItem(key),
   setItem: (key: string, value: string) => window.localStorage.setItem(key, value)
 }
+
+// Keep unsaved changes when navigating away unmounts the Dashboard.
+let unsavedDashboardLayout: DashboardLayout | null = null
+
 // The model already resolves local dates. Format those calendar dates without shifting them again.
 const weeklyCompletionDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' })
 
@@ -376,9 +380,9 @@ function LifeOverviewTab({
   onToggleJournalPin: (entry: JournalEntry) => Promise<boolean>
   onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
-  const [layout, setLayout] = useState(() => readDashboardLayout(dashboardLayoutStorage))
+  const [layout, setLayout] = useState(() => unsavedDashboardLayout ?? readDashboardLayout(dashboardLayoutStorage))
   const [customizeOpen, setCustomizeOpen] = useState(false)
-  const [layoutSaveFailed, setLayoutSaveFailed] = useState(false)
+  const [layoutSaveFailed, setLayoutSaveFailed] = useState(() => unsavedDashboardLayout !== null)
   const focusList = useRef<HTMLOListElement>(null)
   const myDayAction = useRef<HTMLButtonElement>(null)
   const journalAction = useRef<HTMLButtonElement>(null)
@@ -446,11 +450,11 @@ function LifeOverviewTab({
     })
   ].sort((a, b) => a.date.localeCompare(b.date))
 
-  const updateLayout = (nextLayout: DashboardLayout): boolean => {
+  const updateLayout = (nextLayout: DashboardLayout): void => {
+    setLayout(nextLayout)
     const saved = writeDashboardLayout(nextLayout, dashboardLayoutStorage)
+    unsavedDashboardLayout = saved ? null : nextLayout
     setLayoutSaveFailed(!saved)
-    if (saved) setLayout(nextLayout)
-    return saved
   }
 
   const widgets: Record<DashboardWidgetId, React.JSX.Element> = {
@@ -619,7 +623,7 @@ function LifeOverviewTab({
 function DashboardCustomizeDialog({ layout, saveFailed, onChange, onClose }: {
   layout: DashboardLayout
   saveFailed: boolean
-  onChange: (layout: DashboardLayout) => boolean
+  onChange: (layout: DashboardLayout) => void
   onClose: () => void
 }): React.JSX.Element {
   const movedButton = useRef<HTMLButtonElement>(null)
@@ -635,14 +639,14 @@ function DashboardCustomizeDialog({ layout, saveFailed, onChange, onClose }: {
 
   const moveWidget = (id: DashboardWidgetId, direction: -1 | 1, button: HTMLButtonElement): void => {
     const nextLayout = moveDashboardWidget(layout, id, direction)
-    if (!onChange(nextLayout)) return
     movedButton.current = button
+    onChange(nextLayout)
     setMoveNotice(`${DASHBOARD_WIDGET_TITLES[id]} moved to position ${nextLayout.order.indexOf(id) + 1} of ${nextLayout.order.length}.`)
   }
 
   return <AccessibleDialog className="modal life-dashboard-customize" labelledBy="life-dashboard-customize-title" onCancel={onClose}>
     <h2 id="life-dashboard-customize-title">Customize dashboard</h2>
-    {saveFailed && <p className="life-dashboard-customize-warning" role="alert">Dashboard changes could not be saved on this device.</p>}
+    {saveFailed && <p className="life-dashboard-customize-warning" role="alert">Dashboard changes apply for this session. They could not be saved to this device.</p>}
     <ol className="life-dashboard-customize-list" role="list">
       {layout.order.map((id, index) => {
         const title = DASHBOARD_WIDGET_TITLES[id]

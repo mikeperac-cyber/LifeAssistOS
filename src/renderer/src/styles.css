@@ -24,7 +24,7 @@
   --purple-rgb: 176, 138, 240;
   --pink: #ec4899;
   --pink-rgb: 236, 72, 153;
-  --accent-ink: #160b2c;
+  --accent-ink: #0b0910;
   --danger-ink: #101418;
   --sidebar-bg: rgba(21, 18, 27, 0.82);
   --topbar-bg: rgba(11, 9, 16, 0.78);
@@ -39,7 +39,7 @@
   --glow-accent: rgba(var(--accent-rgb), 0.06);
   --glow-blue: rgba(var(--blue-rgb), 0.05);
   --brand-gradient: linear-gradient(145deg, #a78bfa, #7c3aed);
-  --primary-gradient: linear-gradient(180deg, #a78bfa, #7c3aed);
+  --primary-gradient: linear-gradient(180deg, #a78bfa, var(--accent-strong));
   --modal-gradient: linear-gradient(180deg, #201b29, #15121b);
   --modal-shadow: 0 30px 100px rgba(0, 0, 0, 0.65);
   --radius: 14px;
