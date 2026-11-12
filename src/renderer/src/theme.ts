@@ -1,10 +1,11 @@
 export const APP_THEME_STORAGE_KEY = 'mike-assist-theme'
 
 export const APP_THEMES = [
-  { id: 'midnight', label: 'Midnight', description: 'Deep charcoal with clear teal accents.' },
-  { id: 'light', label: 'Light', description: 'Bright surfaces with calm, high-contrast text.' },
-  { id: 'forest', label: 'Forest', description: 'Dark evergreen surfaces with fresh green accents.' },
-  { id: 'violet', label: 'Violet', description: 'Dark plum surfaces with soft violet accents.' }
+  { id: 'midnight', label: 'Midnight', description: 'Graphite surfaces with a clear sea-glass accent.' },
+  { id: 'light', label: 'Light', description: 'Chalk-white surfaces with a calm indigo accent.' },
+  { id: 'forest', label: 'Forest', description: 'Evergreen surfaces with a fresh leaf accent.' },
+  { id: 'violet', label: 'Violet', description: 'Ink-plum surfaces with a soft lilac accent.' },
+  { id: 'blueprint', label: 'Blueprint', description: 'Deep navy surfaces with a bright drafting-blue accent.' }
 ] as const
 
 export type AppTheme = (typeof APP_THEMES)[number]['id']

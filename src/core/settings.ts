@@ -30,9 +30,11 @@ const providerSchema = z.object({
 })
 
 interface SettingsFile {
-  version: 1 | 2
+  version: 1 | 2 | 3
   provider: Omit<ProviderSettings, 'apiKey'>
   onboardingComplete?: boolean
+  /** An older unbound provider credential was removed and must be entered again. */
+  credentialReentryRequired?: boolean
   /** Legacy single-key ciphertext, migrated to providerApiKeysEnc on load. */
   apiKeyEnc?: string
   /** Base64 ciphertexts indexed by provider preset and endpoint origin. */
@@ -43,10 +45,20 @@ interface SettingsStoreState {
   provider: Omit<ProviderSettings, 'apiKey'>
   apiKey: string
   onboardingComplete: boolean
+  credentialReentryRequired: boolean
   providerApiKeysEnc: Record<string, string>
   /** Unencrypted keys are session-only when OS encryption is unavailable. */
   sessionApiKeys: Record<string, string>
 }
+
+interface BoundProviderKey {
+  version: 1
+  credentialId: string
+  apiKey: string
+}
+
+const MAX_STORED_PROVIDER_KEYS = 64
+const MAX_ENCRYPTED_PROVIDER_KEY_LENGTH = 32_768
 
 export const DEFAULT_PROVIDER_SETTINGS: Omit<ProviderSettings, 'apiKey'> = {
   preset: 'openai',
@@ -63,10 +75,14 @@ function isSettingsFile(value: unknown): value is SettingsFile {
   const encryptedKeys = file.providerApiKeysEnc
   const validEncryptedKeys = encryptedKeys === undefined || (
     typeof encryptedKeys === 'object' && encryptedKeys !== null && !Array.isArray(encryptedKeys) &&
-    Object.values(encryptedKeys).every((entry) => typeof entry === 'string')
+    Object.entries(encryptedKeys).length <= MAX_STORED_PROVIDER_KEYS &&
+    Object.entries(encryptedKeys).every(([credentialId, entry]) =>
+      credentialId.length <= 4_096 && typeof entry === 'string' && entry.length <= MAX_ENCRYPTED_PROVIDER_KEY_LENGTH
+    )
   )
-  return (file.version === 1 || file.version === 2) && Boolean(file.provider && typeof file.provider === 'object' && !Array.isArray(file.provider)) &&
+  return (file.version === 1 || file.version === 2 || file.version === 3) && Boolean(file.provider && typeof file.provider === 'object' && !Array.isArray(file.provider)) &&
     (file.onboardingComplete === undefined || typeof file.onboardingComplete === 'boolean') &&
+    (file.credentialReentryRequired === undefined || typeof file.credentialReentryRequired === 'boolean') &&
     (file.apiKeyEnc === undefined || typeof file.apiKeyEnc === 'string') &&
     validEncryptedKeys
 }
@@ -80,6 +96,7 @@ export class SettingsStore {
   private provider: Omit<ProviderSettings, 'apiKey'> = { ...DEFAULT_PROVIDER_SETTINGS }
   private apiKey = ''
   private onboardingComplete = false
+  private credentialReentryRequired = false
   private providerApiKeysEnc: Record<string, string> = {}
   private sessionApiKeys: Record<string, string> = {}
   private mutationQueue: Promise<void> = Promise.resolve()
@@ -98,6 +115,7 @@ export class SettingsStore {
         provider: { ...DEFAULT_PROVIDER_SETTINGS },
         apiKey: '',
         onboardingComplete: loaded?.onboardingComplete === true,
+        credentialReentryRequired: loaded?.credentialReentryRequired === true || Boolean(loaded?.apiKeyEnc),
         providerApiKeysEnc: Object.fromEntries(
           Object.entries(loaded?.providerApiKeysEnc ?? {}).filter(([, encrypted]) => encrypted.length > 0)
         ),
@@ -118,18 +136,22 @@ export class SettingsStore {
       }
 
       const activeKeyId = providerCredentialId(next.provider)
-      if (loaded?.apiKeyEnc && !next.providerApiKeysEnc[activeKeyId]) {
-        next.providerApiKeysEnc[activeKeyId] = loaded.apiKeyEnc
-      }
-
-      const activeKeyEnc = next.providerApiKeysEnc[activeKeyId]
-      if (activeKeyEnc) {
-        if (this.codec?.available) {
+      if (this.codec?.available) {
+        for (const [credentialId, encrypted] of Object.entries(next.providerApiKeysEnc)) {
           try {
-            const decrypted = await this.codec.decrypt(activeKeyEnc)
-            next.apiKey = decrypted.value
+            const decrypted = await this.codec.decrypt(encrypted)
+            const bound = parseBoundProviderKey(decrypted.value)
+            if (!bound || bound.credentialId !== credentialId) {
+              // Older ciphertext was not bound to the provider identity. An
+              // imported settings file could otherwise move it to an attacker URL.
+              delete next.providerApiKeysEnc[credentialId]
+              next.credentialReentryRequired = true
+              console.warn('[settings] discarded a stored provider key without a matching provider binding')
+            } else if (credentialId === activeKeyId) {
+              next.apiKey = bound.apiKey
+            }
           } catch (error) {
-            console.warn('[settings] could not decrypt the stored API key; preserving its ciphertext', error)
+            console.warn('[settings] could not decrypt a stored provider key; preserving its ciphertext', error)
           }
         }
       }
@@ -154,6 +176,12 @@ export class SettingsStore {
     provider: Omit<ProviderSettings, 'apiKey'> & {
       hasApiKey: boolean
       apiKeyStored: boolean
+      credentialReentryRequired: boolean
+      savedCredentials: Array<{
+        preset: ProviderSettings['preset']
+        origin: string
+        storedSecurely: boolean
+      }>
     }
     onboardingComplete: boolean
   } {
@@ -162,10 +190,34 @@ export class SettingsStore {
         ...this.provider,
         baseUrl: safeProviderEndpointForDisplay(this.provider.baseUrl),
         hasApiKey: this.hasProviderKey(this.provider),
-        apiKeyStored: Boolean(this.providerApiKeysEnc[providerCredentialId(this.provider)])
+        apiKeyStored: Boolean(this.providerApiKeysEnc[providerCredentialId(this.provider)]),
+        credentialReentryRequired: this.credentialReentryRequired,
+        savedCredentials: this.listSavedCredentials()
       },
       onboardingComplete: this.onboardingComplete
     }
+  }
+
+  private listSavedCredentials(): Array<{
+    preset: ProviderSettings['preset']
+    origin: string
+    storedSecurely: boolean
+  }> {
+    const credentials = new Map<string, { preset: ProviderSettings['preset']; origin: string; storedSecurely: boolean }>()
+    for (const keyId of Object.keys(this.providerApiKeysEnc)) {
+      const credential = parseProviderCredentialId(keyId)
+      if (credential) credentials.set(keyId, { ...credential, storedSecurely: true })
+    }
+    for (const keyId of Object.keys(this.sessionApiKeys)) {
+      const credential = parseProviderCredentialId(keyId)
+      if (credential && !credentials.has(keyId)) credentials.set(keyId, { ...credential, storedSecurely: false })
+    }
+    if (this.apiKey) {
+      const keyId = providerCredentialId(this.provider)
+      const credential = parseProviderCredentialId(keyId)
+      if (credential && !credentials.has(keyId)) credentials.set(keyId, { ...credential, storedSecurely: false })
+    }
+    return [...credentials.values()].sort((a, b) => a.preset.localeCompare(b.preset) || a.origin.localeCompare(b.origin))
   }
 
   async completeOnboarding(): Promise<void> {
@@ -179,6 +231,9 @@ export class SettingsStore {
   ): Promise<AppSettings> {
     return this.mutate(async () => {
       const { apiKey, ...rest } = patch
+      if (apiKey !== undefined && apiKey !== null && (typeof apiKey !== 'string' || apiKey.length > 4_096)) {
+        throw new Error('Invalid settings — API key must be 4,096 characters or fewer.')
+      }
       const current = this.snapshot()
       const candidate = { ...current.provider, ...stripUndefined(rest) }
       const parsed = providerSchema.safeParse(candidate)
@@ -210,6 +265,7 @@ export class SettingsStore {
       }
 
       if (apiKey !== undefined) {
+        next.credentialReentryRequired = false
         if (apiKey === null || apiKey.trim() === '') {
           next.apiKey = ''
           delete next.providerApiKeysEnc[nextKeyId]
@@ -226,7 +282,14 @@ export class SettingsStore {
 
         if (!sessionKey && encryptedKey && this.codec?.available) {
           try {
-            next.apiKey = (await this.codec.decrypt(encryptedKey)).value
+            const decrypted = await this.codec.decrypt(encryptedKey)
+            const bound = parseBoundProviderKey(decrypted.value)
+            if (bound?.credentialId === nextKeyId) next.apiKey = bound.apiKey
+            else {
+              delete next.providerApiKeysEnc[nextKeyId]
+              next.credentialReentryRequired = true
+              console.warn('[settings] discarded a stored provider key without a matching provider binding')
+            }
           } catch (error) {
             console.warn('[settings] could not decrypt the selected provider API key; preserving its ciphertext', error)
           }
@@ -238,11 +301,77 @@ export class SettingsStore {
     })
   }
 
+  /** Saves one provider's credential without changing the active provider. */
+  async saveProviderApiKey(
+    provider: Pick<ProviderSettings, 'preset' | 'baseUrl'>,
+    apiKey: string
+  ): Promise<boolean> {
+    if (typeof apiKey !== 'string' || apiKey.trim().length === 0 || apiKey.length > 4_096) {
+      throw new Error('Invalid provider API key.')
+    }
+    const parsedPreset = z.enum([
+      'openai', 'anthropic', 'gemini', 'openrouter', 'groq', 'deepseek', 'mistral', 'xai',
+      'nvidia', 'together', 'fireworks', 'cerebras', 'ollama', 'lmstudio', 'custom'
+    ]).safeParse(provider.preset)
+    if (!parsedPreset.success) throw new Error('Invalid provider.')
+    const normalizedEndpoint = normalizeProviderEndpoint(provider.baseUrl)
+    const credentialProvider = { preset: parsedPreset.data, baseUrl: normalizedEndpoint }
+    const keyId = providerCredentialId(credentialProvider)
+
+    return this.mutate(async () => {
+      const next = this.snapshot()
+      next.credentialReentryRequired = false
+      next.apiKey = next.provider.preset === credentialProvider.preset &&
+        providerCredentialId(next.provider) === keyId ? apiKey.trim() : next.apiKey
+      next.providerApiKeysEnc = { ...next.providerApiKeysEnc }
+      next.sessionApiKeys = { ...next.sessionApiKeys }
+      if (this.codec?.available) {
+        next.providerApiKeysEnc[keyId] = await encryptBoundProviderKey(this.codec, keyId, apiKey.trim())
+        delete next.sessionApiKeys[keyId]
+      } else {
+        next.sessionApiKeys[keyId] = apiKey.trim()
+        delete next.providerApiKeysEnc[keyId]
+      }
+      this.apply(await this.persist(next))
+      return Boolean(this.providerApiKeysEnc[keyId])
+    })
+  }
+
+  /** Removes one provider credential without changing the selected provider. */
+  async removeProviderApiKey(
+    provider: Pick<ProviderSettings, 'preset' | 'baseUrl'>
+  ): Promise<boolean> {
+    const parsedPreset = providerSchema.shape.preset.safeParse(provider?.preset)
+    if (!parsedPreset.success || typeof provider?.baseUrl !== 'string' || provider.baseUrl.length > 2_048) {
+      throw new Error('Invalid provider connection.')
+    }
+    const keyId = providerCredentialId({
+      preset: parsedPreset.data,
+      baseUrl: normalizeProviderEndpoint(provider.baseUrl)
+    })
+
+    return this.mutate(async () => {
+      const next = this.snapshot()
+      const existed = Boolean(next.providerApiKeysEnc[keyId] || next.sessionApiKeys[keyId])
+      if (!existed) return false
+
+      next.providerApiKeysEnc = { ...next.providerApiKeysEnc }
+      next.sessionApiKeys = { ...next.sessionApiKeys }
+      delete next.providerApiKeysEnc[keyId]
+      delete next.sessionApiKeys[keyId]
+      if (providerCredentialId(next.provider) === keyId) next.apiKey = ''
+
+      this.apply(await this.persist(next))
+      return true
+    })
+  }
+
   private snapshot(): SettingsStoreState {
     return {
       provider: this.provider,
       apiKey: this.apiKey,
       onboardingComplete: this.onboardingComplete,
+      credentialReentryRequired: this.credentialReentryRequired,
       providerApiKeysEnc: { ...this.providerApiKeysEnc },
       sessionApiKeys: { ...this.sessionApiKeys }
     }
@@ -252,6 +381,7 @@ export class SettingsStore {
     this.provider = state.provider
     this.apiKey = state.apiKey
     this.onboardingComplete = state.onboardingComplete
+    this.credentialReentryRequired = state.credentialReentryRequired
     this.providerApiKeysEnc = state.providerApiKeysEnc
     this.sessionApiKeys = state.sessionApiKeys
   }
@@ -274,14 +404,23 @@ export class SettingsStore {
     const sessionApiKeys = { ...state.sessionApiKeys }
     if (state.apiKey && this.codec?.available) {
       const activeKeyId = providerCredentialId(state.provider)
-      providerApiKeysEnc[activeKeyId] = await this.codec.encrypt(state.apiKey)
+      providerApiKeysEnc[activeKeyId] = await encryptBoundProviderKey(this.codec, activeKeyId, state.apiKey)
       delete sessionApiKeys[activeKeyId]
     }
 
+    const storedKeyIds = new Set([...Object.keys(providerApiKeysEnc), ...Object.keys(sessionApiKeys)])
+    if (storedKeyIds.size > MAX_STORED_PROVIDER_KEYS ||
+      Object.entries(providerApiKeysEnc).some(([credentialId, encrypted]) =>
+        credentialId.length > 4_096 || encrypted.length > MAX_ENCRYPTED_PROVIDER_KEY_LENGTH
+      )) {
+      throw new Error(`Provider settings can store up to ${MAX_STORED_PROVIDER_KEYS} keys. Remove an unused key before adding another.`)
+    }
+
     const payload: SettingsFile = {
-      version: 2,
+      version: 3,
       provider: state.provider,
       onboardingComplete: state.onboardingComplete,
+      ...(state.credentialReentryRequired ? { credentialReentryRequired: true } : {}),
       ...(Object.keys(providerApiKeysEnc).length > 0 ? { providerApiKeysEnc } : {})
     }
 
@@ -295,6 +434,17 @@ export class SettingsStore {
     }
     return { ...state, providerApiKeysEnc, sessionApiKeys }
   }
+}
+
+function parseBoundProviderKey(value: string): BoundProviderKey | undefined {
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch { return undefined }
+  const result = z.object({ version: z.literal(1), credentialId: z.string().min(1).max(4096), apiKey: z.string().min(1).max(4096) }).safeParse(parsed)
+  return result.success ? result.data : undefined
+}
+
+async function encryptBoundProviderKey(codec: SecretCodec, credentialId: string, apiKey: string): Promise<string> {
+  return codec.encrypt(JSON.stringify({ version: 1, credentialId, apiKey } satisfies BoundProviderKey))
 }
 
 function stripUndefined<T extends object>(value: T): Partial<T> {
@@ -317,6 +467,20 @@ function providerOrigin(input: string): string {
 
 function providerCredentialId(provider: Pick<ProviderSettings, 'preset' | 'baseUrl'>): string {
   return JSON.stringify([provider.preset, providerOrigin(provider.baseUrl)])
+}
+
+function parseProviderCredentialId(value: string): { preset: ProviderSettings['preset']; origin: string } | undefined {
+  let parsed: unknown
+  try { parsed = JSON.parse(value) } catch { return undefined }
+  const tuple = z.tuple([
+    providerSchema.shape.preset,
+    z.string().url()
+  ]).safeParse(parsed)
+  if (!tuple.success) return undefined
+  try {
+    const origin = new URL(tuple.data[1]).origin
+    return origin === tuple.data[1] ? { preset: tuple.data[0], origin } : undefined
+  } catch { return undefined }
 }
 
 const RETIRED_ANTHROPIC_MODEL_REPLACEMENTS: Record<string, string> = {

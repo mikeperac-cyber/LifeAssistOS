@@ -19,9 +19,9 @@ const shortcut = {
 }
 
 describe('navigation', () => {
-  it('test_navigation_exposes_only_tasks_and_settings', () => {
-    expect(Object.keys(VIEW_META)).toEqual(['tasks', 'settings'])
-    expect(NAV_GROUPS.flatMap((group) => group.items)).toEqual(['tasks', 'settings'])
+  it('test_navigation_exposes_tasks_projects_and_settings', () => {
+    expect(Object.keys(VIEW_META)).toEqual(['tasks', 'assistant', 'review', 'projects', 'settings'])
+    expect(NAV_GROUPS.flatMap((group) => group.items)).toEqual(['tasks', 'assistant', 'review', 'projects', 'settings'])
     expect(normalizeView(undefined)).toBe('tasks')
   })
 
@@ -30,6 +30,9 @@ describe('navigation', () => {
       expect(normalizeView(route)).toBe('tasks')
     }
     expect(normalizeView('settings')).toBe('settings')
+    expect(normalizeView('assistant')).toBe('assistant')
+    expect(normalizeView('projects')).toBe('projects')
+    expect(normalizeView('review')).toBe('review')
   })
 
   it('normalizes saved sidebar visibility and defaults invalid values to open', () => {

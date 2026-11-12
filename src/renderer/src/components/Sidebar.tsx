@@ -1,5 +1,6 @@
 import type { SidebarVisibility, View } from '../navigation'
 import { NAV_GROUPS, VIEW_META } from '../navigation'
+import { Icon } from './Icon'
 
 export type { View } from '../navigation'
 
@@ -19,10 +20,10 @@ export function Sidebar({
   return (
     <aside id="app-sidebar" className="sidebar">
       <div className="brand">
-        <div className="brand-mark" aria-hidden="true">M</div>
+        <div className="brand-mark" aria-hidden="true"><Icon name="checklist" /></div>
         <div className="brand-text">
           <span className="brand-name">Mike Assist</span>
-          <span className="brand-sub">Tasks with AI</span>
+          <span className="brand-sub">Plan · learn · grow</span>
         </div>
         {sidebarVisibility === 'open' && (
           <button
@@ -46,7 +47,7 @@ export function Sidebar({
         aria-keyshortcuts="Control+Shift+K Meta+Shift+K"
         title="Save a thought to the Inbox"
       >
-        <span aria-hidden="true">＋</span>
+        <span aria-hidden="true"><Icon name="plus" /></span>
         <span>Quick capture</span>
         <kbd className="quick-capture-shortcut">Ctrl ⇧ K</kbd>
       </button>
@@ -63,7 +64,7 @@ export function Sidebar({
                 aria-current={view === item ? 'page' : undefined}
                 onClick={() => onChange(item)}
               >
-                <span className="nav-glyph" aria-hidden="true">{item === 'tasks' ? '✓' : '⚙'}</span>
+              <span className="nav-glyph"><Icon name={item === 'assistant' ? 'assistant' : item === 'tasks' ? 'tasks' : item === 'life' ? 'leaf' : item === 'projects' ? 'projects' : item === 'review' ? 'review' : 'settings'} /></span>
                 <span>{VIEW_META[item].label}</span>
               </button>
             ))}

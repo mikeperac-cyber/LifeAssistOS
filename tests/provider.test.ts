@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createOpenAICompatibleProvider,
   normalizeBaseUrl
@@ -440,6 +440,25 @@ describe('OpenAI-compatible provider', () => {
     const provider = createOpenAICompatibleProvider({ baseUrl: server.baseUrl, model: 'm' })
     expect(await provider.listModels()).toEqual(['a-model', 'b-model'])
     expect(server.requests[0].url).toBe('/v1/models')
+  })
+
+  it('keeps the model-list timeout active while consuming the response body', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchImpl: typeof fetch = async (_input, init) => new Response(new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener('abort', () => controller.error(new DOMException('aborted', 'AbortError')), { once: true })
+        }
+      }), { status: 200 })
+      const provider = createOpenAICompatibleProvider({ baseUrl: 'http://127.0.0.1:1234/v1', model: 'm', fetchImpl })
+      const pending = provider.listModels()
+      const result = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+
+      await vi.advanceTimersByTimeAsync(15_001)
+      await result
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('sends the API key as a bearer token', async () => {

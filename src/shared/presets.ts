@@ -30,7 +30,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: 'gemini',
     label: 'Google Gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     needsKey: true,
     hint: 'Requests leave this computer and use Google’s OpenAI-compatible Gemini endpoint. Enter a Gemini API key below.'
   },
@@ -40,7 +40,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     baseUrl: 'https://openrouter.ai/api/v1',
     model: 'openai/gpt-4o-mini',
     needsKey: true,
-    hint: 'One API key can route to models from many providers. Choose a model ID from the refreshed list below.'
+    hint: 'One connection can route to models from many providers. Sign in below or enter an OpenRouter API key.'
   },
   {
     id: 'groq',
@@ -78,7 +78,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     id: 'nvidia',
     label: 'NVIDIA NIM',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
-    model: 'openai/gpt-oss-120b',
+    model: 'openai/gpt-oss-20b',
     needsKey: true,
     hint: 'OpenAI-compatible hosted inference. Model access depends on your NVIDIA account; select a tool-capable model for assistant actions.'
   },

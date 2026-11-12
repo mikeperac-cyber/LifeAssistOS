@@ -1,9 +1,9 @@
 {
   "name": "mike-assist",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "author": "Mike Assist",
-  "description": "A local-first to-do app with optional AI task planning.",
+  "description": "A local-first productivity companion with optional AI coaching, learning, and task planning.",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -33,6 +33,9 @@
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "overrides": {
+    "minimatch@>=7": "^11.0.1"
   },
   "build": {
     "appId": "com.mikeassist.desktop",

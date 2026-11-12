@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, session, shell, Tray } from 'electron'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   BackupRestoreRestartRequiredError,
   createBackupSnapshot,
@@ -7,6 +8,8 @@ import {
   restoreBackupSnapshot
 } from '../core/backup'
 import { PlanningStore } from '../core/planning'
+import { LifeStore } from '../core/lifeos'
+import { readFolderSyncConfig, syncSharedFolder, writeFolderSyncConfig } from '../core/folder-sync'
 import { TaskReminderScheduler } from '../core/reminders'
 import { createProviderForSettings } from '../core/providers/factory'
 import { describeProviderError, ProviderError } from '../core/providers/types'
@@ -14,9 +17,15 @@ import { DEFAULT_PROVIDER_SETTINGS, SettingsStore } from '../core/settings'
 import type { SecretCodec } from '../core/settings'
 import type { AssistEvent, ProviderSettings, ProviderStatus } from '../shared/types'
 import type { PublicSettings, SettingsPatch } from '../shared/ipc'
+import { providerRequiresApiKey } from '../shared/provider-endpoint'
+import type { IpcMainInvokeEvent } from 'electron'
 import { SystemTrayManager, shouldMinimizeToTrayOnClose } from './tray'
 import { registerDomainIpcHandlers } from './ipc/domain-handlers'
 import { registerTodoAiIpcHandlers } from './ipc/todo-ai-handlers'
+import { registerAssistantIpcHandlers } from './ipc/assistant-handlers'
+import { registerProviderAuthIpcHandlers } from './ipc/provider-auth-handlers'
+import { registerLifeIpcHandlers } from './ipc/lifeos-handlers'
+import { ProviderRequestGate, ProviderRequestGateError } from './ipc/provider-request-gate'
 
 app.setName('Mike Assist')
 nativeTheme.themeSource = 'dark'
@@ -25,9 +34,13 @@ if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'com.mi
 let mainWindow: BrowserWindow | null = null
 let systemTray: SystemTrayManager | null = null
 let planning: PlanningStore | null = null
+let life: LifeStore | null = null
+let folderSyncRunning = false
+let folderAutoSyncTimer: ReturnType<typeof setInterval> | undefined
 let settings: SettingsStore | null = null
 let reminders: TaskReminderScheduler | null = null
 let isQuitting = false
+let providerRequestGate = new ProviderRequestGate()
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
@@ -38,7 +51,7 @@ function sendToRenderer(event: AssistEvent): void {
 
 function fallbackSettings(): PublicSettings {
   return {
-    provider: { ...DEFAULT_PROVIDER_SETTINGS, hasApiKey: false, apiKeyStored: false },
+    provider: { ...DEFAULT_PROVIDER_SETTINGS, hasApiKey: false, apiKeyStored: false, credentialReentryRequired: false, savedCredentials: [] },
     onboardingComplete: false
   }
 }
@@ -54,6 +67,15 @@ function asErrorMessage(error: unknown): string {
 async function initialize(): Promise<void> {
   const userData = app.getPath('userData')
   await recoverInterruptedBackupRestore(userData)
+  providerRequestGate = new ProviderRequestGate(
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    path.join(userData, 'ai-request-limits.sqlite')
+  )
+  try { await providerRequestGate.init() }
+  catch (error) { console.warn('[provider-request-gate] durable usage state unavailable; AI requests will stay disabled', error) }
 
   const codec: SecretCodec = {
     available: await safeStorage.isAsyncEncryptionAvailable(),
@@ -68,8 +90,12 @@ async function initialize(): Promise<void> {
   await settings.init()
   planning = new PlanningStore(path.join(userData, 'planning.sqlite'))
   await planning.init()
+  life = new LifeStore(planning.database, planning)
+  life.init()
   reminders = new TaskReminderScheduler(planning, deliverReminder)
   registerIpc()
+  try { if ((await readFolderSyncConfig(userData)).encryptedPassphrase) startFolderAutoSync() }
+  catch (error) { console.warn('[folder-sync] saved sync settings could not be loaded', asErrorMessage(error)) }
 }
 
 function deliverReminder(reminder: { id: string; title: string }): void {
@@ -84,21 +110,58 @@ function deliverReminder(reminder: { id: string; title: string }): void {
 }
 
 function registerIpc(): void {
+  const guardedIpcMain = {
+    handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
+      ipcMain.handle(channel, (event, ...args) => {
+        if (!isTrustedRenderer(event)) throw new Error('This request did not come from the Mike Assist window.')
+        return listener(event, ...args)
+      })
+    }
+  } as Pick<typeof ipcMain, 'handle'>
+
   registerDomainIpcHandlers({
-    ipcMain,
+    ipcMain: guardedIpcMain,
     getPlanning: () => planning,
     sendEvent: sendToRenderer,
     errorMessage: asErrorMessage
   })
 
+  registerLifeIpcHandlers({
+    ipcMain: guardedIpcMain,
+    getLife: () => life,
+    sendEvent: sendToRenderer,
+    errorMessage: asErrorMessage
+  })
+
   registerTodoAiIpcHandlers({
-    ipcMain,
+    ipcMain: guardedIpcMain,
     getProviderSettings,
+    requestGate: providerRequestGate,
     createProvider: (providerSettings, role) => createProviderForSettings(providerSettings, role)
   })
 
-  ipcMain.handle('assist:settings', () => settings?.public() ?? fallbackSettings())
-  ipcMain.handle('assist:settings-update', async (_event, raw: unknown) => {
+  registerAssistantIpcHandlers({
+    ipcMain: guardedIpcMain,
+    sendDelta: (event, requestId, text) => event.sender.send('assist:assistant-delta', { requestId, text }),
+    getProviderSettings,
+    requestGate: providerRequestGate,
+    getTasks: () => planning?.listAssistantTasks() ?? [],
+    getLifeContext: () => ({
+      goals: life?.workspace().goals.map(({ title, description, status, targetDate }) => ({ title, description, status, targetDate })) ?? [],
+      journal: life?.listJournal().slice(0, 10).map(({ entryDate, title, content }) => ({ entryDate, title, content: content.slice(0, 1200) })) ?? [],
+      ...(life?.getPersonalContext() ?? { aboutMe: '', preferences: '', currentFocus: '', updatedAt: '' })
+    }),
+    createProvider: (providerSettings, role) => createProviderForSettings(providerSettings, role)
+  })
+
+  registerProviderAuthIpcHandlers({
+    ipcMain: guardedIpcMain,
+    getSettings: () => settings,
+    openExternal: (url) => shell.openExternal(url)
+  })
+
+  guardedIpcMain.handle('assist:settings', () => settings?.public() ?? fallbackSettings())
+  guardedIpcMain.handle('assist:settings-update', async (_event, raw: unknown) => {
     if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
     if (!isRecord(raw)) return { ok: false, error: 'Invalid settings.' }
     try {
@@ -106,16 +169,131 @@ function registerIpc(): void {
       return { ok: true, settings: settings.public() }
     } catch (error) { return { ok: false, error: asErrorMessage(error) } }
   })
-  ipcMain.handle('assist:provider-test', () => testProvider())
-  ipcMain.handle('assist:backup', (_event, passphrase: unknown) => createBackup(passphrase))
-  ipcMain.handle('assist:backup-restore', (_event, passphrase: unknown) => restoreBackup(passphrase))
+  guardedIpcMain.handle('assist:provider-credential-remove', async (_event, raw: unknown) => {
+    if (!settings) return { ok: false, error: 'Mike Assist is still starting.' }
+    if (!isRecord(raw) || Object.keys(raw).length !== 2 || typeof raw['preset'] !== 'string' || typeof raw['baseUrl'] !== 'string') {
+      return { ok: false, error: 'Invalid provider connection.' }
+    }
+    try {
+      await settings.removeProviderApiKey({ preset: raw['preset'] as ProviderSettings['preset'], baseUrl: raw['baseUrl'] })
+      return { ok: true, settings: settings.public() }
+    } catch (error) { return { ok: false, error: asErrorMessage(error) } }
+  })
+  guardedIpcMain.handle('assist:provider-test', async () => {
+    try { return await providerRequestGate.run(testProvider) }
+    catch (error) {
+      return { ok: false, message: error instanceof ProviderRequestGateError ? error.message : 'Provider test is unavailable. Try again shortly.' }
+    }
+  })
+  guardedIpcMain.handle('assist:backup', (_event, passphrase: unknown) => createBackup(passphrase))
+  guardedIpcMain.handle('assist:backup-restore', (_event, passphrase: unknown) => restoreBackup(passphrase))
+  guardedIpcMain.handle('assist:folder-sync-config', async () => {
+    try {
+      const config = await readFolderSyncConfig(app.getPath('userData'))
+      return { ok: true, folderPath: config.folderPath, passphraseSaved: Boolean(config.encryptedPassphrase), secureStorageAvailable: await safeStorage.isAsyncEncryptionAvailable() }
+    }
+    catch (error) { return { ok: false, error: asErrorMessage(error) } }
+  })
+  guardedIpcMain.handle('assist:folder-sync-choose', async () => {
+    try {
+      const selection = mainWindow
+        ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a cloud-synced folder for Mike Assist', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
+        : await dialog.showOpenDialog({ title: 'Choose a cloud-synced folder for Mike Assist', buttonLabel: 'Use this folder', properties: ['openDirectory', 'createDirectory'] })
+      if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
+      const current = await readFolderSyncConfig(app.getPath('userData'))
+      await writeFolderSyncConfig(app.getPath('userData'), { ...current, folderPath: path.resolve(selection.filePaths[0]) })
+      return { ok: true, folderPath: path.resolve(selection.filePaths[0]) }
+    } catch (error) { return { ok: false, error: asErrorMessage(error) } }
+  })
+  guardedIpcMain.handle('assist:folder-sync-forget-passphrase', async () => {
+    if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try again shortly.' }
+    folderSyncRunning = true
+    try {
+      const config = await readFolderSyncConfig(app.getPath('userData'))
+      const { encryptedPassphrase: _discarded, ...withoutPassphrase } = config
+      await writeFolderSyncConfig(app.getPath('userData'), withoutPassphrase)
+      stopFolderAutoSync()
+      return { ok: true, folderPath: config.folderPath, passphraseSaved: false, secureStorageAvailable: await safeStorage.isAsyncEncryptionAvailable() }
+    } catch (error) { return { ok: false, error: asErrorMessage(error) } }
+    finally { folderSyncRunning = false }
+  })
+  guardedIpcMain.handle('assist:folder-sync', async (_event, raw: unknown) => {
+    if (folderSyncRunning) return { ok: false, error: 'A sync is already running.' }
+    if (!planning || !isRecord(raw) || typeof raw['passphrase'] !== 'string' || typeof raw['rememberPassphrase'] !== 'boolean') return { ok: false, error: 'Enter your sync passphrase to continue.' }
+    folderSyncRunning = true
+    try {
+      const config = await readFolderSyncConfig(app.getPath('userData'))
+      if (!config.folderPath) return { ok: false, error: 'Choose a shared sync folder first.' }
+      let passphrase = raw['passphrase']
+      if (!passphrase && config.encryptedPassphrase) {
+        if (!await safeStorage.isAsyncEncryptionAvailable()) return { ok: false, error: 'Windows secure storage is unavailable. Enter the passphrase again to sync.' }
+        try { passphrase = (await safeStorage.decryptStringAsync(Buffer.from(config.encryptedPassphrase, 'base64'))).result }
+        catch { return { ok: false, error: 'The saved sync passphrase could not be unlocked. Enter it again.' } }
+      }
+      if (passphrase.length < 12 || passphrase.length > 1024) return { ok: false, error: 'Use a sync passphrase with at least 12 characters.' }
+      if (raw['rememberPassphrase'] && !await safeStorage.isAsyncEncryptionAvailable()) return { ok: false, error: 'Windows secure storage is unavailable, so Mike Assist cannot remember this passphrase safely.' }
+      let encryptedPassphrase: string | undefined
+      if (raw['rememberPassphrase']) encryptedPassphrase = (await safeStorage.encryptStringAsync(passphrase)).toString('base64')
+      const result = await syncSharedFolder(planning.database, config.folderPath, config.deviceId, passphrase)
+      if (raw['rememberPassphrase']) await writeFolderSyncConfig(app.getPath('userData'), { ...config, encryptedPassphrase })
+      else if (config.encryptedPassphrase) {
+        const { encryptedPassphrase: _discarded, ...withoutPassphrase } = config
+        await writeFolderSyncConfig(app.getPath('userData'), withoutPassphrase)
+      }
+      if (result.changed) sendToRenderer({ type: 'today_changed' })
+      if (raw['rememberPassphrase']) startFolderAutoSync()
+      else stopFolderAutoSync()
+      return { ok: true, ...result }
+    } catch (error) { return { ok: false, error: asErrorMessage(error) } }
+    finally { folderSyncRunning = false }
+  })
+}
+
+function startFolderAutoSync(): void {
+  if (folderAutoSyncTimer) return
+  const run = (): void => { void runFolderAutoSync() }
+  folderAutoSyncTimer = setInterval(run, 90_000)
+  folderAutoSyncTimer.unref?.()
+  const warmup = setTimeout(run, 15_000)
+  warmup.unref?.()
+}
+
+function stopFolderAutoSync(): void {
+  if (folderAutoSyncTimer) clearInterval(folderAutoSyncTimer)
+  folderAutoSyncTimer = undefined
+}
+
+async function runFolderAutoSync(): Promise<void> {
+  if (folderSyncRunning || !planning || !await safeStorage.isAsyncEncryptionAvailable()) return
+  folderSyncRunning = true
+  try {
+    const config = await readFolderSyncConfig(app.getPath('userData'))
+    if (!config.folderPath || !config.encryptedPassphrase) return
+    const passphrase = (await safeStorage.decryptStringAsync(Buffer.from(config.encryptedPassphrase, 'base64'))).result
+    const result = await syncSharedFolder(planning.database, config.folderPath, config.deviceId, passphrase)
+    if (result.changed) sendToRenderer({ type: 'today_changed' })
+  } catch (error) { console.warn('[folder-sync] automatic sync did not complete', asErrorMessage(error)) }
+  finally { folderSyncRunning = false }
+}
+
+function isTrustedRenderer(event: IpcMainInvokeEvent): boolean {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents || event.senderFrame !== event.sender.mainFrame) return false
+  const expectedDevUrl = process.env['ELECTRON_RENDERER_URL']
+  try {
+    const actual = new URL(event.senderFrame.url)
+    if (expectedDevUrl) {
+      const expected = new URL(expectedDevUrl)
+      return actual.origin === expected.origin && actual.pathname === expected.pathname
+    }
+    return actual.protocol === 'file:' && path.resolve(fileURLToPath(actual)) === path.resolve(path.join(__dirname, '../renderer/index.html'))
+  } catch { return false }
 }
 
 async function testProvider(): Promise<ProviderStatus> {
   if (!settings) return { ok: false, message: 'Settings are not loaded yet.' }
   try {
     const providerSettings = settings.get().provider
-    if (requiresKey(providerSettings) && !providerSettings.apiKey?.trim()) {
+    if (providerRequiresApiKey(providerSettings.preset, providerSettings.baseUrl) && !providerSettings.apiKey?.trim()) {
       return { ok: false, message: 'Add your provider API key in Settings, then test the connection.' }
     }
     const models = await createProviderForSettings(providerSettings).listModels()
@@ -129,14 +307,6 @@ async function testProvider(): Promise<ProviderStatus> {
   }
 }
 
-function requiresKey(provider: ProviderSettings): boolean {
-  if (provider.preset === 'ollama' || provider.preset === 'lmstudio') return false
-  try {
-    const hostname = new URL(provider.baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')
-    return hostname !== 'localhost' && !hostname.endsWith('.localhost') && hostname !== '127.0.0.1' && hostname !== '::1'
-  } catch { return true }
-}
-
 async function createBackup(passphrase: unknown): Promise<{ ok: boolean; cancelled?: boolean; error?: string; folderName?: string }> {
   if (!planning || !settings) return { ok: false, error: 'Backup services are not ready.' }
   if (passphrase !== undefined && typeof passphrase !== 'string') return { ok: false, error: 'Invalid backup passphrase.' }
@@ -147,6 +317,8 @@ async function createBackup(passphrase: unknown): Promise<{ ok: boolean; cancell
 
   const folderName = `Mike Assist Backup ${new Date().toISOString().replace(/[:.]/g, '-')}`
   const backupPath = path.resolve(selection.filePaths[0], folderName)
+  if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the backup again shortly.' }
+  folderSyncRunning = true
   try {
     await createBackupSnapshot(app.getPath('userData'), backupPath, planning, app.getVersion(), {
       settingsFile: path.join(app.getPath('userData'), 'settings.json'),
@@ -154,17 +326,21 @@ async function createBackup(passphrase: unknown): Promise<{ ok: boolean; cancell
     })
     return { ok: true, folderName }
   } catch (error) { return { ok: false, error: asErrorMessage(error) } }
+  finally { folderSyncRunning = false }
 }
 
 async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancelled?: boolean; error?: string; folderName?: string }> {
   if (!planning || !settings) return { ok: false, error: 'Backup services are not ready.' }
+  if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the restore again shortly.' }
   if (passphrase !== undefined && typeof passphrase !== 'string') return { ok: false, error: 'Invalid backup passphrase.' }
   const selection = mainWindow
     ? await dialog.showOpenDialog(mainWindow, { title: 'Choose a Mike Assist backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
     : await dialog.showOpenDialog({ title: 'Choose a Mike Assist backup folder', buttonLabel: 'Restore this backup', properties: ['openDirectory'] })
   if (selection.canceled || !selection.filePaths[0]) return { ok: false, cancelled: true }
+  if (folderSyncRunning) return { ok: false, error: 'Workspace data is busy. Try the restore again shortly.' }
 
   const backupPath = path.resolve(selection.filePaths[0])
+  folderSyncRunning = true
   let restartRequired = false
   const wasEnabled = Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isEnabled())
   try {
@@ -183,6 +359,7 @@ async function restoreBackup(passphrase: unknown): Promise<{ ok: boolean; cancel
     restartRequired = error instanceof BackupRestoreRestartRequiredError
     return { ok: false, error: asErrorMessage(error) }
   } finally {
+    folderSyncRunning = false
     if (restartRequired) {
       setTimeout(() => { app.relaunch(); app.exit(0) }, 1_000)
     } else {
@@ -288,6 +465,7 @@ if (hasSingleInstanceLock) {
 app.on('before-quit', () => {
   isQuitting = true
   systemTray?.dispose()
+  stopFolderAutoSync()
   reminders?.stop()
   planning?.close()
 })

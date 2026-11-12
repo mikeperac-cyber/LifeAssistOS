@@ -18,7 +18,8 @@ export function TodoAiActions({
   onOpenSettings,
   onSaveTask,
   onSaveSubtask,
-  onRefreshTasks
+  onRefreshTasks,
+  onApplyTodayPlan
 }: {
   tasks: PlanTask[]
   localDate: string
@@ -27,6 +28,7 @@ export function TodoAiActions({
   onSaveTask: (values: TaskDraftValues) => Promise<void>
   onSaveSubtask: (parentTaskId: string, values: TodoSubtaskSuggestion) => Promise<void>
   onRefreshTasks: () => Promise<void>
+  onApplyTodayPlan: (ids: string[]) => Promise<void>
 }): React.JSX.Element {
   const [draftText, setDraftText] = useState('')
   const [draft, setDraft] = useState<TaskDraftSuggestion | null>(null)
@@ -41,7 +43,11 @@ export function TodoAiActions({
 
   const openTasks = useMemo(() => tasks.filter((task) => task.status === 'open'), [tasks])
   const rootTasks = useMemo(() => openTasks.filter((task) => task.parentTaskId === null), [openTasks])
-  const planTasks = useMemo(() => filterTasksForView(tasks, 'today', localDate), [localDate, tasks])
+  const planTasks = useMemo(() => {
+    const eligibleIds = new Set(filterTasksForView(tasks, 'today', localDate).map((task) => task.id))
+    for (const task of tasks) if (task.status === 'open' && task.plannedDate === localDate) eligibleIds.add(task.id)
+    return tasks.filter((task) => eligibleIds.has(task.id))
+  }, [localDate, tasks])
   const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks])
   const availability = getTodoControlAvailability(providerReady, pendingAi !== null)
 
@@ -123,6 +129,16 @@ export function TodoAiActions({
     } finally {
       setPendingAi(null)
     }
+  }
+
+  async function useSuggestedPlan(): Promise<void> {
+    if (!todayPlan || !todayPlan.taskIds.length) return
+    setError('')
+    try {
+      await onApplyTodayPlan(todayPlan.taskIds)
+      setNotice('My Day was updated. You can change the order or remove tasks any time.')
+      setTodayPlan(null)
+    } catch (cause) { setError(errorMessage(cause)) }
   }
 
   async function saveDraft(): Promise<void> {
@@ -285,6 +301,7 @@ export function TodoAiActions({
                       })}
                     </ol>
                   )}
+                  {todayPlan.taskIds.length > 0 && <button type="button" className="todo-ai-run" onClick={() => void useSuggestedPlan()}>Use this order in My Day</button>}
                 </div>
               )}
               {planTasks.length === 0 && <p className="todo-ai-empty">Add an open task due today (or leave it undated) to get a plan.</p>}

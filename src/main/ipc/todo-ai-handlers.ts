@@ -5,6 +5,8 @@ import { suggestSubtasks, suggestTaskDraft, suggestTodayPlan } from '../../core/
 import type { Provider, ProviderErrorCode } from '../../core/providers/types'
 import { ProviderError } from '../../core/providers/types'
 import type { ProviderModelRole } from '../../core/providers/factory'
+import { providerRequiresApiKey } from '../../shared/provider-endpoint'
+import { ProviderRequestGate, ProviderRequestGateError } from './provider-request-gate'
 
 type TodayPlanTask = Pick<PlanTask, 'id' | 'title' | 'dueDate' | 'priority'>
 
@@ -12,11 +14,13 @@ export interface TodoAiIpcContext {
   ipcMain: Pick<IpcMain, 'handle'>
   getProviderSettings: () => ProviderSettings | null
   createProvider: (settings: ProviderSettings, role: ProviderModelRole) => Provider
+  requestGate: ProviderRequestGate
 }
 
 const PRIORITIES = new Set(['low', 'normal', 'high'])
 
 export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
+  const { requestGate } = context
   context.ipcMain.handle('assist:todo-ai-draft', async (_event, text: unknown, rawContext: unknown) => {
     if (typeof text !== 'string') return failure('Capture some text before asking AI for a draft.')
     const aiContext = readContext(rawContext)
@@ -24,7 +28,7 @@ export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
     const ready = getReadyProvider(context)
     if ('error' in ready) return failure(ready.error)
     try {
-      return success(await suggestTaskDraft(ready.provider, text, aiContext))
+      return success(await requestGate.run(() => suggestTaskDraft(ready.provider, text, aiContext)))
     } catch (error) {
       return failure(safeError(error))
     }
@@ -36,7 +40,7 @@ export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
     const ready = getReadyProvider(context)
     if ('error' in ready) return failure(ready.error)
     try {
-      return success(await suggestSubtasks(ready.provider, task))
+      return success(await requestGate.run(() => suggestSubtasks(ready.provider, task)))
     } catch (error) {
       return failure(safeError(error))
     }
@@ -50,7 +54,7 @@ export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
     const ready = getReadyProvider(context)
     if ('error' in ready) return failure(ready.error)
     try {
-      return success(await suggestTodayPlan(ready.provider, tasks, aiContext))
+      return success(await requestGate.run(() => suggestTodayPlan(ready.provider, tasks, aiContext)))
     } catch (error) {
       return failure(safeError(error))
     }
@@ -60,7 +64,7 @@ export function registerTodoAiIpcHandlers(context: TodoAiIpcContext): void {
 function getReadyProvider(context: TodoAiIpcContext): { provider: Provider } | { error: string } {
   const settings = context.getProviderSettings()
   if (!settings) return { error: 'Mike Assist is still starting. Try again in a moment.' }
-  if (requiresApiKey(settings) && !settings.apiKey?.trim()) {
+  if (providerRequiresApiKey(settings.preset, settings.baseUrl) && !settings.apiKey?.trim()) {
     return { error: 'Add your provider API key in Settings to use AI task suggestions.' }
   }
   try {
@@ -70,28 +74,20 @@ function getReadyProvider(context: TodoAiIpcContext): { provider: Provider } | {
   }
 }
 
-function requiresApiKey(settings: ProviderSettings): boolean {
-  if (settings.preset === 'ollama' || settings.preset === 'lmstudio') return false
-  try {
-    const hostname = new URL(settings.baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '')
-    return hostname !== 'localhost' && !hostname.endsWith('.localhost') && hostname !== '127.0.0.1' && hostname !== '::1'
-  } catch {
-    return true
-  }
-}
-
 function readContext(value: unknown): TodoAiContext | null {
   if (!value || typeof value !== 'object') return null
   const input = value as { localDate?: unknown; timeZone?: unknown }
-  if (typeof input.localDate !== 'string' || typeof input.timeZone !== 'string') return null
+  if (typeof input.localDate !== 'string' || input.localDate.length !== 10 ||
+    typeof input.timeZone !== 'string' || input.timeZone.trim().length === 0 || input.timeZone.length > 100) return null
   return { localDate: input.localDate, timeZone: input.timeZone }
 }
 
 function readSubtaskInput(value: unknown): Pick<PlanTask, 'title' | 'notes' | 'dueDate' | 'priority'> | null {
   if (!value || typeof value !== 'object') return null
   const input = value as { title?: unknown; notes?: unknown; dueDate?: unknown; priority?: unknown }
-  if (typeof input.title !== 'string' || typeof input.notes !== 'string' ||
-    (input.dueDate !== null && typeof input.dueDate !== 'string') ||
+  if (typeof input.title !== 'string' || input.title.trim().length < 1 || input.title.length > 240 ||
+    typeof input.notes !== 'string' || input.notes.length > 2_000 ||
+    (input.dueDate !== null && (typeof input.dueDate !== 'string' || input.dueDate.length > 10)) ||
     typeof input.priority !== 'string' || !PRIORITIES.has(input.priority)) return null
   return { title: input.title, notes: input.notes, dueDate: input.dueDate, priority: input.priority as PlanTask['priority'] }
 }
@@ -102,8 +98,9 @@ function readPlanTasks(value: unknown): TodayPlanTask[] | null {
   for (const item of value) {
     if (!item || typeof item !== 'object') return null
     const task = item as { id?: unknown; title?: unknown; dueDate?: unknown; priority?: unknown }
-    if (typeof task.id !== 'string' || !task.id.trim() || typeof task.title !== 'string' ||
-      (task.dueDate !== null && typeof task.dueDate !== 'string') ||
+    if (typeof task.id !== 'string' || !task.id.trim() || task.id.length > 64 ||
+      typeof task.title !== 'string' || task.title.trim().length === 0 || task.title.length > 240 ||
+      (task.dueDate !== null && (typeof task.dueDate !== 'string' || task.dueDate.length > 10)) ||
       typeof task.priority !== 'string' || !PRIORITIES.has(task.priority)) return null
     tasks.push({
       id: task.id,
@@ -136,6 +133,7 @@ const SAFE_CORE_ERRORS = new Set([
 ])
 
 function safeError(error: unknown): string {
+  if (error instanceof ProviderRequestGateError) return error.message
   if (error instanceof ProviderError) return safeProviderError(error.code)
   if (error instanceof Error && SAFE_CORE_ERRORS.has(error.message)) return error.message
   return 'AI task suggestions are unavailable. Check Settings and try again.'

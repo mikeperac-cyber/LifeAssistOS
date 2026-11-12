@@ -3,6 +3,22 @@ export const VIEW_META = {
     label: 'Tasks',
     description: 'Capture, organize, and finish your work.'
   },
+  assistant: {
+    label: 'Assistant',
+    description: 'Coach through a decision, learn something, or get everyday help.'
+  },
+  review: {
+    label: 'Review',
+    description: 'See what needs attention and choose a clear next step.'
+  },
+  projects: {
+    label: 'Projects',
+    description: 'Organize work by Area, project, and next step.'
+  },
+  life: {
+    label: 'Life',
+    description: 'Connect goals, routines, notes, and your calendar.'
+  },
   settings: {
     label: 'Settings',
     description: 'Manage your AI provider, appearance, and local backups.'
@@ -14,11 +30,11 @@ export const DEFAULT_VIEW: View = 'tasks'
 
 /** Redirect routes saved by older Mike Assist versions to the new Tasks home. */
 export function normalizeView(value: unknown): View {
-  return value === 'settings' ? 'settings' : 'tasks'
+  return value === 'settings' || value === 'projects' || value === 'review' || value === 'assistant' || value === 'life' ? value : 'tasks'
 }
 
 export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
-  { label: 'Main', items: ['tasks'] },
+  { label: 'Main', items: ['tasks', 'life', 'assistant', 'review', 'projects'] },
   { label: 'System', items: ['settings'] }
 ]
 

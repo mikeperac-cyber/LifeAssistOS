@@ -17,13 +17,13 @@ async function collectFiles(dir: string, extPattern: RegExp): Promise<string[]> 
 }
 
 describe('IPC & bundle boundary contract', () => {
-  it('registers an exact 1-to-1 match between preload ipcRenderer.invoke channels and main ipcMain.handle channels with no duplicates', async () => {
+  it('registers an exact 1-to-1 match between the preload API and main handler registry with no duplicates', async () => {
     const preloadSource = await readFile(path.resolve('src/preload/index.ts'), 'utf8')
     const mainFiles = await collectFiles(path.resolve('src/main'), /\.ts$/)
     const mainSources = await Promise.all(mainFiles.map((file) => readFile(file, 'utf8')))
 
     const invokeRegex = /ipcRenderer\.invoke\(\s*'([^']+)'/g
-    const handleRegex = /ipcMain\.handle\(\s*'([^']+)'/g
+    const handleRegex = /\.handle\(\s*'([^']+)'/g
 
     const preloadChannels = [...preloadSource.matchAll(invokeRegex)].map((m) => m[1])
     const mainChannels = mainSources.flatMap((src) => [...src.matchAll(handleRegex)].map((m) => m[1]))

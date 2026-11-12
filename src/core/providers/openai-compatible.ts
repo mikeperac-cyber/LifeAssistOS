@@ -7,6 +7,7 @@ import {
   type ProviderToolCall
 } from './types'
 import { normalizeProviderEndpoint } from '../../shared/provider-endpoint'
+import { MAX_PROVIDER_RESPONSE_BYTES, readProviderErrorText, readProviderResponseText } from './http-response'
 
 export interface OpenAICompatibleConfig {
   baseUrl: string
@@ -91,31 +92,34 @@ class OpenAICompatibleProvider implements Provider {
   }
 
   async listModels(signal?: AbortSignal): Promise<string[]> {
-    const response = await this.fetchWithTimeout(
+    return this.fetchWithTimeout(
       `${this.baseUrl}/models`,
-      { method: 'GET', headers: this.headers() },
+      { method: 'GET', headers: this.headers(), redirect: 'error' },
       signal,
-      15_000
+      15_000,
+      async (response) => {
+        if (!response.ok) throw await this.httpError(response)
+
+        let body: { data?: Array<{ id?: unknown }> } | null
+        try {
+          const text = await readProviderResponseText(response)
+          try { body = JSON.parse(text) as { data?: Array<{ id?: unknown }> } }
+          catch { body = null }
+        } catch (error) { throw error }
+
+        if (!body || !Array.isArray(body.data)) {
+          throw new ProviderError('The provider did not return a model list.', {
+            code: 'bad_response'
+          })
+        }
+
+        return body.data
+          .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
+          .filter((id) => id.length > 0 && id.length <= 256)
+          .slice(0, 5_000)
+          .sort((a, b) => a.localeCompare(b))
+      }
     )
-
-    if (!response.ok) {
-      throw await this.httpError(response)
-    }
-
-    const body = (await response.json().catch(() => null)) as
-      | { data?: Array<{ id?: unknown }> }
-      | null
-
-    if (!body || !Array.isArray(body.data)) {
-      throw new ProviderError('The provider did not return a model list.', {
-        code: 'bad_response'
-      })
-    }
-
-    return body.data
-      .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
-      .filter((id) => id.length > 0)
-      .sort((a, b) => a.localeCompare(b))
   }
 
   private async attempt(
@@ -152,6 +156,7 @@ class OpenAICompatibleProvider implements Provider {
     try {
       const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
+        redirect: 'error',
         headers: this.headers({ Accept: 'text/event-stream' }),
         body: JSON.stringify(body),
         signal: controller.signal
@@ -188,21 +193,21 @@ class OpenAICompatibleProvider implements Provider {
     request: ChatRequest,
     markCommitted: () => void
   ): Promise<ChatResponse> {
-    const body = (await response.json().catch(() => null)) as
-      | {
-          choices?: Array<{
-            finish_reason?: string | null
-            message?: {
-              content?: unknown
-              tool_calls?: Array<{
-                id?: string
-                function?: { name?: string; arguments?: string }
-              }>
-            }
+    let body: {
+      choices?: Array<{
+        finish_reason?: string | null
+        message?: {
+          content?: unknown
+          tool_calls?: Array<{
+            id?: string
+            function?: { name?: string; arguments?: string }
           }>
-          usage?: { prompt_tokens?: number; completion_tokens?: number }
         }
-      | null
+      }>
+      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    } | null
+    try { body = JSON.parse(await readProviderResponseText(response)) as typeof body }
+    catch { body = null }
 
     const choice = body?.choices?.[0]
     if (!choice) {
@@ -255,6 +260,7 @@ class OpenAICompatibleProvider implements Provider {
     let finishReason: string | null = null
     let sawDoneMarker = false
     let usage: ChatUsage | undefined
+    let totalBytes = 0
 
     const handlePayload = (payload: string): void => {
       if (!payload) return
@@ -318,6 +324,13 @@ class OpenAICompatibleProvider implements Provider {
       const { done, value } = await reader.read()
       if (done) break
 
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined)
+        reader.releaseLock()
+        throw new ProviderError('The provider response was too large.', { code: 'bad_response' })
+      }
+
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
@@ -328,6 +341,7 @@ class OpenAICompatibleProvider implements Provider {
         handlePayload(line.slice(5).trim())
       }
     }
+    reader.releaseLock()
 
     buffer += decoder.decode()
     for (const rawLine of buffer.split('\n')) {
@@ -351,7 +365,7 @@ class OpenAICompatibleProvider implements Provider {
   }
 
   private async httpError(response: Response): Promise<ProviderError> {
-    const body = await response.text().catch(() => '')
+    const body = await readProviderErrorText(response)
     const message = extractErrorMessage(body) || `HTTP ${response.status}`
     const lower = message.toLowerCase()
 
@@ -389,12 +403,13 @@ class OpenAICompatibleProvider implements Provider {
     return new ProviderError(message, { code: 'bad_response', status: response.status })
   }
 
-  private async fetchWithTimeout(
+  private async fetchWithTimeout<T>(
     url: string,
     init: RequestInit,
     signal: AbortSignal | undefined,
-    timeoutMs: number
-  ): Promise<Response> {
+    timeoutMs: number,
+    consume: (response: Response) => Promise<T>
+  ): Promise<T> {
     const controller = new AbortController()
     let timedOut = false
 
@@ -410,7 +425,8 @@ class OpenAICompatibleProvider implements Provider {
     }, timeoutMs)
 
     try {
-      return await this.fetchImpl(url, { ...init, signal: controller.signal })
+      const response = await this.fetchImpl(url, { redirect: 'error', ...init, signal: controller.signal })
+      return await consume(response)
     } catch (error) {
       if (signal?.aborted) {
         throw new ProviderError('Stopped.', { code: 'aborted', cause: error })

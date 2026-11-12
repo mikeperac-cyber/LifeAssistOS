@@ -8,6 +8,7 @@ import {
   type ProviderToolCall
 } from './types'
 import { normalizeBaseUrl } from './openai-compatible'
+import { MAX_PROVIDER_RESPONSE_BYTES, readProviderErrorText, readProviderResponseText } from './http-response'
 
 export interface AnthropicProviderConfig {
   baseUrl: string
@@ -93,6 +94,7 @@ class AnthropicProvider implements Provider {
     try {
       const response = await this.fetchImpl(`${this.baseUrl}/models`, {
         method: 'GET',
+        redirect: 'error',
         headers: this.headers(),
         signal: controller.signal
       })
@@ -109,9 +111,9 @@ class AnthropicProvider implements Provider {
         throw await this.httpError(response)
       }
 
-      const body = (await response.json().catch(() => null)) as
-        | { data?: Array<{ id?: unknown }> }
-        | null
+      let body: { data?: Array<{ id?: unknown }> } | null
+      try { body = JSON.parse(await readProviderResponseText(response)) as { data?: Array<{ id?: unknown }> } }
+      catch { body = null }
 
       if (!body || !Array.isArray(body.data)) {
         throw new ProviderError('The provider did not return a model list.', {
@@ -121,7 +123,8 @@ class AnthropicProvider implements Provider {
 
       return body.data
         .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
-        .filter((id) => id.length > 0)
+        .filter((id) => id.length > 0 && id.length <= 256)
+        .slice(0, 5_000)
         .sort((a, b) => a.localeCompare(b))
     } catch (error) {
       throw this.toProviderError(error, signal)
@@ -171,6 +174,7 @@ class AnthropicProvider implements Provider {
     try {
       const response = await this.fetchImpl(`${this.baseUrl}/messages`, {
         method: 'POST',
+        redirect: 'error',
         headers: this.headers({ Accept: 'text/event-stream' }),
         body: JSON.stringify(body),
         signal: controller.signal
@@ -205,19 +209,19 @@ class AnthropicProvider implements Provider {
     request: ChatRequest,
     markCommitted: () => void
   ): Promise<ChatResponse> {
-    const body = (await response.json().catch(() => null)) as
-      | {
-          stop_reason?: string | null
-          content?: Array<{
-            type?: string
-            text?: string
-            id?: string
-            name?: string
-            input?: unknown
-          }>
-          usage?: { input_tokens?: number; output_tokens?: number }
-        }
-      | null
+    let body: {
+      stop_reason?: string | null
+      content?: Array<{
+        type?: string
+        text?: string
+        id?: string
+        name?: string
+        input?: unknown
+      }>
+      usage?: { input_tokens?: number; output_tokens?: number }
+    } | null
+    try { body = JSON.parse(await readProviderResponseText(response)) as typeof body }
+    catch { body = null }
 
     if (!body || !Array.isArray(body.content)) {
       throw new ProviderError('The provider returned an invalid message response.', {
@@ -283,6 +287,7 @@ class AnthropicProvider implements Provider {
     let messageStopped = false
     let promptTokens: number | undefined
     let completionTokens: number | undefined
+    let totalBytes = 0
 
     const handlePayload = (payload: string): void => {
       if (!payload || payload === '[DONE]') return
@@ -366,6 +371,13 @@ class AnthropicProvider implements Provider {
       const { done, value } = await reader.read()
       if (done) break
 
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel().catch(() => undefined)
+        reader.releaseLock()
+        throw new ProviderError('The provider response was too large.', { code: 'bad_response' })
+      }
+
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
@@ -376,6 +388,7 @@ class AnthropicProvider implements Provider {
         handlePayload(line.slice(5).trim())
       }
     }
+    reader.releaseLock()
 
     buffer += decoder.decode()
     for (const rawLine of buffer.split('\n')) {
@@ -410,7 +423,7 @@ class AnthropicProvider implements Provider {
   }
 
   private async httpError(response: Response): Promise<ProviderError> {
-    const body = await response.text().catch(() => '')
+    const body = await readProviderErrorText(response)
     let message = `HTTP ${response.status}`
     try {
       const parsed = JSON.parse(body) as { error?: { message?: string } | string; message?: string }

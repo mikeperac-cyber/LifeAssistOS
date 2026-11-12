@@ -1,6 +1,6 @@
 import type { PlanTask } from '../../../shared/types'
 
-export type TaskListView = 'today' | 'upcoming' | 'completed' | 'archived'
+export type TaskListView = 'my-day' | 'today' | 'upcoming' | 'overdue' | 'due-week' | 'waiting' | 'all' | 'completed' | 'archived'
 
 export interface TodoTaskGroup {
   task: PlanTask
@@ -10,15 +10,33 @@ export interface TodoTaskGroup {
 
 export function filterTasksForView(tasks: PlanTask[], view: TaskListView, localDate: string): PlanTask[] {
   switch (view) {
+    case 'my-day':
+      return tasks.filter((task) => task.status === 'open' && task.plannedDate === localDate).sort((a, b) => (a.dayOrder ?? 0) - (b.dayOrder ?? 0))
     case 'today':
-      return tasks.filter((task) => task.status === 'open' && (task.dueDate === null || task.dueDate <= localDate))
+      return tasks.filter((task) => task.status === 'open' && (task.dueDate !== null ? task.dueDate <= localDate : !task.plannedDate || task.plannedDate <= localDate))
     case 'upcoming':
       return tasks.filter((task) => task.status === 'open' && task.dueDate !== null && task.dueDate > localDate)
+    case 'overdue':
+      return tasks.filter((task) => task.status === 'open' && task.dueDate !== null && task.dueDate < localDate)
+    case 'due-week': {
+      const horizonEnd = addCalendarDays(localDate, 6)
+      return tasks.filter((task) => task.status === 'open' && task.dueDate !== null && task.dueDate >= localDate && task.dueDate <= horizonEnd)
+    }
+    case 'waiting':
+      return tasks.filter((task) => task.status === 'open' && task.workflowStage === 'waiting')
+    case 'all':
+      return tasks.filter((task) => task.status === 'open')
     case 'completed':
       return tasks.filter((task) => task.status === 'done')
     case 'archived':
       return tasks.filter((task) => task.status === 'cancelled')
   }
+}
+
+function addCalendarDays(date: string, amount: number): string {
+  const [year, month, day] = date.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year!, month! - 1, day! + amount))
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
 }
 
 export function filterTasksByQuery(tasks: PlanTask[], query: string): PlanTask[] {

@@ -42,6 +42,16 @@ describe('todo task IPC', () => {
 
     const parentResult = await addTask?.({}, { title: 'Parent' }) as { ok: boolean; task?: { id: string } }
     expect(parentResult.ok).toBe(true)
+    const oversizedTitle = await addTask?.({}, { title: 'x'.repeat(241) })
+    expect(oversizedTitle).toMatchObject({ ok: false })
+    const planTaskForDay = handlers.get('assist:plan-task-day')
+    const malformedDate = await planTaskForDay?.({}, { id: parentResult.task?.id, date: '2026-02-30' })
+    expect(malformedDate).toMatchObject({ ok: false })
+    const capture = handlers.get('assist:inbox-capture')
+    const oversizedCapture = await capture?.({}, 'x'.repeat(2_001))
+    expect(oversizedCapture).toMatchObject({ ok: false })
+    expect(planning.snapshot().inbox).toHaveLength(0)
+
     const childResult = await addTask?.({}, { title: 'Child', parentTaskId: parentResult.task?.id }) as { ok: boolean; task?: { id: string; parentTaskId: string | null } }
     expect(childResult.task?.parentTaskId).toBe(parentResult.task?.id)
 
@@ -59,5 +69,35 @@ describe('todo task IPC', () => {
       ok: true,
       task: { title: 'Edited capture', notes: 'Edited notes', dueDate: '2026-11-10', remindAt, priority: 'high' }
     })
+  })
+
+  it('validates recurrence rules and exposes a skip occurrence action', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'mike-assist-todo-repeat-ipc-'))
+    directories.push(directory)
+    const planning = new PlanningStore(path.join(directory, 'planning.sqlite'))
+    stores.push(planning)
+    await planning.init()
+    const handlers = new Map<string, Handler>()
+    const ipcMain = {
+      handle(channel: string, handler: Handler) { handlers.set(channel, handler); return ipcMain }
+    } as unknown as IpcMain
+    registerDomainIpcHandlers({
+      ipcMain,
+      getPlanning: () => planning,
+      errorMessage: (error: unknown) => error instanceof Error ? error.message : String(error)
+    } as DomainIpcContext)
+    const addTask = handlers.get('assist:plan-task-add')!
+    const addDate = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+
+    const valid = await addTask({}, { title: 'Weekly review', dueDate: addDate, recurrenceRule: { frequency: 'weekly', weekdays: [1, 3] } }) as { ok: boolean; task?: { id: string; recurrenceRule: unknown } }
+    expect(valid).toMatchObject({ ok: true, task: { recurrenceRule: { frequency: 'weekly', weekdays: [1, 3] } } })
+    const malformed = await addTask({}, { title: 'Bad repeat', dueDate: addDate, recurrenceRule: { frequency: 'weekly', weekdays: [7] } })
+    expect(malformed).toMatchObject({ ok: false, error: expect.any(String) })
+    expect(planning.listTasks()).toHaveLength(1)
+
+    const skip = handlers.get('assist:plan-task-skip-occurrence')
+    expect(skip).toBeDefined()
+    const skipped = await skip?.({}, valid.task?.id) as { ok: boolean; task?: { status: string } }
+    expect(skipped).toMatchObject({ ok: true, task: { status: 'cancelled' } })
   })
 })

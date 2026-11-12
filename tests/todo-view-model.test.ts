@@ -17,6 +17,9 @@ function task(id: string, overrides: Partial<PlanTask> = {}): PlanTask {
     updatedAt: '2026-11-01T00:00:00.000Z',
     completedAt: null,
     parentTaskId: null,
+    recurrenceRule: null,
+    recurrenceDate: null,
+    recurrenceSeriesId: null,
     ...overrides
   }
 }
@@ -33,6 +36,21 @@ describe('todo view model', () => {
 
     expect(filterTasksForView(tasks, 'today', localDate).map(({ id }) => id)).toEqual(['overdue', 'today', 'undated'])
     expect(filterTasksForView(tasks, 'upcoming', localDate).map(({ id }) => id)).toEqual(['upcoming'])
+  })
+
+  it('test_review_drilldown_filters_match_overdue_week_and_waiting_counts', () => {
+    const tasks = [
+      task('overdue', { dueDate: '2026-11-07' }),
+      task('today', { dueDate: localDate }),
+      task('horizon-end', { dueDate: '2026-11-14' }),
+      task('outside-horizon', { dueDate: '2026-11-15' }),
+      task('waiting', { workflowStage: 'waiting' }),
+      task('done', { dueDate: localDate, status: 'done' })
+    ]
+
+    expect(filterTasksForView(tasks, 'overdue', localDate).map(({ id }) => id)).toEqual(['overdue'])
+    expect(filterTasksForView(tasks, 'due-week', localDate).map(({ id }) => id)).toEqual(['today', 'horizon-end'])
+    expect(filterTasksForView(tasks, 'waiting', localDate).map(({ id }) => id)).toEqual(['waiting'])
   })
 
   it('test_task_view_filters_exclude_done_and_archived_tasks', () => {

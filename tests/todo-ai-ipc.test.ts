@@ -4,6 +4,7 @@ import type { Provider, ChatRequest, ChatResponse } from '../src/core/providers/
 import type { ProviderSettings } from '../src/shared/types'
 import { DEFAULT_PROVIDER_SETTINGS } from '../src/core/settings'
 import { registerTodoAiIpcHandlers, type TodoAiIpcContext } from '../src/main/ipc/todo-ai-handlers'
+import { ProviderRequestGate } from '../src/main/ipc/provider-request-gate'
 
 type Handler = (...args: any[]) => Promise<unknown> | unknown
 
@@ -25,7 +26,7 @@ function providerWithResponse(responseText: string): Provider & { chat: ReturnTy
 
 function makeContext(provider: ProviderSettings | null, createProvider: TodoAiIpcContext['createProvider']): TodoAiIpcContext {
   const harness = createIpcHarness()
-  const context: TodoAiIpcContext = { ipcMain: harness.ipcMain, getProviderSettings: () => provider, createProvider }
+  const context: TodoAiIpcContext = { ipcMain: harness.ipcMain, getProviderSettings: () => provider, createProvider, requestGate: new ProviderRequestGate() }
   registerTodoAiIpcHandlers(context)
   return Object.assign(context, { handlers: harness.handlers })
 }

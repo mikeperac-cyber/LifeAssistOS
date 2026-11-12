@@ -28,6 +28,9 @@ function makeTask(overrides: Partial<PlanTask> = {}): PlanTask {
     updatedAt: '2026-11-08T08:00:00.000Z',
     completedAt: null,
     parentTaskId: null,
+    recurrenceRule: null,
+    recurrenceDate: null,
+    recurrenceSeriesId: null,
     ...overrides
   }
 }

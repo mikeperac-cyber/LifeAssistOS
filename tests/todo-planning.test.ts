@@ -74,7 +74,10 @@ describe('todo planning store', () => {
       id: 'legacy-task',
       title: 'Keep this task',
       notes: 'Legacy notes',
-      parentTaskId: null
+      parentTaskId: null,
+      recurrenceRule: null,
+      recurrenceDate: null,
+      recurrenceSeriesId: null
     })
     expect(store.snapshot().inbox).toContainEqual(expect.objectContaining({
       id: 'legacy-inbox',
@@ -159,4 +162,101 @@ describe('todo planning store', () => {
       sourceInboxId: inbox.id
     })
   })
+
+  it('requires a due date before a task can repeat', async () => {
+    const store = await createStore()
+    expect(() => store.addTask({ title: 'Daily practice', recurrenceRule: { frequency: 'daily' } })).toThrow(/due date/i)
+    expect(store.listTasks(true)).toEqual([])
+  })
+
+  it('preserves the recurrence invariant when an existing occurrence is edited', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const parent = store.addTask({ title: 'Parent', dueDate: today })
+    const task = store.addTask({ title: 'Daily practice', dueDate: today, recurrenceRule: { frequency: 'daily' } })
+
+    expect(() => store.updateTask(task.id, { dueDate: null })).toThrow(/due date/i)
+    expect(() => store.updateTask(task.id, { parentTaskId: parent.id })).toThrow(/subtasks cannot repeat/i)
+    expect(store.getTask(task.id)).toMatchObject({ dueDate: today, parentTaskId: null, recurrenceRule: { frequency: 'daily' } })
+  })
+
+  it('creates the next occurrence on completion and retains the completed occurrence', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const task = store.addTask({
+      title: 'Read a lesson', notes: 'Ten pages', dueDate: today, priority: 'high',
+      recurrenceRule: { frequency: 'daily' }
+    })
+
+    store.updateTask(task.id, { status: 'done' })
+    const tasks = store.listTasks(true)
+    const next = tasks.find((item) => item.status === 'open')!
+
+    expect(store.getTask(task.id)).toMatchObject({ status: 'done', recurrenceDate: today, recurrenceSeriesId: task.recurrenceSeriesId })
+    expect(next).toMatchObject({
+      title: 'Read a lesson', notes: 'Ten pages', priority: 'high', status: 'open',
+      dueDate: addLocalDays(today, 1), recurrenceDate: addLocalDays(today, 1),
+      recurrenceSeriesId: task.recurrenceSeriesId, recurrenceRule: { frequency: 'daily' },
+      remindAt: null, plannedDate: null
+    })
+    expect(tasks.filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(2)
+
+    store.updateTask(task.id, { status: 'done' })
+    expect(store.listTasks(true).filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(2)
+  })
+
+  it('keeps the recurrence pattern when one occurrence is rescheduled', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const original = store.addTask({ title: 'Practice', dueDate: today, recurrenceRule: { frequency: 'daily' } })
+    const movedDate = addLocalDays(today, 3)
+    store.updateTask(original.id, { dueDate: movedDate })
+
+    expect(store.getTask(original.id)).toMatchObject({ dueDate: movedDate, recurrenceDate: today })
+    store.updateTask(original.id, { status: 'done' })
+    const next = store.listTasks().find((item) => item.recurrenceSeriesId === original.recurrenceSeriesId && item.status === 'open')!
+    expect(next.dueDate).toBe(addLocalDays(movedDate, 1))
+    expect(next.recurrenceRule).toEqual(original.recurrenceRule)
+  })
+
+  it('skips one occurrence into history and advances once', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const task = store.addTask({ title: 'Daily review', dueDate: today, recurrenceRule: { frequency: 'daily' } })
+
+    store.skipTaskOccurrence(task.id)
+    expect(store.getTask(task.id).status).toBe('cancelled')
+    expect(store.listTasks().filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(1)
+    expect(store.listTasks().find((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)?.dueDate).toBe(addLocalDays(today, 1))
+    expect(() => store.skipTaskOccurrence(task.id)).toThrow(/open recurring/i)
+    expect(store.listTasks(true).filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(2)
+  })
+
+  it('honors an inclusive recurrence end date without creating a later occurrence', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const tomorrow = addLocalDays(today, 1)
+    const task = store.addTask({ title: 'Two day routine', dueDate: today, recurrenceRule: { frequency: 'daily', endsOn: tomorrow } })
+    store.updateTask(task.id, { status: 'done' })
+    const next = store.listTasks().find((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)!
+    store.updateTask(next.id, { status: 'done' })
+    expect(store.listTasks(true).filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(2)
+  })
+
+  it('rolls a completion back when the next recurring row cannot be inserted', async () => {
+    const store = await createStore()
+    const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 10)
+    const task = store.addTask({ title: 'Protected routine', dueDate: today, recurrenceRule: { frequency: 'daily' } })
+    const db = (store as unknown as { db: DatabaseSync }).db
+    db.exec("CREATE TRIGGER reject_recurring_insert BEFORE INSERT ON tasks WHEN NEW.title = 'Protected routine' BEGIN SELECT RAISE(ABORT, 'forced recurring insert failure'); END")
+
+    expect(() => store.updateTask(task.id, { status: 'done' })).toThrow(/incompatible|forced/i)
+    expect(store.getTask(task.id).status).toBe('open')
+    expect(store.listTasks().filter((item) => item.recurrenceSeriesId === task.recurrenceSeriesId)).toHaveLength(1)
+  })
 })
+
+function addLocalDays(value: string, amount: number): string {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + amount)).toISOString().slice(0, 10)
+}

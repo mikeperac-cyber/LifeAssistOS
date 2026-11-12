@@ -1,6 +1,6 @@
 # Work Management System Roadmap Proposal
 
-This proposal expands the to-do rebuild into a lightweight work-management system while keeping the everyday task screen simple. It stages the new scope beyond the current foundation and AI plans; these recommendations are not yet in their implementation task checklists.
+This proposal expands the to-do rebuild into a lightweight work-management system while keeping the everyday task screen simple. My Day, All Tasks, Areas/projects, and recurring tasks are implemented; saved filters, templates, and later AI/productivity recommendations remain staged.
 
 ## Keep in the first rebuild
 
@@ -33,6 +33,8 @@ This is the best next workflow feature because it makes daily planning useful wi
 - Rescheduling or skipping one occurrence must not silently rewrite the repeat rule.
 - Let users save a task and subtask set as a reusable checklist for routines such as lesson prep, weekly planning, or bill review.
 
+**Status:** Recurring tasks are implemented with daily, selected-weekday, and monthly rules, inclusive end dates, skip-once, and history-preserving advancement. Saved task views are implemented locally with project, priority, workflow stage, and due-date filters, up to twelve named views, and per-view deletion. Reusable checklist templates remain future work.
+
 These features bring dependable day-to-day management. Keep dependencies, Gantt charts, and complex custom fields out of this lightweight system.
 
 ## AI upgrades after the first three actions
@@ -48,7 +50,9 @@ For each AI action, show which task details will be sent to the configured provi
 
 ## Productivity overview and weekly review
 
-Add this after the app has enough project and completion history. The dashboard should help someone decide what needs attention and what is moving; it should not turn task counts into a score.
+**Local-first review implemented November 10, 2026.** The Review screen summarizes Inbox, overdue, next-seven-day deadlines, Waiting tasks, due-soon work without a matching plan date, recent completion counts, and projects with open work. Its cards link to matching task filters; calculations remain on-device and do not call AI. AI-generated weekly suggestions and a date-grouped upcoming schedule remain future work.
+
+The dashboard should help someone decide what needs attention and what is moving; it should not turn task counts into a score.
 
 - **Action queue:** Inbox tasks, overdue open tasks, tasks due today, and Waiting tasks. Each item opens the task and offers a relevant action.
 - **Upcoming schedule:** open tasks by due date for today and the next six local dates. Label this “Tasks due by day,” not workload or capacity.
@@ -67,11 +71,12 @@ Current task records can support due-date queues and completion counts. Project 
 
 ## Recommended sequence
 
-1. Complete the current local task and reviewed-AI foundation.
-2. Add My Day, All Tasks, and explicit separation of planned date and due date.
-3. Add Areas/projects, List/Board workflow, saved filters, recurrence, and templates.
-4. Add weekly review, AI project/Inbox assistance, and the local productivity overview.
-5. Consider estimates, focus sessions, dependencies, calendar sync, or cloud sync only after real usage shows they are needed.
+1. Complete the current local task and reviewed-AI foundation. (Implemented.)
+2. Add My Day, All Tasks, and explicit separation of planned date and due date. (Implemented.)
+3. Add Areas/projects and a List/Board workflow with Next, In progress, and Waiting stages. (Implemented; projects can be assigned to Areas, project tasks retain their due dates and can be planned for My Day.)
+4. Add recurring routines, saved filters, and templates. (Recurring tasks and saved task views implemented; reusable checklist templates remain.)
+5. Add the local weekly review and compact productivity overview. (Implemented; AI project/Inbox assistance and a date-grouped upcoming schedule remain.)
+6. Consider estimates, focus sessions, dependencies, calendar sync, or cloud sync only after real usage shows they are needed.
 
 ## Reference patterns
 

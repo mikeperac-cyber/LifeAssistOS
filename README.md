@@ -1,33 +1,62 @@
 # Mike Assist
 
-Mike Assist is a local-first to-do app with optional AI assistance. Capture tasks, organize the day, and use AI to turn rough notes into editable task suggestions. Your local task list works without an AI provider.
+<div align="center">
 
-## Tasks and workflow
+### A calmer place to plan your day and keep life moving.
 
-- Capture thoughts in the Inbox and turn them into tasks when you are ready.
-- Organize work in Today, Upcoming, Completed, and Archived views; search task titles and notes.
-- Add priorities, due dates, one-time reminders, notes, and one level of subtasks.
-- Ask AI to draft a task from rough notes, break a task into subtasks, or propose an ordered plan for today.
-- Review and edit every AI suggestion before saving. AI never changes tasks on its own.
-- Use the system tray or `Ctrl+Shift+K` to capture a thought quickly.
+Capture what’s on your mind, turn it into clear next steps, and connect daily work to the goals that matter. Mike Assist is a local-first Windows productivity app with optional AI support.
 
-## AI provider setup
+**Tasks · Projects · Goals · Routines · Journal · Calendar · AI coaching**
 
-Open **Settings → AI provider** to choose a hosted provider, Ollama, LM Studio, or a custom OpenAI-compatible endpoint. Enter the endpoint, model, and API key if the provider requires one. Use **Test connection & load models** to check the configuration.
+</div>
 
-Provider settings and the existing encrypted API-key format remain in `%APPDATA%\Mike Assist\settings.json`. Windows `safeStorage` encrypts the key when available. If secure storage is unavailable, the key is kept for the current app session and must be entered again after a restart.
+---
 
-AI is optional. When using a hosted provider, Mike Assist sends the text and task details shown for the chosen AI action. The API key stays in the main process and is never returned to the renderer. A local Ollama or LM Studio endpoint can keep those requests on this device.
+## Make progress feel manageable
 
-## Reminders and backups
+Mike Assist brings the pieces of a productive day into one focused workspace. Start with a quick capture, decide what matters today, and keep your bigger plans close without turning every part of life into a score.
 
-One-time reminders use Windows notifications while Mike Assist is running. If a reminder becomes due while the app is closed, it appears once after the app starts again.
+| Plan | Connect | Reflect |
+| --- | --- | --- |
+| Inbox, My Day, projects, boards, priorities, reminders, and recurring tasks | Goals, reusable routines, journal notes, and a calendar-aware day agenda | A private weekly review with recent completions and focused task filters |
 
-Open **Settings → Local backup & restore** to save your task database and settings. An optional passphrase encrypts the backup. The app can restore the current backup format and task data from older full-assistant backups; unrelated files from older installations remain in the existing user-data folder.
+## What you can do
 
-The installer keeps the same app identity and user-data location. Uninstalling Mike Assist does not remove `%APPDATA%\Mike Assist`, so tasks and provider settings remain available when you reinstall.
+- **Shape your day.** Capture ideas in the Inbox, choose a focused My Day list, and see overdue and due-today work alongside your schedule.
+- **Move projects forward.** Group work into Areas and projects, then use List or Board views to track what’s next, in progress, or waiting.
+- **Build routines that stick.** Repeat tasks daily, on chosen weekdays, or monthly. Reuse checklist templates for the workflows you do often.
+- **Keep life connected.** Link goals to Areas and projects, write searchable notes and journal entries, and bring read-only calendar events into your agenda.
+- **Get useful AI help.** Ask for a draft task, subtasks, or a suggested day plan. Review every suggestion before saving or applying it.
+- **Choose a workspace that feels right.** Switch between Midnight, Light, Forest, Violet, and Blueprint themes. Use `Ctrl+K` to jump to a view or capture an item.
 
-## Development
+## Your data stays yours
+
+Your tasks and life workspace are stored locally. AI features are optional; when you use a hosted provider, Mike Assist sends only the information needed for that action. Personal context and open tasks each have their own sharing controls. API keys stay in the main process and are encrypted with Windows secure storage when available.
+
+Back up your workspace from **Settings → Local backup & restore**, with optional passphrase encryption. For multiple devices, choose a folder already synchronized by your cloud-storage provider and enable **Encrypted folder sync**. Devices exchange AES-256-GCM encrypted snapshots; each device’s provider credentials and appearance remain local.
+
+Calendar support currently imports read-only `.ics` files from Google Calendar or Outlook. Mike Assist does not connect to those calendar accounts directly.
+
+## AI providers
+
+Use OpenAI, Anthropic, Google Gemini, OpenRouter, Groq, DeepSeek, Mistral, xAI, NVIDIA, Together AI, Fireworks AI, Cerebras, Ollama, LM Studio, or a custom OpenAI-compatible endpoint. Local Ollama and LM Studio setups can keep AI requests on your device. AI output is a draft: it never changes your tasks without your review.
+
+## Install on Windows
+
+Download **Mike-Assist-Setup-0.2.0.exe** from the project’s GitHub Releases page and run the installer. Mike Assist can be installed per user and does not require administrator access. The installer preserves your existing workspace when upgrading or reinstalling.
+
+Windows may show a SmartScreen prompt because this build is not code-signed. Confirm the publisher details and continue only if you downloaded the installer from the project’s GitHub Releases page.
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+K` | Open command search and navigation |
+| `Ctrl+Shift+K` | Capture a thought quickly |
+
+## Build from source
+
+Requirements: Windows, Node.js `>=22.13.0`, and npm.
 
 ```powershell
 npm install
@@ -38,10 +67,8 @@ npm run build
 npm run dist:win
 ```
 
-The Windows installer is written to `release\Mike-Assist-Setup-0.1.0.exe`. No signing certificate is included, so Windows may show a SmartScreen warning.
+The Windows installer is written to `release\Mike-Assist-Setup-0.2.0.exe`.
 
-## Product roadmap
+## Product direction
 
-The staged work-management recommendations are in [the roadmap proposal](docs/superpowers/specs/2026-11-08-work-management-roadmap.md). The next recommended addition is **My Day**: let users select and reorder planned tasks without changing their due dates, while keeping overdue and due-today tasks visible. Later options include lightweight Areas and projects, a List/Board switch, recurring routines, reviewed AI Inbox triage, weekly review, and a small action-focused productivity overview.
-
-Keep the everyday task screen simple. The roadmap defers capacity charts until task duration estimates exist, and avoids productivity scores, streaks, and unqualified on-time rates.
+Mike Assist aims to be a practical life workspace: useful enough to connect plans, routines, and reflection, while keeping everyday task planning quick and private by default. See the [work-management roadmap](docs/superpowers/specs/2026-11-08-work-management-roadmap.md) for the product rationale and deferred ideas.
