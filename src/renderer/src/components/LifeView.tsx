@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CalendarEvent, JournalEntry, LifeGoal, PersonalContext, PlanTask, RoutineTemplate, TaskArea, TaskProject } from '../../../shared/types'
 import { parseCalendarIcs } from '../../../shared/calendar-ics'
+import {
+  moveDashboardWidget, readDashboardLayout, setDashboardWidgetVisibility, visibleDashboardWidgets, writeDashboardLayout,
+  type DashboardLayout, type DashboardWidgetId
+} from '../dashboard-layout'
+import { AccessibleDialog } from './AccessibleDialog'
 import { Icon } from './Icon'
 import { buildDashboardSummary, calendarEventsInRange, getGoalProgress } from './life-dashboard-model'
 import { addDays } from './review-view-model'
@@ -11,6 +16,22 @@ type DashboardCalendar = { today: string; todayEvents: CalendarEvent[]; upcoming
 const TABS: Array<{ id: LifeTab; label: string }> = [
   { id: 'overview', label: 'Overview' }, { id: 'goals', label: 'Goals' }, { id: 'routines', label: 'Routines' }, { id: 'journal', label: 'Notes & journal' }, { id: 'calendar', label: 'Calendar' }, { id: 'context', label: 'AI context' }
 ]
+const DASHBOARD_WIDGET_TITLES: Record<DashboardWidgetId, string> = {
+  'today-summary': 'Today',
+  agenda: 'Day agenda',
+  focus: 'Focus queue',
+  goals: 'Goal progress',
+  projects: 'Projects with open work',
+  'weekly-completions': 'Weekly completions',
+  routines: 'Routines',
+  'pinned-notes': 'Pinned notes',
+  upcoming: 'Upcoming life admin'
+}
+// Access localStorage inside the layout helpers so they can handle a blocked storage getter.
+const dashboardLayoutStorage = {
+  getItem: (key: string) => window.localStorage.getItem(key),
+  setItem: (key: string, value: string) => window.localStorage.setItem(key, value)
+}
 // The model already resolves local dates. Format those calendar dates without shifting them again.
 const weeklyCompletionDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' })
 
@@ -355,6 +376,9 @@ function LifeOverviewTab({
   onToggleJournalPin: (entry: JournalEntry) => Promise<boolean>
   onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
+  const [layout, setLayout] = useState(() => readDashboardLayout(dashboardLayoutStorage))
+  const [customizeOpen, setCustomizeOpen] = useState(false)
+  const [layoutSaveFailed, setLayoutSaveFailed] = useState(false)
   const focusList = useRef<HTMLOListElement>(null)
   const myDayAction = useRef<HTMLButtonElement>(null)
   const journalAction = useRef<HTMLButtonElement>(null)
@@ -422,23 +446,39 @@ function LifeOverviewTab({
     })
   ].sort((a, b) => a.date.localeCompare(b.date))
 
-  return <div className="life-overview">
-    <section className="life-overview-card life-overview-day" data-widget-id="today-summary" aria-labelledby="life-today-summary">
-      <header className="life-overview-card-head">
-        <div><h2 id="life-today-summary">Today</h2><time dateTime={today}>{formatLongDate(today)}</time></div>
-        <button type="button" className="primary-button" onClick={onOpenTasks}><Icon name="calendar" />Open My Day</button>
-      </header>
-      <dl className="life-overview-metrics">
-        {metrics.map((metric) => <div className={'life-overview-metric tone-' + metric.tone} key={metric.label}>
-          <Icon name={metric.icon} />
-          <dt>{metric.label}</dt>
-          <dd>{metric.count}</dd>
-        </div>)}
-      </dl>
-    </section>
+  const updateLayout = (nextLayout: DashboardLayout): boolean => {
+    const saved = writeDashboardLayout(nextLayout, dashboardLayoutStorage)
+    setLayoutSaveFailed(!saved)
+    if (saved) setLayout(nextLayout)
+    return saved
+  }
 
-    <div className="life-overview-grid">
-      <DashboardCard id="agenda" title="Day agenda" icon="calendar" action="Calendar" onAction={() => onCalendar(today)}>
+  const widgets: Record<DashboardWidgetId, React.JSX.Element> = {
+    'today-summary': (
+      <section key="today-summary" className="life-overview-card life-overview-day" data-widget-id="today-summary" aria-labelledby="life-today-summary">
+        <header className="life-overview-card-head">
+          <div><h2 id="life-today-summary">{DASHBOARD_WIDGET_TITLES['today-summary']}</h2><time dateTime={today}>{formatLongDate(today)}</time></div>
+          <div className="life-overview-day-actions">
+            <button type="button" className="ghost-button" aria-haspopup="dialog" onClick={(event) => {
+              // The native dialog restores focus to the control active when it opens.
+              event.currentTarget.focus({ preventScroll: true })
+              setCustomizeOpen(true)
+            }}>Customize</button>
+            <button type="button" className="primary-button" onClick={onOpenTasks}><Icon name="calendar" />Open My Day</button>
+          </div>
+        </header>
+        <dl className="life-overview-metrics">
+          {metrics.map((metric) => <div className={'life-overview-metric tone-' + metric.tone} key={metric.label}>
+            <Icon name={metric.icon} />
+            <dt>{metric.label}</dt>
+            <dd>{metric.count}</dd>
+          </div>)}
+        </dl>
+      </section>
+    ),
+
+    agenda: (
+      <DashboardCard key="agenda" id="agenda" icon="calendar" action="Calendar" onAction={() => onCalendar(today)}>
         {timeline.length ? <ol className="life-overview-list">
           {timeline.map((item) => <li className="life-overview-agenda-item" key={item.key}>
             <time dateTime={item.time}>{item.allDay ? 'All day' : formatTime(item.time)}</time>
@@ -447,8 +487,10 @@ function LifeOverviewTab({
           </li>)}
         </ol> : <p className="life-overview-empty">Nothing scheduled today. Import a calendar or add a time block in My Day.</p>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="focus" title="Focus queue" icon="target" action="My Day" onAction={onOpenTasks} actionRef={myDayAction}>
+    focus: (
+      <DashboardCard key="focus" id="focus" icon="target" action="My Day" onAction={onOpenTasks} actionRef={myDayAction}>
         {focusTasks.length ? <ol ref={focusList} className="life-overview-list">
           {focusTasks.map((task, index) => <li className="life-overview-focus-item" key={task.id}>
             <button className="life-overview-complete" type="button" aria-disabled={completingTask} onClick={(event) => void completeTask(task, index, event.currentTarget)} aria-label={'Complete ' + task.title} title={'Complete ' + task.title}>
@@ -459,8 +501,10 @@ function LifeOverviewTab({
           </li>)}
         </ol> : <p className="life-overview-empty">Plan a task in My Day to add it to your focus queue.</p>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="goals" title="Goal progress" icon="flag" action="All goals" onAction={onGoals}>
+    goals: (
+      <DashboardCard key="goals" id="goals" icon="flag" action="All goals" onAction={onGoals}>
         {activeGoals.length ? <ul className="life-overview-list">{activeGoals.map((goal) => {
           const { completed, total, percent } = getGoalProgress(goal.id, projects, tasks)
           return <li className="life-overview-goal-item" key={goal.id}>
@@ -478,8 +522,10 @@ function LifeOverviewTab({
           </li>
         })}</ul> : <div className="life-overview-empty"><p>No active goals yet.</p><button type="button" className="todo-row-action" onClick={onNewGoal}>Create a goal</button></div>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="projects" title="Projects with open work" icon="projects" action="Projects" onAction={onOpenProjects}>
+    projects: (
+      <DashboardCard key="projects" id="projects" icon="projects" action="Projects" onAction={onOpenProjects}>
         {summary.projectCards.length ? <ul className="life-overview-tiles">
           {summary.projectCards.map(({ project, openTaskCount, nextTask }) => <li className="life-overview-tile" key={project.id}>
             <div className="life-overview-row-copy">
@@ -490,8 +536,10 @@ function LifeOverviewTab({
           </li>)}
         </ul> : <p className="life-overview-empty">Add an open task to a project to see its next step here.</p>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="routines" title="Routines" icon="checklist" action="All routines" onAction={onRoutines}>
+    routines: (
+      <DashboardCard key="routines" id="routines" icon="checklist" action="All routines" onAction={onRoutines}>
         {routines.length ? <ul className="life-overview-tiles">
           {routines.slice(0, 3).map((routine) => <li className="life-overview-tile" key={routine.id}>
             <span className="life-overview-row-copy">
@@ -502,8 +550,10 @@ function LifeOverviewTab({
           </li>)}
         </ul> : <p className="life-overview-empty">Create a routine to add its task and checklist to My Day whenever you need it.</p>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="upcoming" title="Upcoming life admin" icon="clock" action="Due this week" onAction={onOpenUpcomingTasks}>
+    upcoming: (
+      <DashboardCard key="upcoming" id="upcoming" icon="clock" action="Due this week" onAction={onOpenUpcomingTasks}>
         <p className="life-overview-range">{formatDate(today)} to {formatDate(addDays(today, 6))}</p>
         {upcoming.length ? <ul className="life-overview-list">
           {upcoming.map((item) => <li key={item.key}>
@@ -515,8 +565,10 @@ function LifeOverviewTab({
           </li>)}
         </ul> : <div className="life-overview-empty"><p>No tasks due or calendar events in the next seven days.</p><button type="button" className="todo-row-action" onClick={() => onCalendar(today)}>Open Calendar</button></div>}
       </DashboardCard>
+    ),
 
-      <DashboardCard id="weekly-completions" title="Weekly completions" icon="check">
+    'weekly-completions': (
+      <DashboardCard key="weekly-completions" id="weekly-completions" icon="check">
         <ol className="life-weekly-chart" role="list">
           {weeklyCompletions.map(({ date, label, count }) => <li key={date}>
             <span className="sr-only">
@@ -532,8 +584,10 @@ function LifeOverviewTab({
           </li>)}
         </ol>
       </DashboardCard>
+    ),
 
-      <DashboardCard id="pinned-notes" title="Pinned notes" icon="book" action="Notes & journal" onAction={onJournal} actionRef={journalAction}>
+    'pinned-notes': (
+      <DashboardCard key="pinned-notes" id="pinned-notes" icon="book" action="Notes & journal" onAction={onJournal} actionRef={journalAction}>
         {pinnedEntries.length ? <ul className="life-overview-tiles">
           {pinnedEntries.map((entry) => {
             const title = entry.title || 'Untitled note'
@@ -548,13 +602,90 @@ function LifeOverviewTab({
           })}
         </ul> : <p className="life-overview-empty">No pinned notes yet.</p>}
       </DashboardCard>
-    </div>
-  </div>
+    )
+  }
+
+  return <>
+    <div className="life-overview">{visibleDashboardWidgets(layout).map((id) => widgets[id])}</div>
+    {customizeOpen && <DashboardCustomizeDialog
+      layout={layout}
+      saveFailed={layoutSaveFailed}
+      onChange={updateLayout}
+      onClose={() => setCustomizeOpen(false)}
+    />}
+  </>
 }
 
-function DashboardCard({ id, title, icon, action, onAction, actionRef, children }: {
-  id: string
-  title: string
+function DashboardCustomizeDialog({ layout, saveFailed, onChange, onClose }: {
+  layout: DashboardLayout
+  saveFailed: boolean
+  onChange: (layout: DashboardLayout) => boolean
+  onClose: () => void
+}): React.JSX.Element {
+  const movedButton = useRef<HTMLButtonElement>(null)
+  const [moveNotice, setMoveNotice] = useState('')
+
+  useLayoutEffect(() => {
+    const button = movedButton.current
+    movedButton.current = null
+    if (!button) return
+    button.focus({ preventScroll: true })
+    button.scrollIntoView({ block: 'nearest' })
+  }, [layout.order])
+
+  const moveWidget = (id: DashboardWidgetId, direction: -1 | 1, button: HTMLButtonElement): void => {
+    const nextLayout = moveDashboardWidget(layout, id, direction)
+    if (!onChange(nextLayout)) return
+    movedButton.current = button
+    setMoveNotice(`${DASHBOARD_WIDGET_TITLES[id]} moved to position ${nextLayout.order.indexOf(id) + 1} of ${nextLayout.order.length}.`)
+  }
+
+  return <AccessibleDialog className="modal life-dashboard-customize" labelledBy="life-dashboard-customize-title" onCancel={onClose}>
+    <h2 id="life-dashboard-customize-title">Customize dashboard</h2>
+    {saveFailed && <p className="life-dashboard-customize-warning" role="alert">Dashboard changes could not be saved on this device.</p>}
+    <ol className="life-dashboard-customize-list" role="list">
+      {layout.order.map((id, index) => {
+        const title = DASHBOARD_WIDGET_TITLES[id]
+        const fixed = id === 'today-summary'
+        const canMoveUp = index > 1
+        const canMoveDown = index < layout.order.length - 1
+        return <li key={id}>
+          <label>
+            <input
+              type="checkbox"
+              aria-label={`Show ${title}`}
+              checked={!layout.hidden.includes(id)}
+              disabled={fixed}
+              onChange={(event) => onChange(setDashboardWidgetVisibility(layout, id, event.currentTarget.checked))}
+            />
+            {title}
+          </label>
+          {fixed ? <span className="life-dashboard-customize-fixed">Fixed first</span> : <div className="life-dashboard-customize-moves">
+            <button
+              type="button"
+              className="ghost-button"
+              aria-label={`Move up ${title}`}
+              aria-disabled={!canMoveUp}
+              onClick={(event) => { if (canMoveUp) moveWidget(id, -1, event.currentTarget) }}
+            >Move up</button>
+            <button
+              type="button"
+              className="ghost-button"
+              aria-label={`Move down ${title}`}
+              aria-disabled={!canMoveDown}
+              onClick={(event) => { if (canMoveDown) moveWidget(id, 1, event.currentTarget) }}
+            >Move down</button>
+          </div>}
+        </li>
+      })}
+    </ol>
+    <p className="sr-only" role="status">{moveNotice}</p>
+    <footer className="modal-actions"><button type="button" className="primary-button" onClick={onClose}>Done</button></footer>
+  </AccessibleDialog>
+}
+
+function DashboardCard({ id, icon, action, onAction, actionRef, children }: {
+  id: DashboardWidgetId
   icon: React.ComponentProps<typeof Icon>['name']
   action?: string
   onAction?: () => void
@@ -564,7 +695,7 @@ function DashboardCard({ id, title, icon, action, onAction, actionRef, children 
   const headingId = 'life-dashboard-' + id
   return <section className="life-overview-card" data-widget-id={id} aria-labelledby={headingId}>
     <header className="life-overview-card-head">
-      <h2 id={headingId}><Icon name={icon} />{title}</h2>
+      <h2 id={headingId}><Icon name={icon} />{DASHBOARD_WIDGET_TITLES[id]}</h2>
       {action && onAction && <button ref={actionRef} type="button" className="todo-row-action" onClick={onAction}>{action}</button>}
     </header>
     {children}
