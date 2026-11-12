@@ -1,6 +1,6 @@
 import type { SVGProps } from 'react'
 
-type IconName = 'checklist' | 'tasks' | 'settings' | 'sparkles' | 'teacher' | 'assistant' | 'send' | 'stop' | 'menu' | 'plus' | 'search' | 'inbox' | 'close' | 'projects' | 'briefcase' | 'home' | 'book' | 'leaf' | 'list' | 'board' | 'chevron' | 'clock' | 'flag' | 'review' | 'calendar' | 'alert' | 'pause' | 'check' | 'arrow' | 'filter' | 'target'
+type IconName = 'checklist' | 'tasks' | 'settings' | 'sparkles' | 'teacher' | 'assistant' | 'send' | 'stop' | 'menu' | 'plus' | 'search' | 'inbox' | 'close' | 'projects' | 'briefcase' | 'home' | 'book' | 'leaf' | 'list' | 'board' | 'chevron' | 'clock' | 'flag' | 'review' | 'calendar' | 'documents' | 'alert' | 'pause' | 'check' | 'arrow' | 'filter' | 'target'
 
 const paths: Record<IconName, React.ReactNode> = {
   checklist: <><path d="M8 5h12"/><path d="M8 12h12"/><path d="M8 19h12"/><path d="m3 5 1 1 2-2"/><path d="m3 12 1 1 2-2"/><path d="m3 19 1 1 2-2"/></>,
@@ -28,6 +28,7 @@ const paths: Record<IconName, React.ReactNode> = {
   flag: <><path d="M5 21V4m0 0c5-4 9 4 15 0v11c-6 4-10-4-15 0"/></>,
   review: <><path d="M8 4h11v16H5V7h3"/><path d="M8 2v5H3M9 11h6M9 15h4"/><path d="m3 12 1.5 1.5L7 11"/></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 17h.01M12 17h.01"/></>,
+  documents: <><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></>,
   alert: <><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></>,
   pause: <><circle cx="12" cy="12" r="9"/><path d="M9 8v8M15 8v8"/></>,
   check: <><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></>,

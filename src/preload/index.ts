@@ -42,6 +42,11 @@ const api: AssistApi = {
   getCalendarEvents: (start, end) => ipcRenderer.invoke('assist:calendar-events', { start, end }),
   importCalendar: (sourceId, name, events) => ipcRenderer.invoke('assist:calendar-import', { id: sourceId, name, events }),
   deleteCalendarSource: (id) => ipcRenderer.invoke('assist:calendar-delete', id),
+  listDocuments: () => ipcRenderer.invoke('assist:documents-list'),
+  addDocuments: () => ipcRenderer.invoke('assist:documents-add'),
+  openDocument: (id) => ipcRenderer.invoke('assist:documents-open', id),
+  revealDocument: (id) => ipcRenderer.invoke('assist:documents-reveal', id),
+  removeDocument: (id) => ipcRenderer.invoke('assist:documents-remove', id),
 
   suggestTaskDraft: (text, context) => ipcRenderer.invoke('assist:todo-ai-draft', text, context),
   suggestTaskSubtasks: (task) => ipcRenderer.invoke('assist:todo-ai-subtasks', task),

@@ -14,6 +14,7 @@ const ProjectsView = lazy(() => import('./components/ProjectsView').then((module
 const ReviewView = lazy(() => import('./components/ReviewView').then((module) => ({ default: module.ReviewView })))
 const AssistantView = lazy(() => import('./components/AssistantView').then((module) => ({ default: module.AssistantView })))
 const LifeView = lazy(() => import('./components/LifeView').then((module) => ({ default: module.LifeView })))
+const DocumentsView = lazy(() => import('./components/DocumentsView').then((module) => ({ default: module.DocumentsView })))
 
 export default function App(): React.JSX.Element {
   const [view, setView] = useState<View>(readSavedView)
@@ -172,14 +173,20 @@ export default function App(): React.JSX.Element {
           /></Suspense>
         )}
         {view === 'projects' && <Suspense fallback={<ViewLoading label="Opening Projects…" />}><ProjectsView /></Suspense>}
-        {view === 'life' && (
+        {(view === 'life' || view === 'calendar') && (
           <Suspense fallback={<ViewLoading label="Opening Dashboard…" />}>
             <LifeView
+              initialTab={view === 'calendar' ? 'calendar' : 'overview'}
               refreshVersion={taskRefreshVersion}
               onOpenTasks={() => navigateToView('tasks')}
               onOpenUpcomingTasks={() => openTasksAt('due-week')}
               onOpenProjects={() => navigateToView('projects')}
             />
+          </Suspense>
+        )}
+        {view === 'documents' && (
+          <Suspense fallback={<ViewLoading label="Opening Documents…" />}>
+            <DocumentsView />
           </Suspense>
         )}
         {view === 'settings' && (

@@ -38,6 +38,23 @@ export interface BackupResult {
 export interface FolderSyncConfigResult { ok: boolean; folderPath?: string | null; passphraseSaved?: boolean; secureStorageAvailable?: boolean; error?: string; cancelled?: boolean }
 export interface FolderSyncResult { ok: boolean; peerCount?: number; recordCount?: number; syncedAt?: string; error?: string }
 
+/** A local file reference stored in LifeAssistOS. The file itself remains in its original location. */
+export interface LocalDocument {
+  id: string
+  name: string
+  extension: string
+  size: number
+  addedAt: string
+  exists: boolean
+}
+
+export interface DocumentLibraryResult {
+  ok: boolean
+  cancelled?: boolean
+  documents?: LocalDocument[]
+  error?: string
+}
+
 export type ProviderAuthResult =
   | { ok: true; settings: PublicSettings; storedSecurely: boolean }
   | { ok: false; error: string }
@@ -105,6 +122,12 @@ export interface AssistApi {
   getCalendarEvents(start: string, end: string): Promise<CalendarEvent[]>
   importCalendar(sourceId: string | null, name: string, events: CalendarEventInput[]): Promise<LifeMutationResult>
   deleteCalendarSource(id: string): Promise<LifeMutationResult>
+
+  listDocuments(): Promise<DocumentLibraryResult>
+  addDocuments(): Promise<DocumentLibraryResult>
+  openDocument(id: string): Promise<{ ok: boolean; error?: string }>
+  revealDocument(id: string): Promise<{ ok: boolean; error?: string }>
+  removeDocument(id: string): Promise<{ ok: boolean; error?: string }>
 
   suggestTaskDraft(text: string, context: TodoAiContext): Promise<TodoAiResult<TaskDraftSuggestion>>
   suggestTaskSubtasks(task: Pick<PlanTask, 'title' | 'notes' | 'dueDate' | 'priority'>): Promise<TodoAiResult<TodoSubtaskSuggestion[]>>

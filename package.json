@@ -1,6 +1,6 @@
 {
   "name": "lifeassist-os",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "author": "LifeAssistOS",
   "description": "A local-first productivity companion with optional AI coaching, learning, and task planning.",
@@ -83,4 +83,3 @@
     }
   }
 }
-

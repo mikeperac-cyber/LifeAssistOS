@@ -9,6 +9,7 @@ import {
 } from '../core/backup'
 import { PlanningStore } from '../core/planning'
 import { LifeStore } from '../core/lifeos'
+import { DocumentLibraryStore } from '../core/documents'
 import { readFolderSyncConfig, syncSharedFolder, writeFolderSyncConfig } from '../core/folder-sync'
 import { TaskReminderScheduler } from '../core/reminders'
 import { createProviderForSettings } from '../core/providers/factory'
@@ -25,6 +26,7 @@ import { registerTodoAiIpcHandlers } from './ipc/todo-ai-handlers'
 import { registerAssistantIpcHandlers } from './ipc/assistant-handlers'
 import { registerProviderAuthIpcHandlers } from './ipc/provider-auth-handlers'
 import { registerLifeIpcHandlers } from './ipc/lifeos-handlers'
+import { registerDocumentIpcHandlers } from './ipc/document-handlers'
 import { ProviderRequestGate, ProviderRequestGateError } from './ipc/provider-request-gate'
 
 // Keep the pre-rebrand name to preserve existing per-user data at %APPDATA%\Mike Assist.
@@ -36,6 +38,7 @@ let mainWindow: BrowserWindow | null = null
 let systemTray: SystemTrayManager | null = null
 let planning: PlanningStore | null = null
 let life: LifeStore | null = null
+let documents: DocumentLibraryStore | null = null
 let folderSyncRunning = false
 let folderAutoSyncTimer: ReturnType<typeof setInterval> | undefined
 let settings: SettingsStore | null = null
@@ -93,6 +96,7 @@ async function initialize(): Promise<void> {
   await planning.init()
   life = new LifeStore(planning.database, planning)
   life.init()
+  documents = new DocumentLibraryStore(path.join(userData, 'documents.json'))
   reminders = new TaskReminderScheduler(planning, deliverReminder)
   registerIpc()
   try { if ((await readFolderSyncConfig(userData)).encryptedPassphrase) startFolderAutoSync() }
@@ -132,6 +136,12 @@ function registerIpc(): void {
     getLife: () => life,
     sendEvent: sendToRenderer,
     errorMessage: asErrorMessage
+  })
+
+  registerDocumentIpcHandlers({
+    ipcMain: guardedIpcMain,
+    getStore: () => documents,
+    getWindow: () => mainWindow
   })
 
   registerTodoAiIpcHandlers({

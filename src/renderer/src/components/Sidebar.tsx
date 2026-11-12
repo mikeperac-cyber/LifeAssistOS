@@ -42,18 +42,19 @@ export function Sidebar({
         {NAV_GROUPS.map((group) => (
           <div className="nav-group" key={group.label}>
             <span className="nav-group-label">{group.label}</span>
-            {group.items.map((item) => (
-              <button
-                key={item}
+            {group.items.map((item) => {
+              const active = item.activeWhenSelected !== false && view === item.view
+              return <button
+                key={`${group.label}:${item.view}:${item.label ?? ''}`}
                 type="button"
-                className={`nav-button ${view === item ? 'active' : ''}`}
-                aria-current={view === item ? 'page' : undefined}
-                onClick={() => onChange(item)}
+                className={`nav-button ${active ? 'active' : ''}`}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => onChange(item.view)}
               >
-                <span className="nav-glyph"><Icon name={item === 'life' ? 'home' : item} /></span>
-                <span>{VIEW_META[item].label}</span>
+                <span className="nav-glyph"><Icon name={item.view === 'life' ? 'home' : item.view} /></span>
+                <span>{item.label ?? VIEW_META[item.view].label}</span>
               </button>
-            ))}
+            })}
           </div>
         ))}
       </nav>

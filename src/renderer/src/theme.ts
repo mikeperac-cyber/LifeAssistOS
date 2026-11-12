@@ -1,7 +1,9 @@
-export const APP_THEME_STORAGE_KEY = 'mike-assist-theme'
+export const APP_THEME_STORAGE_KEY = 'mike-assist-theme-v2'
+
+const LEGACY_APP_THEME_STORAGE_KEY = 'mike-assist-theme'
 
 export const APP_THEMES = [
-  { id: 'midnight', label: 'Midnight', description: 'Graphite surfaces with a clear sea-glass accent.' },
+  { id: 'midnight', label: 'Midnight', description: 'Charcoal surfaces with violet, rose, and warm gold accents.' },
   { id: 'light', label: 'Light', description: 'Chalk-white surfaces with a calm indigo accent.' },
   { id: 'forest', label: 'Forest', description: 'Evergreen surfaces with a fresh leaf accent.' },
   { id: 'violet', label: 'Violet', description: 'Ink-plum surfaces with a soft lilac accent.' },
@@ -19,7 +21,11 @@ export function parseAppTheme(value: unknown): AppTheme {
 export function getSavedAppTheme(storage?: Pick<Storage, 'getItem'>): AppTheme {
   try {
     const source = storage ?? window.localStorage
-    return parseAppTheme(source.getItem(APP_THEME_STORAGE_KEY))
+    const savedTheme = source.getItem(APP_THEME_STORAGE_KEY)
+    if (savedTheme !== null) return parseAppTheme(savedTheme)
+
+    const legacyTheme = source.getItem(LEGACY_APP_THEME_STORAGE_KEY)
+    return parseAppTheme(legacyTheme)
   } catch {
     return 'midnight'
   }

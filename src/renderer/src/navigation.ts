@@ -15,6 +15,14 @@ export const VIEW_META = {
     label: 'Projects',
     description: 'Organize work by Area, project, and next step.'
   },
+  documents: {
+    label: 'Documents',
+    description: 'Keep local files close to your work.'
+  },
+  calendar: {
+    label: 'Calendar',
+    description: 'Review events from your imported calendar files.'
+  },
   life: {
     label: 'Dashboard',
     description: 'Connect goals, routines, notes, and your calendar.'
@@ -30,12 +38,19 @@ export const DEFAULT_VIEW: View = 'life'
 
 /** Preserve saved routes and send unrecognized routes to Tasks. */
 export function normalizeView(value: unknown): View {
-  return value === 'settings' || value === 'projects' || value === 'review' || value === 'assistant' || value === 'life' ? value : 'tasks'
+  return value === 'settings' || value === 'projects' || value === 'documents' || value === 'calendar' || value === 'review' || value === 'assistant' || value === 'life' ? value : 'tasks'
 }
 
-export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly View[] }> = [
-  { label: 'Main', items: ['life', 'tasks', 'assistant', 'review', 'projects'] },
-  { label: 'System', items: ['settings'] }
+export type NavItem = { view: View; label?: string; activeWhenSelected?: boolean }
+
+export const NAV_GROUPS: ReadonlyArray<{ label: string; items: readonly NavItem[] }> = [
+  { label: 'Apps', items: [
+    { view: 'life' }, { view: 'tasks' }, { view: 'assistant' }, { view: 'review' }, { view: 'projects' }, { view: 'documents' }
+  ] },
+  { label: 'Integrations', items: [
+    { view: 'calendar' }, { view: 'settings', label: 'AI providers', activeWhenSelected: false }
+  ] },
+  { label: 'System', items: [{ view: 'settings' }] }
 ]
 
 export type SidebarVisibility = 'open' | 'closed'

@@ -2,15 +2,21 @@ export const DASHBOARD_LAYOUT_STORAGE_KEY = 'lifeassist-dashboard-layout-v1';
 
 export const DASHBOARD_WIDGET_IDS = [
   'today-summary',
-  'agenda',
-  'focus',
-  'goals',
-  'projects',
   'weekly-completions',
+  'goals',
+  'in-progress',
+  'agenda',
+  'projects',
+  'focus',
   'routines',
   'pinned-notes',
   'upcoming',
 ] as const;
+
+const PREVIOUS_DEFAULT_ORDER: DashboardWidgetId[] = [
+  'today-summary', 'agenda', 'focus', 'goals', 'projects',
+  'weekly-completions', 'routines', 'pinned-notes', 'upcoming',
+];
 
 export type DashboardWidgetId = (typeof DASHBOARD_WIDGET_IDS)[number];
 
@@ -43,6 +49,8 @@ export function parseDashboardLayout(value: unknown): DashboardLayout {
 
   const seen = new Set<DashboardWidgetId>();
   const requestedOrder = Array.isArray(value.order) ? value.order : [];
+  const wasPreviousDefault = requestedOrder.length === PREVIOUS_DEFAULT_ORDER.length &&
+    requestedOrder.every((id, index) => id === PREVIOUS_DEFAULT_ORDER[index]);
   const order = requestedOrder.filter((id): id is DashboardWidgetId => {
     if (!isDashboardWidgetId(id) || seen.has(id)) return false;
     seen.add(id);
@@ -54,7 +62,9 @@ export function parseDashboardLayout(value: unknown): DashboardLayout {
   }
 
   const orderedWithoutSummary = order.filter((id) => id !== 'today-summary');
-  const normalizedOrder: DashboardWidgetId[] = ['today-summary', ...orderedWithoutSummary];
+  const normalizedOrder: DashboardWidgetId[] = wasPreviousDefault
+    ? [...DASHBOARD_WIDGET_IDS]
+    : ['today-summary', ...orderedWithoutSummary];
   const hiddenSeen = new Set<DashboardWidgetId>();
   const hidden = (Array.isArray(value.hidden) ? value.hidden : []).filter((id): id is DashboardWidgetId => {
     if (!isDashboardWidgetId(id) || id === 'today-summary' || hiddenSeen.has(id)) return false;

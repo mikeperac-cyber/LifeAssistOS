@@ -7,7 +7,8 @@ import {
 } from '../dashboard-layout'
 import { AccessibleDialog } from './AccessibleDialog'
 import { Icon } from './Icon'
-import { buildDashboardSummary, calendarEventsInRange, getGoalProgress } from './life-dashboard-model'
+import { TaskEditorDialog, type TaskEditorValues } from './TaskEditorDialog'
+import { buildDashboardSummary, calendarEventsInRange, getGoalProgress, localDateFromTimestamp } from './life-dashboard-model'
 import { addDays } from './review-view-model'
 import { buildWeeklyCompletionSeries } from './weekly-completion-model'
 
@@ -20,9 +21,10 @@ const DASHBOARD_WIDGET_TITLES: Record<DashboardWidgetId, string> = {
   'today-summary': 'Today',
   agenda: 'Day agenda',
   focus: 'Focus queue',
+  'in-progress': 'Tasks in progress',
   goals: 'Goal progress',
   projects: 'Projects with open work',
-  'weekly-completions': 'Weekly completions',
+  'weekly-completions': 'Weekly progress',
   routines: 'Routines',
   'pinned-notes': 'Pinned notes',
   upcoming: 'Upcoming life admin'
@@ -39,13 +41,14 @@ let unsavedDashboardLayout: DashboardLayout | null = null
 // The model already resolves local dates. Format those calendar dates without shifting them again.
 const weeklyCompletionDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' })
 
-export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onOpenProjects }: {
+export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onOpenProjects, initialTab = 'overview' }: {
   refreshVersion: number
   onOpenTasks: () => void
   onOpenUpcomingTasks: () => void
   onOpenProjects: () => void
+  initialTab?: LifeTab
 }): React.JSX.Element {
-  const [tab, setTab] = useState<LifeTab>('overview')
+  const [tab, setTab] = useState<LifeTab>(initialTab)
   const [goals, setGoals] = useState<LifeGoal[]>([])
   const [areas, setAreas] = useState<TaskArea[]>([])
   const [projects, setProjects] = useState<TaskProject[]>([])
@@ -68,6 +71,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [loading, setLoading] = useState(true)
   const [hasLoaded, setHasLoaded] = useState(false)
   const [goalDraft, setGoalDraft] = useState<Partial<LifeGoal> | null>(null)
+  const [taskEditorOpen, setTaskEditorOpen] = useState(false)
   const [routineDraft, setRoutineDraft] = useState<Partial<RoutineTemplate> | null>(null)
   const [journalDraft, setJournalDraft] = useState<Partial<JournalEntry> | null>(null)
   const [importSourceId, setImportSourceId] = useState('')
@@ -79,6 +83,8 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const journalList = useRef<HTMLDivElement>(null)
   const focusedJournalControl = useRef<HTMLElement | null>(null)
   const queryParams = useRef({ calendarDate, searchQuery })
+
+  useEffect(() => { setTab(initialTab) }, [initialTab])
 
   useLayoutEffect(() => {
     queryParams.current = { calendarDate, searchQuery }
@@ -179,6 +185,15 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     const result = await window.assist.saveLifeGoal({ id: goalDraft.id, title: goalDraft.title ?? '', description: goalDraft.description ?? '', areaId: goalDraft.areaId ?? null, status: goalDraft.status ?? 'active', targetDate: goalDraft.targetDate ?? null })
     if (!result.ok) throw new Error(result.error ?? 'Could not save the goal.')
     setGoalDraft(null); await refresh()
+  }
+
+  const saveDashboardTask = async (values: TaskEditorValues): Promise<void> => {
+    const result = await window.assist.addPlanTask({ ...values, parentTaskId: null })
+    if (!result.ok) throw new Error(result.error ?? 'Could not save this task.')
+    setTaskEditorOpen(false)
+    setNotice('Task added to your plan.')
+    window.setTimeout(() => setNotice(''), 3000)
+    await refresh()
   }
 
   const deleteGoal = async (goal: LifeGoal): Promise<void> => {
@@ -319,6 +334,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
       onOpenTasks={onOpenTasks}
       onOpenUpcomingTasks={onOpenUpcomingTasks}
       onOpenProjects={onOpenProjects}
+      onNewTask={() => setTaskEditorOpen(true)}
       onGoals={() => setTab('goals')}
       onRoutines={() => setTab('routines')}
       onJournal={() => setTab('journal')}
@@ -345,6 +361,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
     {!loading && tab === 'context' && <ContextTab value={context} onChange={setContext} onSave={() => void saveContext()} />}
 
     {goalDraft && <GoalEditor value={goalDraft} areas={areas} onChange={setGoalDraft} onSave={() => void saveGoal().catch(showError)} onClose={() => setGoalDraft(null)} />}
+    {taskEditorOpen && <TaskEditorDialog projects={projects} heading="Add a task" saveLabel="Add task" onClose={() => setTaskEditorOpen(false)} onSave={saveDashboardTask} />}
     {routineDraft && <RoutineEditor value={routineDraft} areas={areas} projects={projects} onChange={setRoutineDraft} onSave={() => void saveRoutine().catch(showError)} onClose={() => setRoutineDraft(null)} />}
     {journalDraft && <JournalEditor value={journalDraft} areas={areas} goals={goals} onChange={setJournalDraft} onSave={() => void saveJournal().catch(showError)} onClose={() => setJournalDraft(null)} />}
     <p className="life-local-note">{selectedLabel} stay on this device and are included in your local backup.</p>
@@ -356,7 +373,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
 function LifeOverviewTab({
   goals, routines, pinnedEntries, tasks, projects, todayEvents, upcomingEvents, today, timeZone, completingTask,
   onCompleteTask, onOpenTasks, onOpenUpcomingTasks, onOpenProjects, onGoals, onRoutines, onJournal, onCalendar,
-  onNewGoal, onToggleJournalPin, onApplyRoutine
+  onNewGoal, onNewTask, onToggleJournalPin, onApplyRoutine
 }: {
   goals: LifeGoal[]
   routines: RoutineTemplate[]
@@ -377,6 +394,7 @@ function LifeOverviewTab({
   onJournal: () => void
   onCalendar: (date: string) => void
   onNewGoal: () => void
+  onNewTask: () => void
   onToggleJournalPin: (entry: JournalEntry) => Promise<boolean>
   onApplyRoutine: (routine: RoutineTemplate) => void
 }): React.JSX.Element {
@@ -384,6 +402,9 @@ function LifeOverviewTab({
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [layoutSaveFailed, setLayoutSaveFailed] = useState(() => unsavedDashboardLayout !== null)
   const focusList = useRef<HTMLOListElement>(null)
+  const inProgressList = useRef<HTMLUListElement>(null)
+  const addTaskAction = useRef<HTMLButtonElement>(null)
+  const inProgressActions = useRef<Array<HTMLButtonElement | null>>([])
   const myDayAction = useRef<HTMLButtonElement>(null)
   const journalAction = useRef<HTMLButtonElement>(null)
   const [focusAfterCompletion, setFocusAfterCompletion] = useState<{ taskId: string; index: number; button: HTMLButtonElement } | null>(null)
@@ -393,8 +414,14 @@ function LifeOverviewTab({
     [tasks, projects, agendaEvents, upcomingEvents, today, timeZone]
   )
   const { focusTasks } = summary
+  const inProgressTasks = tasks
+    .filter((task) => task.status === 'open' && task.workflowStage === 'in-progress')
+    .sort((a, b) => (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') || a.createdAt.localeCompare(b.createdAt))
+    .slice(0, 2)
   const weeklyCompletions = useMemo(() => buildWeeklyCompletionSeries(tasks, today, timeZone), [tasks, today, timeZone])
   const weeklyPeak = Math.max(1, ...weeklyCompletions.map((day) => day.count))
+  const completedThisMonth = tasks.filter((task) => task.status === 'done' && task.completedAt &&
+    localDateFromTimestamp(task.completedAt, timeZone)?.slice(0, 7) === today.slice(0, 7)).length
 
   useLayoutEffect(() => {
     if (!focusAfterCompletion || focusTasks.some((task) => task.id === focusAfterCompletion.taskId)) return
@@ -411,6 +438,17 @@ function LifeOverviewTab({
     if (completingTask) return
     const shouldRestoreFocus = document.activeElement === button
     if (await onCompleteTask(task) && shouldRestoreFocus) setFocusAfterCompletion({ taskId: task.id, index, button })
+  }
+
+  const completeInProgressTask = async (task: PlanTask, index: number, button: HTMLButtonElement): Promise<void> => {
+    if (completingTask) return
+    const shouldRestoreFocus = document.activeElement === button
+    if (!await onCompleteTask(task) || !shouldRestoreFocus) return
+    window.setTimeout(() => {
+      const nextAction = inProgressActions.current.slice(index).find((action) => action?.isConnected) ??
+        inProgressActions.current.find((action) => action?.isConnected) ?? addTaskAction.current
+      nextAction?.focus()
+    }, 0)
   }
 
   const toggleNotePin = async (entry: JournalEntry, button: HTMLButtonElement): Promise<void> => {
@@ -438,7 +476,12 @@ function LifeOverviewTab({
       }]
     })
   ].sort((a, b) => Number(b.allDay) - Number(a.allDay) || Date.parse(a.time) - Date.parse(b.time))
-  const activeGoals = goals.filter((goal) => goal.status === 'active').slice(0, 3)
+  const activeGoals = goals.filter((goal) => goal.status === 'active')
+  const goalRings = activeGoals.map((goal) => ({ goal, ...getGoalProgress(goal.id, projects, tasks) }))
+    .filter((goal) => goal.total > 0)
+    .slice(0, 3)
+  const monthLabel = new Intl.DateTimeFormat(undefined, { month: 'long', timeZone: 'UTC' })
+    .format(new Date(`${today.slice(0, 7)}-01T12:00:00Z`))
   const upcoming = [
     ...summary.upcomingTasks.map((task) => ({
       key: 'task-' + task.id, date: task.dueDate ?? today, title: task.title, kind: 'task', onOpen: onOpenUpcomingTasks
@@ -507,24 +550,57 @@ function LifeOverviewTab({
       </DashboardCard>
     ),
 
-    goals: (
-      <DashboardCard key="goals" id="goals" icon="flag" action="All goals" onAction={onGoals}>
-        {activeGoals.length ? <ul className="life-overview-list">{activeGoals.map((goal) => {
-          const { completed, total, percent } = getGoalProgress(goal.id, projects, tasks)
-          return <li className="life-overview-goal-item" key={goal.id}>
-            <span className="life-overview-ring" aria-hidden="true">
-              <svg viewBox="0 0 44 44" focusable="false">
-                <circle cx="22" cy="22" r="18" />
-                <circle cx="22" cy="22" r="18" pathLength="100" strokeDasharray={percent + ' 100'} />
-              </svg>
-              {total > 0 && <span>{percent}%</span>}
-            </span>
+    'in-progress': (
+      <section key="in-progress" className="life-overview-card life-overview-in-progress" data-widget-id="in-progress" aria-labelledby="life-dashboard-in-progress">
+        <header className="life-overview-card-head">
+          <h2 id="life-dashboard-in-progress"><Icon name="clock" />Tasks in progress <span className="life-in-progress-count">{inProgressTasks.length}</span></h2>
+          <button type="button" className="todo-row-action" onClick={onOpenTasks}>All tasks</button>
+        </header>
+        {!inProgressTasks.length && <p className="life-in-progress-empty">Tasks set to the In progress stage will appear here.</p>}
+        <ul ref={inProgressList} className="life-in-progress-grid" aria-label="Tasks in progress">
+          {inProgressTasks.map((task, index) => <li className="life-in-progress-task" key={task.id}>
+            <span className="life-in-progress-task-mark" aria-hidden="true"><Icon name="briefcase" /></span>
             <span className="life-overview-row-copy">
-              <strong>{goal.title}</strong>
-              <small>{total ? completed + ' of ' + total + ' tasks done' : 'No linked tasks yet'}</small>
+              <strong>{task.title}</strong>
+              <small>{projects.find((project) => project.id === task.projectId)?.name ?? (task.dueDate ? `Due ${formatDate(task.dueDate)}` : 'In progress')}</small>
             </span>
+            <button ref={(element) => { inProgressActions.current[index] = element }} className="life-overview-complete" type="button" aria-disabled={completingTask} onClick={(event) => void completeInProgressTask(task, index, event.currentTarget)} aria-label={'Complete ' + task.title} title={'Complete ' + task.title}>
+              <Icon name="check" />
+            </button>
+          </li>)}
+          <li className="life-in-progress-add-tile">
+            <button ref={addTaskAction} type="button" onClick={onNewTask}>
+              <Icon name="plus" /><span>Add task</span>
+            </button>
           </li>
-        })}</ul> : <div className="life-overview-empty"><p>No active goals yet.</p><button type="button" className="todo-row-action" onClick={onNewGoal}>Create a goal</button></div>}
+        </ul>
+      </section>
+    ),
+
+    goals: (
+      <DashboardCard key="goals" id="goals" icon="target" action="All goals" onAction={onGoals}>
+        {goalRings.length ? <div className="life-goal-progress-widget">
+          <div className="life-goal-rings" aria-hidden="true">
+            <svg viewBox="0 0 120 120" focusable="false">
+              {goalRings.map((item, index) => {
+                const radius = 49 - index * 14
+                return <g key={item.goal.id} className={`life-goal-ring tone-${index}`}>
+                  <circle cx="60" cy="60" r={radius} />
+                  <circle cx="60" cy="60" r={radius} pathLength="100" strokeDasharray={`${item.percent} 100`} />
+                </g>
+              })}
+            </svg>
+            <span>GOALS</span>
+          </div>
+          <ul className="life-goal-ring-legend" aria-label="Goal progress">
+            {goalRings.map((item, index) => <li key={item.goal.id} className={`tone-${index}`}>
+              <span className="life-goal-ring-name">{item.goal.title}</span>
+              <strong>{item.percent}%</strong>
+              <small>{item.completed} of {item.total} tasks</small>
+            </li>)}
+          </ul>
+        </div> : <div className="life-overview-empty"><p>{activeGoals.length ? 'Link a project with tasks to an active goal to see its progress.' : 'No active goals yet.'}</p><button type="button" className="todo-row-action" onClick={activeGoals.length ? onGoals : onNewGoal}>{activeGoals.length ? 'Review goals' : 'Create a goal'}</button></div>}
+        <p className="life-month-completion-count">{monthLabel}: <strong>{completedThisMonth}</strong> {completedThisMonth === 1 ? 'task completed' : 'tasks completed'}</p>
       </DashboardCard>
     ),
 
@@ -573,7 +649,8 @@ function LifeOverviewTab({
 
     'weekly-completions': (
       <DashboardCard key="weekly-completions" id="weekly-completions" icon="check">
-        <ol className="life-weekly-chart" role="list">
+        <p className="life-weekly-caption">Tasks completed over the past 7 days</p>
+        <ol className="life-weekly-chart" role="list" aria-label="Tasks completed each day over the past seven days">
           {weeklyCompletions.map(({ date, label, count }) => <li key={date}>
             <span className="sr-only">
               <time dateTime={date}>{weeklyCompletionDate.format(new Date(`${date}T00:00:00Z`))}</time>, {count} {count === 1 ? 'task' : 'tasks'} completed
