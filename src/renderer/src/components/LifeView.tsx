@@ -4,12 +4,15 @@ import { parseCalendarIcs } from '../../../shared/calendar-ics'
 import { Icon } from './Icon'
 import { buildDashboardSummary, calendarEventsInRange, getGoalProgress } from './life-dashboard-model'
 import { addDays } from './review-view-model'
+import { buildWeeklyCompletionSeries } from './weekly-completion-model'
 
 type LifeTab = 'overview' | 'goals' | 'routines' | 'journal' | 'calendar' | 'context'
 type DashboardCalendar = { today: string; todayEvents: CalendarEvent[]; upcomingEvents: CalendarEvent[] }
 const TABS: Array<{ id: LifeTab; label: string }> = [
   { id: 'overview', label: 'Overview' }, { id: 'goals', label: 'Goals' }, { id: 'routines', label: 'Routines' }, { id: 'journal', label: 'Notes & journal' }, { id: 'calendar', label: 'Calendar' }, { id: 'context', label: 'AI context' }
 ]
+// The model already resolves local dates. Format those calendar dates without shifting them again.
+const weeklyCompletionDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', calendar: 'gregory', timeZone: 'UTC' })
 
 export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onOpenProjects }: {
   refreshVersion: number
@@ -294,6 +297,8 @@ function LifeOverviewTab({
     [tasks, projects, agendaEvents, upcomingEvents, today, timeZone]
   )
   const { focusTasks } = summary
+  const weeklyCompletions = useMemo(() => buildWeeklyCompletionSeries(tasks, today, timeZone), [tasks, today, timeZone])
+  const weeklyPeak = Math.max(1, ...weeklyCompletions.map((day) => day.count))
 
   useLayoutEffect(() => {
     if (!focusAfterCompletion || focusTasks.some((task) => task.id === focusAfterCompletion.taskId)) return
@@ -438,6 +443,23 @@ function LifeOverviewTab({
         </ul> : <div className="life-overview-empty"><p>No tasks due or calendar events in the next seven days.</p><button type="button" className="todo-row-action" onClick={() => onCalendar(today)}>Open Calendar</button></div>}
       </DashboardCard>
 
+      <DashboardCard id="weekly-completions" title="Weekly completions" icon="check">
+        <ol className="life-weekly-chart" role="list">
+          {weeklyCompletions.map(({ date, label, count }) => <li key={date}>
+            <span className="sr-only">
+              <time dateTime={date}>{weeklyCompletionDate.format(new Date(`${date}T00:00:00Z`))}</time>, {count} {count === 1 ? 'task' : 'tasks'} completed
+            </span>
+            <strong aria-hidden="true">{count}</strong>
+            <span className="life-weekly-track" aria-hidden="true">
+              {count > 0
+                ? <span className="life-weekly-bar" style={{ height: `${(count / weeklyPeak) * 100}%` }} />
+                : <span className="life-weekly-zero" />}
+            </span>
+            <span className="life-weekly-date" aria-hidden="true">{label}<span>{Number(date.slice(-2))}</span></span>
+          </li>)}
+        </ol>
+      </DashboardCard>
+
       <DashboardCard id="pinned-notes" title="Recent note" icon="book" action="Write a note" onAction={onNewJournal}>
         {recentEntry ? <button type="button" className="life-overview-note" onClick={onJournal}>
           <time dateTime={recentEntry.entryDate}>{formatDate(recentEntry.entryDate)}</time>
@@ -453,8 +475,8 @@ function DashboardCard({ id, title, icon, action, onAction, actionRef, children 
   id: string
   title: string
   icon: React.ComponentProps<typeof Icon>['name']
-  action: string
-  onAction: () => void
+  action?: string
+  onAction?: () => void
   actionRef?: React.Ref<HTMLButtonElement>
   children: React.ReactNode
 }): React.JSX.Element {
@@ -462,7 +484,7 @@ function DashboardCard({ id, title, icon, action, onAction, actionRef, children 
   return <section className="life-overview-card" data-widget-id={id} aria-labelledby={headingId}>
     <header className="life-overview-card-head">
       <h2 id={headingId}><Icon name={icon} />{title}</h2>
-      <button ref={actionRef} type="button" className="todo-row-action" onClick={onAction}>{action}</button>
+      {action && onAction && <button ref={actionRef} type="button" className="todo-row-action" onClick={onAction}>{action}</button>}
     </header>
     {children}
   </section>
