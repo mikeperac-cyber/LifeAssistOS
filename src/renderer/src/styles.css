@@ -5276,6 +5276,12 @@ body {
 .life-overview-day h3 { max-width: 42ch; margin: 9px 0 6px; color: var(--text); font-size: clamp(17px, 2vw, 22px); font-weight: 620; letter-spacing: -.03em; }
 .life-overview-day p { margin: 0; color: var(--muted); font-size: 11px; }
 .life-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+@container life-view (width < 700px) {
+  .life-overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .life-overview-day { align-items: flex-start; flex-direction: column; padding: 16px; }
+}
+
 .life-overview-card { min-width: 0; padding: 15px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .life-overview-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 11px; }
 .life-overview-card-head > div > span { color: var(--muted); font-size: 8px; font-weight: 660; letter-spacing: .12em; }
@@ -5360,7 +5366,7 @@ body {
 @media (prefers-reduced-motion: reduce) { .command-palette { animation: none; } }
 
 /* Life workspace: goals, routines, journal, calendar, and explicit AI context. */
-.life-view { width: min(100%, 1320px); min-height: 0; flex: 1; margin: 0 auto; padding: 25px clamp(20px, 3vw, 40px) 38px; overflow: auto; }
+.life-view { container: life-view / inline-size; width: min(100%, 1320px); min-height: 0; flex: 1; margin: 0 auto; padding: 25px clamp(20px, 3vw, 40px) 38px; overflow: auto; }
 .life-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .life-header h2 { max-width: 24ch; margin: 10px 0 7px; color: var(--text); font-size: clamp(25px, 3vw, 35px); font-weight: 660; letter-spacing: -.04em; line-height: 1.12; }
 .life-header p { max-width: 62ch; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -8610,7 +8616,5 @@ body {
 @media (max-width: 700px) {
   .theme-options { grid-template-columns: minmax(0, 1fr); }
   .folder-sync-location { align-items: flex-start; flex-direction: column; }
-  .life-overview-grid { grid-template-columns: minmax(0, 1fr); }
-  .life-overview-day { align-items: flex-start; flex-direction: column; padding: 16px; }
 }
 
