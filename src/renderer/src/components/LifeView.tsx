@@ -6,6 +6,7 @@ import { buildDashboardSummary, calendarEventsInRange, getGoalProgress } from '.
 import { addDays } from './review-view-model'
 
 type LifeTab = 'overview' | 'goals' | 'routines' | 'journal' | 'calendar' | 'context'
+type DashboardCalendar = { today: string; todayEvents: CalendarEvent[]; upcomingEvents: CalendarEvent[] }
 const TABS: Array<{ id: LifeTab; label: string }> = [
   { id: 'overview', label: 'Overview' }, { id: 'goals', label: 'Goals' }, { id: 'routines', label: 'Routines' }, { id: 'journal', label: 'Notes & journal' }, { id: 'calendar', label: 'Calendar' }, { id: 'context', label: 'AI context' }
 ]
@@ -26,9 +27,9 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [context, setContext] = useState<PersonalContext>({ aboutMe: '', preferences: '', currentFocus: '', updatedAt: '' })
   const [sources, setSources] = useState<Array<{ id: string; name: string; importedAt: string; eventCount: number }>>([])
   const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [todayEvents, setTodayEvents] = useState<CalendarEvent[]>([])
-  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
-  const [today, setToday] = useState(getLocalDate)
+  const [{ today, todayEvents, upcomingEvents }, setDashboardCalendar] = useState<DashboardCalendar>(() => ({
+    today: getLocalDate(), todayEvents: [], upcomingEvents: []
+  }))
   const [calendarDate, setCalendarDate] = useState(today)
   const [completingTask, setCompletingTask] = useState(false)
   const [query, setQuery] = useState('')
@@ -43,6 +44,7 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   const [importSourceId, setImportSourceId] = useState('')
   const [importName, setImportName] = useState('')
   const refreshRequest = useRef(0)
+  const dashboardCalendarRequest = useRef(0)
   const queryParams = useRef({ calendarDate, searchQuery })
 
   useLayoutEffect(() => {
@@ -51,20 +53,19 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
 
   const refresh = useCallback(async (): Promise<void> => {
     const request = ++refreshRequest.current
+    const calendarRequest = ++dashboardCalendarRequest.current
     const { calendarDate, searchQuery } = queryParams.current
-    const today = getLocalDate()
-    setToday(today)
     setLoading(true); setError('')
     try {
-      const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextTodayEvents, nextUpcomingEvents] = await Promise.all([
+      const [workspace, nextRoutines, nextEntries, nextContext, nextSources, nextEvents, nextDashboardCalendar] = await Promise.all([
         window.assist.getLifeWorkspace(), window.assist.getRoutineTemplates(), window.assist.getJournalEntries(searchQuery),
         window.assist.getPersonalContext(), window.assist.getCalendarSources(), window.assist.getCalendarEvents(calendarDate, calendarDate),
-        window.assist.getCalendarEvents(today, today), window.assist.getCalendarEvents(today, addDays(today, 6))
+        loadDashboardCalendar()
       ])
       if (request !== refreshRequest.current) return
       setGoals(workspace.goals); setAreas(workspace.areas); setProjects(workspace.projects); setTasks(workspace.tasks)
-      setRoutines(nextRoutines); setEntries(nextEntries); setContext(nextContext); setSources(nextSources); setEvents(nextEvents); setTodayEvents(nextTodayEvents)
-      setUpcomingEvents(nextUpcomingEvents)
+      setRoutines(nextRoutines); setEntries(nextEntries); setContext(nextContext); setSources(nextSources); setEvents(nextEvents)
+      if (calendarRequest === dashboardCalendarRequest.current) setDashboardCalendar(nextDashboardCalendar)
       setHasLoaded(true)
     } catch (cause) {
       if (request === refreshRequest.current) setError(cause instanceof Error ? cause.message : 'Your Life workspace could not be loaded.')
@@ -76,12 +77,21 @@ export function LifeView({ refreshVersion, onOpenTasks, onOpenUpcomingTasks, onO
   useEffect(() => { void refresh() }, [refresh, refreshVersion, calendarDate, searchQuery])
   useEffect(() => {
     let timer: number
+    const refreshDashboardCalendar = async (): Promise<void> => {
+      const request = ++dashboardCalendarRequest.current
+      try {
+        const calendar = await loadDashboardCalendar()
+        if (request === dashboardCalendarRequest.current) setDashboardCalendar(calendar)
+      } catch (cause) {
+        if (request === dashboardCalendarRequest.current) setError(cause instanceof Error ? cause.message : 'Could not refresh the dashboard calendar.')
+      }
+    }
     const scheduleMidnightRefresh = (): void => {
       const now = new Date()
       const midnight = new Date(now.getTime())
       midnight.setHours(24, 0, 0, 0)
       timer = window.setTimeout(() => {
-        void refresh()
+        void refreshDashboardCalendar()
         scheduleMidnightRefresh()
       }, midnight.getTime() - now.getTime())
     }
@@ -567,6 +577,15 @@ function EditorShell({ title, children, onSave, onClose }: { title: string; chil
 
 function LifeEmpty({ title, body, action, onAction }: { title: string; body: string; action?: string; onAction: () => void }): React.JSX.Element {
   return <div className="life-empty-state"><span><Icon name="leaf" /></span><h4>{title}</h4><p>{body}</p>{action && <button className="ghost-button" type="button" onClick={onAction}>{action}</button>}</div>
+}
+
+async function loadDashboardCalendar(): Promise<DashboardCalendar> {
+  const today = getLocalDate()
+  const [todayEvents, upcomingEvents] = await Promise.all([
+    window.assist.getCalendarEvents(today, today),
+    window.assist.getCalendarEvents(today, addDays(today, 6))
+  ])
+  return { today, todayEvents, upcomingEvents }
 }
 
 function getLocalDate(date = new Date()): string {
