@@ -6,7 +6,7 @@ import type { PlanningStore } from './planning'
 
 interface GoalRow { id: string; title: string; description: string; area_id: string | null; status: string; target_date: string | null; created_at: string; updated_at: string }
 interface RoutineRow { id: string; name: string; description: string; area_id: string | null; project_id: string | null; payload: string; created_at: string; updated_at: string }
-interface JournalRow { id: string; entry_date: string; title: string; content: string; area_id: string | null; goal_id: string | null; created_at: string; updated_at: string }
+interface JournalRow { id: string; entry_date: string; title: string; content: string; area_id: string | null; goal_id: string | null; is_pinned: number; created_at: string; updated_at: string }
 
 export interface LifeWorkspace { goals: LifeGoal[]; areas: TaskArea[]; projects: TaskProject[]; tasks: PlanTask[] }
 export interface LifeGoalInput { id?: string; title: string; description?: string; areaId?: string | null; status?: LifeGoalStatus; targetDate?: string | null }
@@ -34,7 +34,7 @@ export class LifeStore {
       );
       CREATE TABLE IF NOT EXISTS journal_entries (
         id TEXT PRIMARY KEY, entry_date TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', content TEXT NOT NULL,
-        area_id TEXT, goal_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        area_id TEXT, goal_id TEXT, is_pinned INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS calendar_sources (
         id TEXT PRIMARY KEY, name TEXT NOT NULL, imported_at TEXT NOT NULL
@@ -51,6 +51,10 @@ export class LifeStore {
       CREATE INDEX IF NOT EXISTS calendar_events_range ON calendar_events(starts_at, ends_at);
       CREATE INDEX IF NOT EXISTS calendar_events_source ON calendar_events(source_id);
     `)
+    const journalColumns = this.db.prepare('PRAGMA table_info(journal_entries)').all() as Array<{ name: string }>
+    if (!journalColumns.some(column => column.name === 'is_pinned')) {
+      this.db.exec('ALTER TABLE journal_entries ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0')
+    }
   }
 
   workspace(): LifeWorkspace {
@@ -310,7 +314,7 @@ function routineFromRow(row: RoutineRow): RoutineTemplate {
 }
 
 function journalFromRow(row: JournalRow): JournalEntry {
-  return { id: row.id, entryDate: row.entry_date, title: row.title, content: row.content, areaId: row.area_id, goalId: row.goal_id, createdAt: row.created_at, updatedAt: row.updated_at }
+  return { id: row.id, entryDate: row.entry_date, title: row.title, content: row.content, areaId: row.area_id, goalId: row.goal_id, isPinned: row.is_pinned === 1, createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
 function requiredText(value: string, max: number, message: string): string {

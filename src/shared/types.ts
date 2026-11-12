@@ -122,6 +122,7 @@ export interface JournalEntry {
   content: string
   areaId: string | null
   goalId: string | null
+  isPinned: boolean
   createdAt: string
   updatedAt: string
 }
